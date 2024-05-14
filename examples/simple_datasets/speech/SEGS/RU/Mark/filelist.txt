@@ -1,0 +1,10 @@
+examples/simple_datasets/speech/SEGS/RU/Mark/000/0.TextGridStage3|Гла+вное в том, что проза, когда она достигает совершенства, является, по существу, подлинной поэзией.
+examples/simple_datasets/speech/SEGS/RU/Mark/000/1.TextGridStage3|Находясь в госпитале, он вспоминал, как фашисты напа+ли на них внезапно, и как они оказались в окружении, и как отряду удало+сь пробиться к своим.
+examples/simple_datasets/speech/SEGS/RU/Mark/000/2.TextGridStage3|Он решительно заявил, что мы должны+ немедленно убраться из его до+ма или он вызовет милицию.
+examples/simple_datasets/speech/SEGS/RU/Mark/000/3.TextGridStage3|Дядя мой говорил мне, что он не видывал таких хлебов и что нынешний год урожай отличный.
+examples/simple_datasets/speech/SEGS/RU/Mark/000/4.TextGridStage3|Трудно было понять, был ли+ то где нибудь пожар, или же собиралась всходить луна+.
+examples/simple_datasets/speech/SEGS/RU/Mark/000/5.TextGridStage3|Когда он подъезжал к заднему двору, Его+рушка напряг своё зрение, чтобы получше рассмотреть его.
+examples/simple_datasets/speech/SEGS/RU/Mark/000/6.TextGridStage3|На+до точно учитывать среду+, в которой развивается поэтическое произведение, чтобы чуждое этой среде слово не попада+ло случайно.
+examples/simple_datasets/speech/SEGS/RU/Mark/000/7.TextGridStage3|Деревья так теснятся друг к другу, что если умрёт вековая сосна, то некуда ей упасть.
+examples/simple_datasets/speech/SEGS/RU/Mark/000/8.TextGridStage3|Каждый раз, когда приближалась осень, начинались разговоры о том, что многое в природе устроено не так, как нам бы хотелось.
+examples/simple_datasets/speech/SEGS/RU/Mark/000/9.TextGridStage3|Не может быть хорошего прозаика, если человек не знает на память лучших наших поэтов, если он не слышит, как звучит слово, как чередуются в нём звуки.

@@ -1,0 +1,124 @@
+import typing as tp
+
+import torch
+
+from torch import nn
+
+from speechflow.training.utils.tensor_utils import apply_mask
+from tts.acoustic_models.modules.common.layers import Conv, LearnableSwish
+from tts.acoustic_models.modules.component import Component
+from tts.acoustic_models.modules.params import VariancePredictorParams
+
+__all__ = ["CNNPredictor", "CNNPredictorParams"]
+
+
+class CNNPredictorParams(VariancePredictorParams):
+    latent_dim: int = 256
+    kernel_sizes: tp.Tuple[int, ...] = (3, 7, 13, 3)
+    dropout: float = 0.1
+    as_encoder: bool = False
+
+
+class CNNPredictor(Component):
+    params: CNNPredictorParams
+
+    def __init__(
+        self, params: CNNPredictorParams, input_dim: tp.Union[int, tp.Tuple[int, ...]]
+    ):
+        super().__init__(params, input_dim)
+
+        first_convs_kernel_sizes = params.kernel_sizes[:-1]
+        second_convs_kernel_sizes = params.kernel_sizes[-1]
+
+        self.first_convs = nn.ModuleList(
+            [
+                nn.Sequential(
+                    Conv(
+                        input_dim,
+                        params.vp_inner_dim,
+                        kernel_size=k,
+                        padding=(k - 1) // 2,
+                        w_init_gain=None,
+                        swap_channel_dim=True,
+                    ),
+                    LearnableSwish(),
+                    nn.LayerNorm(params.vp_inner_dim),
+                    nn.Dropout(params.dropout),
+                )
+                for k in first_convs_kernel_sizes
+            ]
+        )
+
+        self.second_conv = nn.Sequential(
+            Conv(
+                params.vp_inner_dim * len(first_convs_kernel_sizes),
+                params.vp_inner_dim,
+                kernel_size=second_convs_kernel_sizes,
+                padding=(second_convs_kernel_sizes - 1) // 2,
+                w_init_gain=None,
+                swap_channel_dim=True,
+            ),
+            LearnableSwish(),
+            nn.LayerNorm(params.vp_inner_dim),
+            nn.Dropout(params.dropout),
+        )
+
+        self.latent = nn.Linear(params.vp_inner_dim, params.latent_dim)
+
+        self.predictor = nn.Sequential(
+            nn.ReLU(),
+            nn.Linear(params.latent_dim, params.latent_dim),
+            nn.ReLU(),
+            nn.Linear(params.latent_dim, params.vp_output_dim),
+        )
+
+    @property
+    def output_dim(self):
+        return (
+            self.params.vp_output_dim
+            if self.params.as_encoder
+            else self.params.latent_dim
+        )
+
+    def encode(self, x, x_mask, **kwargs):
+        after_first_conv = []
+        for conv_layer in self.first_convs:
+            after_first_conv.append(conv_layer(x))
+
+        concatenated = torch.cat(after_first_conv, dim=2)
+        after_second_conv = self.second_conv(concatenated)
+
+        for conv_1 in after_first_conv:
+            after_second_conv += conv_1
+
+        output = self.latent(after_second_conv)
+
+        if output.shape[1] > 1 and x_mask is not None:
+            output = apply_mask(output, x_mask)
+
+        return output
+
+    def decode(self, encoder_output, mask, **kwargs):
+        output = self.predictor(encoder_output)
+        output = output.squeeze(-1)
+
+        if mask is not None:
+            return apply_mask(output, mask)
+
+        return output
+
+    def forward_step(self, x, x_mask, **kwargs):
+        precompute_name = f"imputer_{kwargs.get('name')}_precompute"
+        if precompute_name in kwargs["model_inputs"].additional_inputs:
+            return kwargs["model_inputs"].additional_inputs[precompute_name], {}, {}
+
+        if x_mask is None:
+            x_mask = torch.ones(x.shape[0:2]).bool().to(x.device)
+
+        encoder_output = self.encode(x, x_mask, **kwargs)
+
+        if not self.params.as_encoder:
+            out = self.decode(encoder_output, x_mask, **kwargs)
+            return out, {}, {}
+        else:
+            return encoder_output, {}, {}

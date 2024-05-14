@@ -1,0 +1,149 @@
+import typing as tp
+import logging
+
+import torch
+import whisper_timestamped as whisper
+
+from whisper.tokenizer import get_tokenizer
+
+from annotator.asr_services.cloud_asr import CloudASR
+from speechflow.data_pipeline.core.parser_types import Metadata
+from speechflow.utils.checks import check_install
+from speechflow.utils.gpu import get_freer_gpu, get_total_gpu_memory
+
+__all__ = ["OpenAIASR"]
+
+LOGGER = logging.getLogger("root")
+OpenAIASR_LANGUAGES: dict = whisper.tokenizer.LANGUAGES  # type: ignore
+
+
+class OpenAIASR(CloudASR):
+    """Generate transcription for audio files."""
+
+    def __init__(
+        self,
+        lang: str,
+        model_name: tp.Literal[
+            "large-v2", "medium", "small", "base", "tiny"
+        ] = "large-v2",
+        device: str = "cpu",
+        raise_on_converter_exc: bool = False,
+    ):
+        super().__init__(
+            sample_rate=None,
+            output_file_ext=".whisper",
+            raise_on_converter_exc=raise_on_converter_exc,
+            raise_on_asr_limit_exc=False,
+            release_func=self.release,
+        )
+
+        if not check_install("ffmpeg", "-version"):
+            raise RuntimeError("ffmpeg is not installed on your system")
+
+        self._lang = lang.lower()[:2]
+        self._model_name = model_name
+        self._device = device
+
+        # Hack for kyrgyzstan language
+        if self._lang == "ky":
+            self._lang = "kk"
+
+        if self._lang not in OpenAIASR_LANGUAGES:
+            raise ValueError(f"Language {lang} not support in Whisper model!")
+
+    @staticmethod
+    def release(_):
+        if hasattr(OpenAIASR, "parser"):
+            OpenAIASR.parser = None
+
+    def _get_device(self) -> str:
+        if self._device == "cuda":
+            gpu_idx = get_freer_gpu(strict=False)
+            total_gpu_memory = get_total_gpu_memory(gpu_idx)
+            if "large" in self._model_name and total_gpu_memory < 11:
+                LOGGER.info(
+                    f"There is not enough GPU memory available for Whisper {self._model_name} model"
+                )
+                return "cpu"
+            elif "medium" in self._model_name and total_gpu_memory < 6:
+                LOGGER.info(
+                    f"There is not enough GPU memory available for Whisper {self._model_name} model"
+                )
+                return "cpu"
+            elif "small" in self._model_name and total_gpu_memory < 4:
+                LOGGER.info(
+                    f"There is not enough GPU memory available for Whisper {self._model_name} model"
+                )
+                return "cpu"
+            else:
+                return f"cuda:{gpu_idx}"
+        else:
+            return self._device
+
+    def _transcription(self, metadata: Metadata) -> Metadata:
+        if getattr(OpenAIASR, "model", None) is None:
+            with OpenAIASR.lock:
+                model = whisper.load_model(self._model_name, device=self._get_device())
+                assert model.is_multilingual
+
+                tokenizer = get_tokenizer(multilingual=model.is_multilingual)
+                number_tokens = [
+                    i
+                    for i in range(tokenizer.eot)
+                    if all(c in "0123456789" for c in tokenizer.decode([i]).strip())
+                ]
+
+                setattr(OpenAIASR, "model", model)
+                setattr(OpenAIASR, "number_tokens", number_tokens)
+        else:
+            model = getattr(OpenAIASR, "model")
+            number_tokens = getattr(OpenAIASR, "number_tokens")
+
+        md = {"wav_path": metadata["wav_path"]}
+
+        if model.device.type != "cpu":
+            with torch.cuda.device(model.device):
+                result = whisper.transcribe(
+                    model,
+                    audio=metadata["wav_path"].as_posix(),
+                    language=self._lang,
+                    condition_on_previous_text=False,
+                    beam_size=5,
+                    best_of=5,
+                    suppress_tokens=[-1] + number_tokens,
+                )
+        else:
+            result = whisper.transcribe(
+                model,
+                audio=metadata["wav_path"].as_posix(),
+                language=self._lang,
+                condition_on_previous_text=False,
+                beam_size=5,
+                best_of=5,
+                suppress_tokens=[-1] + number_tokens,
+            )
+
+        timestamps = []
+        for segment in result["segments"]:
+            for item in segment.get("words", []):
+                word = item["text"]
+                start = item["start"]
+                end = item["end"]
+                if not word.strip():
+                    continue
+
+                timestamps.append((word.strip(), start, end))
+
+        text = " ".join([item[0] for item in timestamps])
+        md["transcription"] = {
+            "text": text,
+            "timestamps": timestamps,
+            "lang": self._lang,
+            "model_name": self._model_name,
+            "version": whisper.__version__,
+        }
+        return md
+
+    @staticmethod
+    def _to_text(transcription) -> str:
+        return transcription["text"]

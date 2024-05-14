@@ -1,0 +1,111 @@
+### Data Configuration ###
+
+dirs:
+  data_root: ../../../examples/simple_datasets/speech/SEGS
+
+file_search:
+  ext: .TextGrid
+  with_subfolders: True
+
+data_server:
+  n_processes: 1
+
+dataset:
+  subsets: [train, test]
+  split_type: auto  # auto, manual
+  split_ratio: { train: [0, 1], test: [0.99, 1]}
+  max_num_samples: 0
+  directory_filter:
+    exclude: ["!"]
+
+parser:
+  type: TTSDSParser
+  pipe: [wave_strip, split_by_phrases]
+  pipe_cfg:
+    wave_strip:
+      pad: 0.25
+    split_by_phrases:
+      max_duration: 10
+
+preproc:
+  pipe: [audio_load, voice_bio, speech_quality, noise, spectrogram, melscale, add_pauses_from_text, text]
+  pipe_cfg:
+    audio_load:
+      type: SignalProcessor
+      pipe: [load]
+      pipe_cfg:
+        load:
+          sample_rate: 24000
+    voice_bio:
+      type: VoiceBiometricProcessor
+      model_type: wespeaker  # use "resemblyzer" for training speedup
+    speech_quality:
+      type: SpeechQualityAssessment
+    noise:
+      type: SignalProcessor
+      pipe: [add_noise]
+    spectrogram:
+      type: SpectralProcessor
+      pipe: [magnitude, spectral_flatness]
+      pipe_cfg:
+        magnitude:
+          n_fft: 1024
+          hop_len: 128
+          win_len: 1024
+    melscale:
+      type: MelProcessor
+      pipe: [linear_to_mel, amp_to_db]
+      pipe_cfg:
+        linear_to_mel:
+          n_mels: 100
+          f_min: 0
+          f_max: 8000
+    add_pauses_from_text:
+      level: words
+      pauses_with_punctuation: True
+    text:
+      type: TextProcessor
+      lang: MULTILANG
+      add_service_tokens: True
+      ignore_ling_feat: [breath_mask]
+    augment_wave:
+      type: WaveAugProcessor
+      p: {train: 0.5, test: 0.0}
+      shuffle: False
+      pipe: [pitch_shift, vtlp]
+      pipe_cfg:
+        pitch_shift:
+          p: 0.5
+          min_semitones: -12
+          max_semitones: 12
+        time_stretch:
+          p: 0.5
+          min_rate: 0.95
+          max_rate: 1.05
+        vtlp:
+          p: 0.25
+          alpha_min: 0.95
+          alpha_max: 1.05
+
+collate:
+  type: TTSCollate
+  additional_fields: [symbols]
+
+singleton_handlers:
+  handlers: [SpeakerIDSetter]
+  SpeakerIDSetter: {}
+
+processor:
+  type: DataProcessor
+  output_collated_only: True
+
+sampler:
+  train:
+    type: WeightedSampler
+    comb_by_len: True
+    epoch_size: 250000
+    fields_to_compute_weight: [lang, speaker_name, uid]
+    chunks_ratio: [0.3, 0.3, 0.4]
+  test:
+    type: SimpleSampler
+    comb_by_len: True

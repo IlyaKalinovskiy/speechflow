@@ -1,0 +1,7 @@
+# support languages: RU, EN, IT, ES, FR-FR, DE, PT, PT-BR, KK, KY
+# and other (see TextParser.check_language_support method)
+
+RU:
+    root: RU
+EN:
+    root: EN

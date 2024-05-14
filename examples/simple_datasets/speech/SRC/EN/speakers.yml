@@ -1,0 +1,5 @@
+LJSpeech:
+  root: OPENSOURCE_VOICES/LJSpeech/LJSpeech-1.1/wavs
+VCTK:
+  root: OPENSOURCE_VOICES/VCTK/wav48
+  many: True

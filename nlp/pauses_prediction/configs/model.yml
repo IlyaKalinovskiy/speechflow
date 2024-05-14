@@ -1,0 +1,51 @@
+### Model configuration ###
+
+experiment_name: all_data # name for current experiment
+
+dirs:
+  logging: experiments/
+
+data_server:
+  n_processes: 16
+
+batch:
+  type: PausesPredictionProcessor
+
+trainer:
+  accelerator: gpu
+  devices: [auto]
+  seed: 1234
+  max_epochs: 45
+  batch_size: 200
+  gradient_clip_val: 5.0
+
+checkpoint:
+  monitor: Epoch
+  mode: max
+  save_top_k: 20
+  every_n_epochs: 5
+  save_last: True
+
+optimizer:
+  method:
+    type: Adam
+    weight_decay: 1.e-6
+  lr_scheduler:
+    type: WarmupInvRsqrtLR
+    lr_max: 0.01
+
+loss:
+  type: PausesPredictionLoss
+
+net:
+  type: SimpleModel
+  params:
+    use_learnable_speaker_emb: True
+    speaker_emb_dim: 16
+    num_additional_seqs: 4
+    encoder_rnn_dim: 64
+    encoder_emb_dim: 64
+    token_emb_dim: 64
+    use_convolutions: True
+    dropout: 0.3
+    encoder_n_convolutions: 3
