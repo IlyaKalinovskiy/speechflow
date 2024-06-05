@@ -32,9 +32,9 @@ class WorkerPool:
         )
         return init_class_from_config(WorkerPool, cfg)()
 
-    def start(self, timeout: float = 0.01):
+    def start(self, timeout: float = 0.1, tick: float = 0.05):
         for w in self._workers:
-            w.start(timeout=timeout)
+            w.start(timeout, tick)
 
         while True:
             if any([w.exitcode is not None and w.exitcode > 0 for w in self._workers]):

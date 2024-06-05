@@ -70,7 +70,7 @@ class LoggingServer(ProcessWorker):
         self._profiler_store: tp.Dict[str, tp.List[ProfilerData]] = defaultdict(list)
         self._track_process: tp.Dict[int, ProcessData] = defaultdict(ProcessData)
         self._timer = Profiler(auto_logging=False)
-        self._log_timeout = 3600
+        self._info_logging_timeout = 3600
 
         os.environ["LoggingServerAddress"] = self._addr
 
@@ -78,10 +78,6 @@ class LoggingServer(ProcessWorker):
             self._log_file = _create_log_file(Path(self._log_file), self._log_name)
             suffix = datetime.now().strftime("%d_%b_%Y_%H_%M_%S") + f"_{port}_"
             self._log_file = self._log_file.with_name(suffix + self._log_file.name)
-            self._log_file.write_text(
-                trace(self, message=f"LoggingServer has been started at {self._addr}\n"),
-                "utf-8",
-            )
 
     @property
     def name(self) -> str:
@@ -103,7 +99,7 @@ class LoggingServer(ProcessWorker):
     def error(self):
         return self.logger.error
 
-    def start(self, timeout: float = 10.0):
+    def start(self, timeout: float = 5.0, tick: float = 0.25):
         from speechflow.logging.logger import create_logger
 
         try:
@@ -111,17 +107,20 @@ class LoggingServer(ProcessWorker):
                 LOGGER.warning(trace(self, message="LoggingServer already started"))
                 return
 
-            super().start(timeout)
+            super().start(timeout, tick)
 
-            time.sleep(5.0)
+            time.sleep(timeout)
             self._named_logger = create_logger(self._log_name)
 
+            self._write_message_to_file(
+                trace(self, message=f"LoggingServer has been started at {self._addr}")
+            )
         except Exception as e:
             self.finish()
             raise e
 
-    def finish(self, timeout: float = 10.0):
-        super().finish(timeout)
+    def finish(self, timeout: float = 5.0, tick: float = 0.25):
+        super().finish(timeout, tick)
         if self._named_logger:
             self._named_logger.handlers = []
 
@@ -261,7 +260,7 @@ class LoggingServer(ProcessWorker):
                 else:
                     self._write_message_to_file(msg)
 
-            if self._timer.get_time() > self._log_timeout:
+            if self._timer.get_time() > self._info_logging_timeout:
                 self._profile_info()
                 self._process_info()
                 self._timer.reset()

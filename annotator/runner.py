@@ -10,6 +10,8 @@ from pathlib import Path
 
 import numpy as np
 
+from tqdm import tqdm
+
 from annotator.align import main as run_align
 from annotator.audio_transcription import main as run_audio_transcription
 from annotator.eval_interface import AnnotatorEvaluationInterface
@@ -77,7 +79,7 @@ def parse_args():
         "--batch_size",
         help="num samples in batch",
         type=int,
-        default=24,  # required 24GB GPU memory
+        default=24,
     )
     arguments_parser.add_argument(
         "-epochs",
@@ -498,7 +500,9 @@ def _calc_statistics(
 
             if meta.get("many", False):
                 sub_dirs = [x for x in segs_root.iterdir() if x.is_dir()]
-                for item in sub_dirs:
+                for item in tqdm(
+                    sub_dirs, desc=f"Calculating statistics for '{name}' dataset"
+                ):
                     segs_list = list(item.rglob("*.TextGridStage2"))
                     duration = get_duration(segs_list)
                     LOGGER.info(
@@ -514,7 +518,7 @@ def _calc_statistics(
 
     LOGGER.info(f"Num speakers: {num_speakers}")
     LOGGER.info(f"Num samples: {num_samples}")
-    LOGGER.info(f"Total audio duration in hours: {np.round(total_duration / 3600, 3)}")
+    LOGGER.info(f"Total audio duration in hours: {np.round(total_duration, 3)}")
 
 
 def _get_pretrained_path(output_dir: Path, lang: str, langs_filter=None) -> tp.List[Path]:

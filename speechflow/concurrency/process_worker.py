@@ -74,14 +74,14 @@ class ProcessWorker(AbstractWorker, mp.Process, ABC):
                 else:
                     LOGGER.info(trace(e, message="restart run()"))
 
-    def start(self, timeout: float = 0.0):
+    def start(self, timeout: float = 1.0, tick: float = 0.2):
         super().start()
-        self._start_timeout(timeout)
+        self._start_timeout(timeout, tick)
 
-    def finish(self, timeout: float = 1.0):
+    def finish(self, timeout: float = 1.0, tick: float = 0.2):
         try:
             self.deactivate()
-            self._finish_timeout(timeout)
+            self._finish_timeout(timeout, tick)
             if self.is_alive():
                 self.terminate()
         except AttributeError:
@@ -89,8 +89,10 @@ class ProcessWorker(AbstractWorker, mp.Process, ABC):
         except Exception as e:
             LOGGER.error(trace(self, e))
 
-    def _start_timeout(self, timeout: float, tick: float = 0.5):
-        counter = 0.0
+    def _start_timeout(self, timeout: float, tick: float):
+        time.sleep(timeout)
+
+        counter = 0
         while not (self.is_started() and self.is_active()):
             if 0 < timeout < counter:
                 break
@@ -102,14 +104,12 @@ class ProcessWorker(AbstractWorker, mp.Process, ABC):
             time.sleep(tick)
             counter += tick
 
-        time.sleep(1.0)
+    def _finish_timeout(self, timeout: float, tick: float):
+        time.sleep(timeout)
 
-    def _finish_timeout(self, timeout: float, tick: float = 0.5):
-        counter = 0.0
+        counter = 0
         while self.is_started():
             if 0 < timeout < counter:
                 break
             time.sleep(tick)
             counter += tick
-
-        time.sleep(1.0)
