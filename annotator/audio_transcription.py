@@ -15,7 +15,7 @@ from speechflow.utils.gpu import get_total_gpu_memory
 __all__ = ["main"]
 
 LOGGER = logging.getLogger("root")
-OPENAI_ASR_TOTAL_GPU_MEM: int = 12
+OPENAI_ASR_TOTAL_GPU_MEM: int = 11
 
 
 def parse_args():

@@ -440,14 +440,26 @@ def _get_speakers_profile(
         if any(speaker not in speakers_profile for speaker in speakers_filter):
             raise KeyError(f"Filter is not valid! {speakers_filter}")
 
+        speakers_profile = {
+            k: v for k, v in speakers_profile.items() if k in speakers_filter
+        }
+
     return speakers_profile
 
 
-def _get_multilang_speakers_profile(data_root: Path):
+def _get_multilang_speakers_profile(
+    data_root: Path,
+    langs_filter: tp.Optional[tp.List[str]] = None,
+    speakers_filter: tp.Optional[tp.List[str]] = None,
+):
     languages_conf = Config.create_from_file(data_root / "languages.yml")
     total_speakers_profile = {}
     duplicates = []
     for lang, meta in languages_conf.items():
+        if langs_filter and lang not in langs_filter:
+            LOGGER.info(f"Skip '{lang}' language dataset")
+            continue
+
         speakers_profile_path = data_root / meta["root"] / "speakers.yml"
         if not speakers_profile_path.exists():
             raise FileNotFoundError(speakers_profile_path)
@@ -468,6 +480,14 @@ def _get_multilang_speakers_profile(data_root: Path):
     for sp_name in set(duplicates):
         new_sp_name = f"{sp_name}_{total_speakers_profile[sp_name]['lang']}"
         total_speakers_profile[new_sp_name] = total_speakers_profile.pop(sp_name)
+
+    if speakers_filter:
+        if any(speaker not in total_speakers_profile for speaker in speakers_filter):
+            raise KeyError(f"Filter is not valid! {speakers_filter}")
+
+        total_speakers_profile = {
+            k: v for k, v in total_speakers_profile.items() if k in speakers_filter
+        }
 
     return total_speakers_profile
 
@@ -568,7 +588,9 @@ def main(
             pretrained_path = _get_pretrained_path(output_dir, lang, langs_filter)
 
         if lang == "MULTILANG":
-            speakers_profile = _get_multilang_speakers_profile(data_root)
+            speakers_profile = _get_multilang_speakers_profile(
+                data_root, langs_filter, speakers_filter
+            )
         else:
             speakers_profile = _get_speakers_profile(
                 data_root,

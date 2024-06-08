@@ -139,7 +139,7 @@ class LoggingServer(ProcessWorker):
         logging_server.start()
 
         try:
-            yield logging_server.logger
+            yield logging_server
 
         except Exception as e:
             logging_server.error(trace("LoggingServer", e))

@@ -75,8 +75,14 @@ class ProcessWorker(AbstractWorker, mp.Process, ABC):
                     LOGGER.info(trace(e, message="restart run()"))
 
     def start(self, timeout: float = 1.0, tick: float = 0.2):
-        super().start()
-        self._start_timeout(timeout, tick)
+        try:
+            super().start()
+            self._start_timeout(timeout, tick)
+        except KeyboardInterrupt:
+            self.terminate()
+            raise KeyboardInterrupt
+        except Exception as e:
+            LOGGER.error(trace(self, e))
 
     def finish(self, timeout: float = 1.0, tick: float = 0.2):
         try:
@@ -84,10 +90,17 @@ class ProcessWorker(AbstractWorker, mp.Process, ABC):
             self._finish_timeout(timeout, tick)
             if self.is_alive():
                 self.terminate()
-        except AttributeError:
-            pass
+        except KeyboardInterrupt:
+            self.terminate()
+            raise KeyboardInterrupt
         except Exception as e:
             LOGGER.error(trace(self, e))
+
+    def terminate(self):
+        try:
+            super().terminate()
+        except AttributeError:
+            pass
 
     def _start_timeout(self, timeout: float, tick: float):
         time.sleep(timeout)
