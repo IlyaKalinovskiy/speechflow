@@ -42,7 +42,7 @@ preproc:
          add_pauses_from_timestamps, add_service_tokens, text,
          int_durations, calc_invert_durations, phonemes_by_frames, float_durations,
          curvature_estimate_by_phoneme, average_by_time, norm_1, aggregate_by_phoneme, norm_2,
-         ssl_features, lm]
+         lm, ssl_features]
   pipe_cfg:
     audio_load:
       type: SignalProcessor
@@ -116,10 +116,6 @@ preproc:
     float_durations:
       type: calc_durations
       as_int: False
-    ssl_features:
-      type: SSLProcessor
-      ssl_type: Wav2Vec
-      resize_from: mel
     lm:
       type: LMProcessor
       lang: { default: MULTILANG, ru: RU, en: EN }
@@ -130,9 +126,12 @@ preproc:
         ml: multilingual_text_parser/data/common/xlm-roberta-large
       model_name: { default: model, ru: ruRoBerta, en: model, ml: model }
       by_phonemes: False
-    style:
-      type: StyleCondition
-      freq_mask: True
+    ssl_features:
+      type: SSLProcessor
+      ssl_type:
+        default: Wav2Vec
+        ml: WavLM
+      resize_from: mel
 
 singleton_handlers:
   handlers: [SpeakerIDSetter, StatisticsRange, MeanBioEmbeddings]

@@ -197,7 +197,7 @@ class Dataset:
     def filter(self, func: tp.Callable):
         self._samples = [
             item
-            for item in tqdm(self._samples, desc="Filtering a dataset", leave=False)
+            for item in tqdm(self._samples, desc="Dataset filtering", leave=False)
             if func(self._deserialize(item)[0])
         ]
 

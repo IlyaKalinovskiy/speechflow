@@ -370,7 +370,7 @@ class WavLM(BaseSSLModel):
         device: str = "cpu",
         audio_duration_min: tp.Optional[float] = None,
         audio_duration_max: tp.Optional[float] = None,
-        model_name: str = "WAVLM_BASE_PLUS",
+        model_name: tp.Literal["WAVLM_BASE_PLUS", "WAVLM_LARGE"] = "WAVLM_LARGE",
         model_dir: tp.Optional[tp_PATH] = None,
         num_layer: int = 9,
     ):
