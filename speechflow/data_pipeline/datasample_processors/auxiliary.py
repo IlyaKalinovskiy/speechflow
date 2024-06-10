@@ -3,7 +3,7 @@ from copy import deepcopy as copy
 from speechflow.data_pipeline.core import DataSample
 from speechflow.data_pipeline.core.registry import PipeRegistry
 
-__all__ = ["move_field", "backup_field", "restore_field"]
+__all__ = ["move_field", "store_field", "restore_field"]
 
 
 @PipeRegistry.registry()
@@ -16,7 +16,7 @@ def move_field(ds: DataSample, key: str, as_key: str):
 
 
 @PipeRegistry.registry()
-def backup_field(ds: DataSample, key: str, as_key: str):
+def store_field(ds: DataSample, key: str, as_key: str):
     attr = getattr(ds, key, None)
     if attr is not None:
         if hasattr(attr, "get"):

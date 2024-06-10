@@ -83,7 +83,6 @@ def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         model_cfg = model_cls.update_and_validate_model_params(
             model_cfg,
             dl_train.client.info["data_config"],
-            check_losses=model_cfg.get("finetuning") is None,
         )
 
     if model_cfg.get("finetuning") is not None:

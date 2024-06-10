@@ -26,7 +26,7 @@ class PausesPredictionInput(MovableToDevice, Detachable):
     sil_masks: Tensor = None
     input_lengths: Tensor = None
     n_speakers: Tensor = None
-    speaker_embedding: Tensor = None
+    speaker_emb: Tensor = None
     speaker_ids: Tensor = None
 
 

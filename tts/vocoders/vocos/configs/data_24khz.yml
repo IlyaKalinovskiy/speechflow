@@ -6,7 +6,7 @@ dirs:
 
 file_search:
   ext: .TextGridStage3
-  with_subfolders: True
+  with_subfolders: true
 
 data_server:
   n_processes: { default: 6, debug: 1 }
@@ -27,7 +27,7 @@ parser:
   pipe_cfg:
     wave_strip:
       pad: 0.25
-      add_fade: True
+      add_fade: true
     split_by_phrases:
       max_duration: 10  # 10, 12, 15
     check_phoneme_length:
@@ -80,7 +80,7 @@ preproc:
       type: VoiceBiometricProcessor
       model_type: speechbrain
       max_wave_duration: 5
-      random_crop: True
+      random_crop: true
     backup_field:
       key: speaker_emb
       as_key: style_embedding
@@ -88,7 +88,7 @@ preproc:
       type: VoiceBiometricProcessor
       model_type: wespeaker
       max_wave_duration: 5
-      random_crop: True
+      random_crop: true
     speech_quality:
       type: SpeechQualityAssessment
     spectrogram:
@@ -123,14 +123,14 @@ preproc:
     enhancement_energy:
       type: signal_enhancement
       attributes: energy
-      smooth: True
+      smooth: true
     enhancement_pitch:
       type: signal_enhancement
       attributes: pitch
-      smooth: True
+      smooth: true
     average_by_time:
       attributes: [energy, pitch]
-      use_quantile: True
+      use_quantile: true
     norm:
       type: normalize
       attributes: [energy, pitch]
@@ -154,9 +154,9 @@ preproc:
       lang: MULTILANG
     int_durations:
       type: calc_durations
-      as_int: True
+      as_int: true
     calc_invert_durations:
-      token_level: True
+      token_level: true
     float_durations:
       type: calc_durations
       as_int: False
@@ -165,7 +165,7 @@ preproc:
       pipe: [trim]
       pipe_cfg:
         trim:
-          random_chunk: True
+          random_chunk: true
           num_samples_per_chunk: 40952
     mu_law:
       type: SignalProcessor
@@ -189,7 +189,7 @@ collate:
 
 processor:
   type: DataProcessor
-  output_collated_only: True
+  output_collated_only: true
   verbose_logging: False
   dump:
     default:
@@ -198,7 +198,7 @@ processor:
       fields: [file_path, speaker_name]
       functions: [VoiceBiometricProcessor, SpeechQualityAssessment]
       mode: file_path
-      # skip_samples_without_dump: True
+      # skip_samples_without_dump: true
     debug: ~
 
 sampler:

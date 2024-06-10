@@ -43,7 +43,7 @@ class VoiceBiometricProcessor(BaseDSProcessor):
 
     def __init__(
         self,
-        model_type: str = "resemblyzer",  # resemblyzer, speechbrain, wespeaker
+        model_type: tp.Literal["resemblyzer", "speechbrain", "wespeaker"] = "resemblyzer",
         model_name: tp.Optional[tp.Union[str, Path]] = None,
         max_wave_duration: tp.Optional[float] = None,
         fast_wave_resample: bool = True,

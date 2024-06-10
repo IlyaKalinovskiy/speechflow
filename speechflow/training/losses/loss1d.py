@@ -15,18 +15,7 @@ except ImportError:
 
 __all__ = [
     "BaseLoss1D",
-    "TokenDurations",
-    "Pitch",
-    "Energy",
-    "SpectralFlatness",
-    "AggregateEnergy",
-    "AggregatePitch",
-    "AggregateSpectralFlatness",
-    "AggregateMel",
-    "AggregateCurvEnergy",
-    "AggregateCurvPitch",
     "Gate",
-    "TokenDurations",
     "InverseSpeakerLoss",
     "MLELoss",
 ]
@@ -108,48 +97,6 @@ class BaseLoss1D(BaseLoss):
             total_loss += self.scale * loss
 
         return total_loss
-
-
-class TokenDurations(BaseLoss1D):
-    def __init__(self, **kwargs):
-        kwargs["log_scale"] = True
-        super().__init__(**kwargs)
-
-
-class Pitch(BaseLoss1D):
-    pass
-
-
-class Energy(BaseLoss1D):
-    pass
-
-
-class SpectralFlatness(BaseLoss1D):
-    pass
-
-
-class AggregateEnergy(BaseLoss1D):
-    pass
-
-
-class AggregatePitch(BaseLoss1D):
-    pass
-
-
-class AggregateSpectralFlatness(BaseLoss1D):
-    pass
-
-
-class AggregateMel(BaseLoss1D):
-    pass
-
-
-class AggregateCurvEnergy(BaseLoss1D):
-    pass
-
-
-class AggregateCurvPitch(BaseLoss1D):
-    pass
 
 
 class Gate(BaseLoss1D):

@@ -92,7 +92,7 @@ class BaseCollate:
                     values, _ = pad_2d(
                         values,
                         pad_id,
-                        height=values[0].shape[1],
+                        n_channel=values[0].shape[1],
                         multiple=multiple,
                     )
 

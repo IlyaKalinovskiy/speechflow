@@ -249,7 +249,7 @@ class VocoderEvaluationInterface(VocoderLoader):
                 spectrogram_lengths=tts_output.spectrogram_lengths,
                 energy=tts_output.additional_content.get("energy_postprocessed"),
                 pitch=tts_output.additional_content.get("pitch_postprocessed"),
-                speaker_embedding=tts_output.additional_content.get("speaker_embedding"),
+                speaker_emb=tts_output.additional_content.get("speaker_emb"),
                 additional_inputs=tts_output.additional_content,
             )
             output = self.evaluate(vocoder_input, opt)
@@ -296,9 +296,9 @@ class VocoderEvaluationInterface(VocoderLoader):
             _input = VocoderForwardInput(
                 spectrogram=collated.mel_spectrogram,
                 spectrogram_lengths=collated.spectrogram_lengths,
-                ssl_embeddings=collated.ssl_feat,
-                ssl_embeddings_lengths=collated.ssl_feat_lengths,
-                speaker_embedding=collated.speaker_emb,
+                ssl_feat=collated.ssl_feat,
+                ssl_feat_lengths=collated.ssl_feat_lengths,
+                speaker_emb=collated.speaker_emb,
                 energy=collated.energy,
                 pitch=collated.pitch,
                 additional_inputs=collated.additional_fields,

@@ -6,7 +6,7 @@ dirs:
 
 file_search:
   ext: .TextGridStage3
-  with_subfolders: True
+  with_subfolders: true
 
 data_server:
   n_processes: { default: 16, debug: 1 }
@@ -28,7 +28,7 @@ parser:
   pipe_cfg:
     wave_strip:
       pad: 0.25
-      add_fade: True
+      add_fade: true
     split_by_phrases:
       max_duration: 15  # 10, 12, 15
     check_phoneme_length:
@@ -37,7 +37,8 @@ parser:
       punctuation_marks: [".", "?"]
 
 preproc:
-  pipe: [audio_load, voice_bio, mean_bio_embedding, speech_quality, spectrogram, melscale, add_gate_value,
+  pipe: [audio_load, voice_bio_speechbrain, store_bio_emb, voice_bio_wespeaker, mean_bio_embedding,
+         speech_quality, spectrogram, melscale, add_gate_value,
          pitch, enhancement_energy, enhancement_pitch,
          add_pauses_from_timestamps, add_service_tokens, text,
          int_durations, calc_invert_durations, phonemes_by_frames, float_durations,
@@ -50,15 +51,24 @@ preproc:
       pipe_cfg:
         load:
           sample_rate: 24000
-    voice_bio:
+    voice_bio_speechbrain:
+      type: VoiceBiometricProcessor
+      model_type: speechbrain
+      max_wave_duration: 5
+      random_crop: true
+    store_bio_emb:
+      type: store_field
+      key: speaker_emb
+      as_key: ecapa_emb
+    voice_bio_wespeaker:
       type: VoiceBiometricProcessor
       model_type: wespeaker
       max_wave_duration: 5
-      random_crop: True
+      random_crop: true
     speech_quality:
       type: SpeechQualityAssessment
       max_wave_duration: 5
-      random_crop: True
+      random_crop: true
     spectrogram:
       type: SpectralProcessor
       pipe: [magnitude, energy]
@@ -81,14 +91,14 @@ preproc:
     enhancement_energy:
       type: signal_enhancement
       attributes: energy
-      smooth: True
+      smooth: true
     enhancement_pitch:
       type: signal_enhancement
       attributes: pitch
-      smooth: True
+      smooth: true
     add_pauses_from_timestamps:
       step: 0.05
-      calc_noise_level: True
+      calc_noise_level: true
     text:
       type: TextProcessor
       lang: { default: MULTILANG, ru: RU, en: EN, ml: MULTILANG }
@@ -107,12 +117,12 @@ preproc:
       normalize_by: speaker
     average_by_time:
       attributes: [durations, energy, pitch, rate]
-      use_quantile: True
+      use_quantile: true
     int_durations:
       type: calc_durations
-      as_int: True
+      as_int: true
     calc_invert_durations:
-      token_level: True
+      token_level: true
     float_durations:
       type: calc_durations
       as_int: False
@@ -153,7 +163,7 @@ collate:
 
 processor:
   type: DataProcessor
-  output_collated_only: True
+  output_collated_only: true
   verbose_logging: False
   dump:
     default:
@@ -161,18 +171,18 @@ processor:
       folder_path: !join [*data_root, *dump_folder]
       fields: [file_path, speaker_name]
       functions: [VoiceBiometricProcessor, SpeechQualityAssessment,
-                  PitchProcessor, SSLProcessor, LMProcessor]
+                  PitchProcessor, LMProcessor, SSLProcessor]
       mode: file_path
     # debug: ~
 
 sampler:
   train:
     type: WeightedSampler
-    comb_by_len: True
+    comb_by_len: true
     fields_to_compute_weight: [lang, speaker_name, intonation_type, uid]
     # fields_to_compute_weight: [speaker_name, intonation_type]  # for finetune
     epoch_size: 100000
     chunks_ratio: [0.3, 0.3, 0.2, 0.2]
   test:
     type: SimpleSampler
-    comb_by_len: True
+    comb_by_len: true

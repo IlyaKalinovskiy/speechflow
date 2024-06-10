@@ -142,7 +142,7 @@ class TTSCollate(SpectrogramCollate):
 
         if batch[0].concatenate is not None:
             concatenate = [sample.concatenate for sample in batch]
-            concatenate, _ = pad_2d(concatenate, height=concatenate[0].shape[1])
+            concatenate, _ = pad_2d(concatenate, n_channel=concatenate[0].shape[1])
         else:
             concatenate = None
 

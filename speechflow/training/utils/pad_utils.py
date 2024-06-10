@@ -10,7 +10,7 @@ __all__ = ["pad", "pad_2d", "get_mask_from_lengths2", "sequence_collate"]
 
 
 def pad(
-    sequences: tp.List[Tensor], pad_id: tp.Union[int, float] = 0, multiple: int = None
+    sequences: tp.List[Tensor], pad_val: tp.Union[int, float] = 0, multiple: int = None
 ):
     lens = [len(x) for x in sequences]
     index, max_len = max(enumerate(lens), key=itemgetter(1))
@@ -22,10 +22,10 @@ def pad(
         pad_len = 0
 
     if not sequences[0].is_floating_point():
-        pad_id = int(pad_id)
+        pad_val = int(pad_val)
 
     tensor_to_fill = (
-        torch.zeros((len(sequences), max_len + pad_len), dtype=dtype) + pad_id
+        torch.zeros((len(sequences), max_len + pad_len), dtype=dtype) + pad_val
     )
     for i, s in enumerate(sequences):
         tensor_to_fill[i, : lens[i]] = s
@@ -36,8 +36,8 @@ def pad(
 
 def pad_2d(
     sequences: tp.List[Tensor],
-    pad_id: tp.Union[int, float] = 0,
-    height: int = 80,
+    pad_val: tp.Union[int, float] = 0,
+    n_channel: int = 80,
     multiple: int = None,
 ):
     lens = [len(x) for x in sequences]
@@ -50,10 +50,10 @@ def pad_2d(
         pad_len = 0
 
     if not sequences[0].is_floating_point():
-        pad_id = int(pad_id)
+        pad_val = int(pad_val)
 
     tensor_to_fill = (
-        torch.zeros((len(lens), max_len + pad_len, height), dtype=dtype) + pad_id
+        torch.zeros((len(lens), max_len + pad_len, n_channel), dtype=dtype) + pad_val
     )
     for i, s in enumerate(sequences):
         tensor_to_fill[i, : lens[i], :] = s
@@ -100,10 +100,10 @@ def sequence_collate(
     if getattr(batch[0], attr_name) is not None:
         seq = [getattr(sample, attr_name) for sample in batch]
         if getattr(batch[0], attr_name).ndim == 1:
-            seq, seq_lens = pad(seq, pad_id=pad_id, multiple=multiple)
+            seq, seq_lens = pad(seq, pad_val=pad_id, multiple=multiple)
         else:
             seq, seq_lens = pad_2d(
-                seq, height=seq[0].shape[1], pad_id=pad_id, multiple=multiple
+                seq, n_channel=seq[0].shape[1], pad_val=pad_id, multiple=multiple
             )
         seq_lens = torch.LongTensor(seq_lens)
     else:

@@ -459,7 +459,7 @@ class DatasetStatistics(metaclass=Singleton):
         self.max_transcription_length: int = 0
         self.max_wave_duration: float = 0.0
         self.segmentations: tp.List[tp.Tuple[str, bytes]] = []
-        self.speaker_embedding: tp.Dict[str, tp.List[tp.Any]] = defaultdict(list)
+        self.speaker_emb: tp.Dict[str, tp.List[tp.Any]] = defaultdict(list)
         self.cache_folder = self._get_cache_folder(self.dump)
 
     @staticmethod
@@ -577,12 +577,12 @@ class DatasetStatistics(metaclass=Singleton):
                 seg_meta = AudioSeg.load_meta(file_path)
                 item.append(seg_meta.get("orig_wav_path"))
                 item.append(np.asarray(seg_meta.get("orig_audio_chunk")))
-                self.speaker_embedding[speaker_name].append(item)
+                self.speaker_emb[speaker_name].append(item)
             except Exception as e:
                 LOGGER.error(trace(self, e, message=file_path.as_posix()))
 
-        for name, field in self.speaker_embedding.items():
-            self.speaker_embedding[name] = np.asarray(field, dtype="object")  # type: ignore
+        for name, field in self.speaker_emb.items():
+            self.speaker_emb[name] = np.asarray(field, dtype="object")  # type: ignore
 
     def __call__(self, data: Dataset) -> Dataset:
         if self.hash:

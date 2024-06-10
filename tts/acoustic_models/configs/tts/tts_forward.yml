@@ -49,21 +49,6 @@ loss:
   DiffSpectral:
     loss_fn: l1
     scale: 0.2
-  TokenDurations:
-    loss_fn: l1
-    every_iter: 2
-  AggregateEnergy:
-    loss_fn: l1
-  AggregatePitch:
-    loss_fn: l1
-  AggregateCurvEnergy:
-    loss_fn: l1
-  AggregateCurvPitch:
-    loss_fn: l1
-  Energy:
-    loss_fn: l1
-  Pitch:
-    loss_fn: l1
   Gate:
     loss_fn: BCEl
   VAELoss:
@@ -79,10 +64,11 @@ net:
   params:
     token_emb_dim: 256
 
-    use_learnable_speaker_emb: True
-    speaker_emb_dim: 32
+    use_mean_dnn_speaker_emb: true
+    speaker_biometric_model: wespeaker
+    speaker_emb_dim: 64
 
-    use_average_emb: True
+    use_average_emb: true
     averages:
       energy:
         interval: [0, 150]
@@ -95,45 +81,49 @@ net:
     decoder_type: ForwardDecoder
     decoder_inner_dim: 1024
 
-    # addm_apply_inverse_speaker_classifier:
-    #   style_emb: 64
+    addm_apply_inverse_speaker_classifier:
+      StyleEncoder_0: 128
 
     va_variances:
-      # 0: [spectrogram_encoder]
+      0: [biometric_encoder]
       1: [aggregate_energy, aggregate_pitch]
       2: [aggregate_curv_energy, aggregate_curv_pitch]
       3: [durations]
       4: [energy, pitch]
     va_variance_params:
-      speaker_embedding_encoder:
+      biometric_encoder:
+        tag: style_emb
         dim: 192
-        predictor_type: GMVariationalAutoencoder
-        predictor_params:
-          vp_latent_dim: 64
-          vp_vae_encoder_condition: [target]
-          vp_vae_encoder_type: SimpleStyle
-          vp_gmvae_n_components: 16
-      spectrogram_encoder:
         predictor_type: StyleEncoder
         predictor_params:
+          vp_output_dim: 128
+          vp_params:
+            base_encoder_type: SimpleStyle
+            source: ecapa_emb
+            source_dim: 256
+            use_gmvae: true
+            gmvae_n_components: 16
+      spectrogram_encoder:
+        tag: style_emb
+        predictor_type: StyleEncoder
+        predictor_params:
+          vp_output_dim: 128
           vp_params:
             base_encoder_type: StyleTTS2  # StyleTTS2, StyleSpeech
-            condition: [mel_spectrogram]  # style_condition, ssl_embeddings
-            condition_dim: 80  # 80, 768
-            style_embedding_size: 128
+            source: mel_spectrogram  # ssl_feat
+            source_dim: 80  # 80, 768
         cat_to_content: []
-        tag: style_emb
       aggregate_energy:
         predictor_type: TokenLevelPredictor
-        as_embedding: True
+        as_embedding: true
         interval: [0, 1.5]
         n_bins: 256
         emb_dim: 64
         cat_to_content: [1]
       aggregate_pitch:
         predictor_type: TokenLevelPredictor
-        log_scale: True
-        as_embedding: True
+        log_scale: true
+        as_embedding: true
         interval: [0, 1.5]
         n_bins: 256
         emb_dim: 64
@@ -141,7 +131,7 @@ net:
       aggregate_curv_energy:
         predictor_type: TokenLevelPredictor
         dim: 2
-        as_embedding: True
+        as_embedding: true
         interval: [-1.58, 1.58]
         n_bins: 256
         emb_dim: 64
@@ -149,27 +139,27 @@ net:
       aggregate_curv_pitch:
         predictor_type: TokenLevelPredictor
         dim: 2
-        as_embedding: True
+        as_embedding: true
         interval: [-1.58, 1.58]
         n_bins: 256
         emb_dim: 64
         cat_to_content: [1]
       durations:
         predictor_type: TokenLevelDP
-        denormalize: True
+        denormalize: true
       energy:
         predictor_type: FrameLevelPredictor
-        denormalize: True
-        as_embedding: True
+        denormalize: true
+        as_embedding: true
         interval: [0, 150]
         n_bins: 256
         emb_dim: 128
         cat_to_content: [0]
       pitch:
         predictor_type: FrameLevelPredictor
-        denormalize: True
-        log_scale: True
-        as_embedding: True
+        denormalize: true
+        log_scale: true
+        as_embedding: true
         interval: [0, 880]
         n_bins: 256
         emb_dim: 128

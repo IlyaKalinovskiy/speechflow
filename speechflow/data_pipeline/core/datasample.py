@@ -13,6 +13,7 @@ import torch
 
 from torch import Tensor
 
+from speechflow.io.utils import tp_PATH
 from speechflow.utils.dictutils import flatten_dict, struct_dict
 
 __all__ = [
@@ -225,11 +226,11 @@ class Serialize:
 
 @dataclass
 class DataSample(ToDict, ToTensor, ToNumpy, Serialize):
-    file_path: tp.Union[str, Path] = None  # type: ignore
+    file_path: tp_PATH = None
     label: tp.Union[str, int] = ""
     index: tp.Optional[tp.Tuple[tp.Any, ...]] = None
-    transform_params: tp.Dict[str, tp.Any] = None  # type: ignore
-    additional_fields: tp.Dict[str, tp.Any] = None  # type: ignore
+    transform_params: tp.Optional[tp.Dict[str, tp.Any]] = None
+    additional_fields: tp.Optional[tp.Dict[str, tp.Any]] = None
 
     __uid = str
     __all_keys = set()  # type: ignore

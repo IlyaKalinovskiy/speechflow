@@ -239,12 +239,12 @@ class ParallelTTSModel(BaseTorchModel):
             emb = self.embedding_component.emb_calculator.speaker_emb(sp_id)
         elif self.params.use_dnn_speaker_emb and bio_emb is not None:
             sp_emb = torch.from_numpy(bio_emb).to(self.device)
-            emb = self.embedding_component.emb_calculator.speaker_embedding_proj(
+            emb = self.embedding_component.emb_calculator.speaker_emb_proj(
                 sp_emb.unsqueeze(0)
             )
         elif self.params.use_mean_dnn_speaker_emb and mean_bio_emb is not None:
             sp_emb = torch.from_numpy(mean_bio_emb).to(self.device)
-            emb = self.embedding_component.emb_calculator.speaker_embedding_proj(
+            emb = self.embedding_component.emb_calculator.speaker_emb_proj(
                 sp_emb
             ).unsqueeze(0)
         else:
@@ -280,7 +280,7 @@ class ParallelTTSModel(BaseTorchModel):
             return emb
 
         for k, module in self._modules["va"]._modules.items():
-            if "speaker_embedding_encoder" in module.va_variances:
+            if "speaker_emb_encoder" in module.va_variances:
                 break
             if any("style" in name for name in module.va_variances):
                 break
@@ -291,10 +291,7 @@ class ParallelTTSModel(BaseTorchModel):
             sampler = list(module._modules["predictors"].values())[0]
             if sampler.__class__.__name__ == "GMVariationalAutoencoder":
                 return {"style_emb": get_sample(sampler, "bio_embedding", bio_embedding)}
-            elif (
-                "spec" in list(module.predictors.values())[0].params.source
-                or "style_condition" in list(module.predictors.values())[0].params.source
-            ):
+            elif "spec" in list(module.predictors.values())[0].params.source:
                 return {"style_emb": get_sample(sampler, "spectrogram", spectrogram)}
             elif "ssl" in list(module.predictors.values())[0].params.source:
                 return {
@@ -306,12 +303,11 @@ class ParallelTTSModel(BaseTorchModel):
         return {}
 
     @classmethod
-    def update_and_validate_model_params(
-        cls, cfg_model: Config, cfg_data: Config, check_losses: bool = False, params=None
-    ):
-        cfg_model["net"]["params"].speaker_biometric_model = find_field(
-            cfg_data["preproc"], "voice_bio.model_type", "resemblyzer"
-        )
+    def update_and_validate_model_params(cls, cfg_model: Config, cfg_data: Config):
+        if "speaker_biometric_model" not in cfg_model["net"]["params"]:
+            cfg_model["net"]["params"].speaker_biometric_model = find_field(
+                cfg_data["preproc"], "voice_bio.model_type", "resemblyzer"
+            )
 
         if (
             cfg_model["net"]["params"].get("decoder_target", "spectrogram")
@@ -320,148 +316,6 @@ class ParallelTTSModel(BaseTorchModel):
             cfg_model["net"]["params"].decoder_output_dim = find_field(
                 cfg_data["preproc"], "linear_to_mel.n_mels"
             )
-
-        if params is None:
-            params = ParallelTTSParams.create(cfg_model["net"]["params"])
-
-        if params.va_variances is None:
-            return cfg_model
-
-        pipe = cfg_data["preproc"]["pipe"]
-
-        loss_names = [
-            "TokenDurations",
-            "Energy",
-            "Pitch",
-            "SpectralFlatness",
-            "AggregateEnergy",
-            "AggregatePitch",
-            "AggregateSpectralFlatness",
-            "AggregateMel",
-            "AggregateCurvEnergy",
-            "AggregateCurvPitch",
-        ]
-        var_names = [
-            "durations",
-            "energy",
-            "pitch",
-            "spectral_flatness",
-            "aggregate_energy",
-            "aggregate_pitch",
-            "aggregate_spectral_flatness",
-            "aggregate_mel",
-            "aggregate_curv_energy",
-            "aggregate_curv_pitch",
-            "prosody",
-        ]
-
-        all_va_variances = [t for v in params.va_variances.values() for t in v]
-        for name in all_va_variances:
-            if name not in var_names:
-                var_params = params.va_variance_params.get(name)
-                if (
-                    var_params is not None
-                    and var_params.predictor_params is not None
-                    and (
-                        "Dummy" in var_params.predictor_type
-                        or "Upsample" in var_params.predictor_type
-                        or var_params.target is not None
-                        or var_params.with_loss
-                    )
-                ):
-                    continue
-
-                raise RuntimeError(f"Unknown variable '{name}'. Check variance name.")
-
-        if check_losses:
-            for loss_name, var_name in zip(loss_names, var_names):
-                if loss_name in cfg_model["loss"]:
-                    if var_name not in all_va_variances:
-                        raise ValueError(
-                            f"Missing {var_name} feature for {loss_name} loss."
-                        )
-                    cfg_model["loss"][loss_name].setdefault("log_scale", False)
-                    cfg_model["loss"][loss_name].log_scale = params.va_variance_params[
-                        var_name
-                    ].log_scale
-
-            for loss_name, var_name in zip(loss_names, var_names):
-                if var_name in all_va_variances:
-                    if (
-                        loss_name not in cfg_model["loss"]
-                        and not params.va_variance_params[var_name].with_loss
-                    ):
-                        raise ValueError(
-                            f"Missing {loss_name} loss for {var_name} feature."
-                        )
-
-        target_vars = {"durations", "energy", "pitch", "spectral_flatness"}
-        for name in target_vars:
-            for var_name in all_va_variances:
-                if name in var_name:
-                    max_value = params.va_variance_params[var_name].interval[1]
-                    if not params.va_variance_params[var_name].as_embedding:
-                        continue
-
-                    for fn_name in pipe:
-                        if "norm" in fn_name:
-                            attributes = (
-                                cfg_data["preproc"].get(fn_name, {}).get("attributes", [])
-                            )
-                            if not any(name[:-3] in attr for attr in attributes):
-                                continue
-                            normalize_aggregate = (
-                                cfg_data["preproc"]
-                                .get(fn_name, {})
-                                .get("normalize_aggregate", False)
-                            )
-                            if (
-                                var_name in target_vars
-                                and max_value > 2.0
-                                and not normalize_aggregate
-                                and not params.va_variance_params[var_name].denormalize
-                            ):
-                                pass
-                                # raise ValueError(f"{var_name} intervals is not valid!")
-                            if not normalize_aggregate and "aggregate_by_phoneme" in pipe:
-                                normalize_aggregate = pipe.index(
-                                    "aggregate_by_phoneme"
-                                ) > pipe.index(fn_name)
-                            if (
-                                "curv" not in var_name
-                                and var_name not in target_vars
-                                and max_value > 2.0
-                                and normalize_aggregate
-                                and not params.va_variance_params[var_name].denormalize
-                            ):
-                                raise ValueError(f"{var_name} intervals is not valid!")
-                            break
-                    else:
-                        if (
-                            max_value <= 1
-                            and "spectral_flatness" not in var_name
-                            and "encoder" not in var_name
-                        ):
-                            raise ValueError(f"{var_name} intervals is not valid!")
-
-        if "aggregate_by_phoneme" in pipe:
-            attributes = find_field(
-                cfg_data["preproc"], "aggregate_by_phoneme.attributes", []
-            )
-            attributes += find_field(
-                cfg_data["preproc"], "curvature_estimate_by_phoneme.attributes", []
-            )
-            va_variance_params = cfg_model["net"]["params"].setdefault(
-                "va_variance_params", {}
-            )
-            for attr_name in attributes:
-                for var_name in all_va_variances:
-                    if (
-                        f"aggregate_{attr_name[:-3]}" in var_name
-                        or f"aggregate_curv_{attr_name[:-3]}" in var_name
-                    ):
-                        va_params = va_variance_params.setdefault(var_name, {})
-                        va_params["aggregate_by_tokens"] = True
 
         if "SSIM" in cfg_model["loss"]:
             max_abs_value = find_field(cfg_data["preproc"], "normalize.max_abs_value")

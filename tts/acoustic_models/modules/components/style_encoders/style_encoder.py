@@ -7,24 +7,23 @@ from torch import nn
 from torch.nn import functional as F
 from vector_quantize_pytorch import ResidualFSQ
 
-from speechflow.training.base_model import BaseTorchModelParams
 from speechflow.training.utils.tensor_utils import get_lengths_from_mask
 from tts.acoustic_models.modules.component import Component
+from tts.acoustic_models.modules.params import VariancePredictorParams
 
 __all__ = ["StyleEncoder", "StyleEncoderParams"]
 
 
-class StyleEncoderParams(BaseTorchModelParams):
+class StyleEncoderParams(VariancePredictorParams):
     base_encoder_type: tp.Literal[
         "SimpleStyle", "StyleSpeech", "StyleTTS2"
     ] = "SimpleStyle"
     base_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
     source: str = "spectrogram"
     source_dim: int = 80
-    style_emb_dim: int = 256
     min_spec_len: int = 256
     max_spec_len: int = 512
-    use_vae: bool = False
+    use_gmvae: bool = False
     gmvae_n_components: int = 16
     use_fsq: bool = False
     fsq_levels: tp.Tuple[int, ...] = (
@@ -50,7 +49,7 @@ class StyleEncoder(Component):
 
         self.encoder = enc_cls(enc_params, params.source_dim)
 
-        if params.use_vae:
+        if params.use_gmvae:
             self.gmvae = GMVAE(
                 self.encoder.output_dim,
                 self.encoder.output_dim,
@@ -75,7 +74,7 @@ class StyleEncoder(Component):
 
         style_emb = self.encoder(x, x_mask, **kwargs)[0]
 
-        if self.params.use_vae:
+        if self.params.use_gmvae:
             gmvae_emb, content, losses = self.gmvae(
                 style_emb, sigma_multiplier=kwargs.get("sigma_multiplier", 0.0)
             )
@@ -174,7 +173,7 @@ class GMVAE(nn.Module):
             scale=(logvar_posteriors / 2.0).exp().unsqueeze(1),
         )
 
-        sample = posterior_sample.unsqueeze(1)
+        sample = posterior_sample
 
         cat_prior = torch.distributions.Categorical(
             probs=torch.ones(1, n_components, device=sample.device) / n_components

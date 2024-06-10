@@ -102,14 +102,12 @@ class SpectralProcessor(BaseSpectrogramProcessor):
             "hop_len",
         },
     )
-    def process(
-        self, ds: tp.Union[SpectrogramDataSample, tp.Any]
-    ) -> SpectrogramDataSample:
+    def process(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
         return super().process(ds)
 
     def _stft(
         self,
-        wave: npt.NDArray,
+        waveform: npt.NDArray,
         n_fft: int,
         hop_len: int,
         win_len: int,
@@ -122,7 +120,7 @@ class SpectralProcessor(BaseSpectrogramProcessor):
 
         if self.backend == ComputeBackend.librosa:
             stft = librosa.stft(
-                y=wave,
+                y=waveform,
                 n_fft=n_fft,
                 hop_length=hop_len,
                 win_length=win_len,
@@ -131,10 +129,10 @@ class SpectralProcessor(BaseSpectrogramProcessor):
             )
 
         elif self.backend == ComputeBackend.torchaudio:
-            wave = torch.from_numpy(wave)
+            waveform = torch.from_numpy(waveform)
             window = torch.from_numpy(self.window)
             stft = torch.stft(
-                wave, n_fft, hop_len, win_len, window=window, return_complex=True
+                waveform, n_fft, hop_len, win_len, window=window, return_complex=True
             )
 
         elif self.backend == ComputeBackend.nvidia:
@@ -145,8 +143,8 @@ class SpectralProcessor(BaseSpectrogramProcessor):
                     win_length=win_len,
                 )
 
-            wave = torch.from_numpy(wave)
-            stft = self.stft_module(wave)
+            waveform = torch.from_numpy(waveform)
+            stft = self.stft_module(waveform)
 
         else:
             raise NotImplementedError(
@@ -334,9 +332,7 @@ class MelProcessor(BaseSpectrogramProcessor):
         inputs={"magnitude"},
         outputs={"mel", "precomputed_mel"},
     )
-    def process(
-        self, ds: tp.Union[SpectrogramDataSample, tp.Any]
-    ) -> SpectrogramDataSample:
+    def process(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
         return super().process(ds)
 
     @property
@@ -632,7 +628,7 @@ class PitchProcessor(BaseSpectrogramProcessor):
         device: str = "cpu",
     ):
         super().__init__(
-            [self.__class__.__name__],
+            (self.__class__.__name__,),
             self.get_config_from_locals(locals()),
             device=device,
         )
@@ -644,15 +640,10 @@ class PitchProcessor(BaseSpectrogramProcessor):
         self.batch_size = batch_size
 
     @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"pitch"})
-    def process(
-        self, ds: tp.Union[SpectrogramDataSample, tp.Any]
-    ) -> SpectrogramDataSample:
+    def process(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
         return super().process(ds)
 
-    def __call__(
-        self,
-        ds: SpectrogramDataSample,
-    ) -> SpectrogramDataSample:
+    def __call__(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
         audio_chunk = ds.audio_chunk
         assert audio_chunk.waveform.max() > 5.0e-3, "Sound is very quiet!"
 
@@ -662,14 +653,14 @@ class PitchProcessor(BaseSpectrogramProcessor):
             audio_chunk = ds.audio_chunk
 
         sample_rate = audio_chunk.sr
-        wave = audio_chunk.waveform
+        waveform = audio_chunk.waveform
         hop_len = ds.get_param_val("hop_len")
 
         if self.method == "pyworld":
             assert sample_rate >= 16000, "sample rate must be greater or equal 16KHz!"
-            wave = audio_chunk.astype(np.float64).waveform
+            waveform = audio_chunk.astype(np.float64).waveform
             f0, _ = pw.dio(
-                wave,
+                waveform,
                 audio_chunk.sr,
                 frame_period=pw.default_frame_period,
                 f0_floor=self.f0_min,
@@ -679,7 +670,7 @@ class PitchProcessor(BaseSpectrogramProcessor):
         elif self.method == "yin":
             raise ValueError("YIN method is deprecated!")
             # f0, _, _, _ = compute_yin(
-            #     wave,
+            #     waveform,
             #     sr=sample_rate,
             #     w_len=n_fft,
             #     w_step=hop_len,
@@ -693,7 +684,7 @@ class PitchProcessor(BaseSpectrogramProcessor):
             raise ValueError("CREPE method is deprecated!")
             # step_size = hop_len * 1000 / sample_rate
             # _, f0, confidence, _ = crepe.predict(
-            #     wave,
+            #     waveform,
             #     sample_rate,
             #     step_size=step_size,
             #     viterbi=True,
@@ -706,7 +697,7 @@ class PitchProcessor(BaseSpectrogramProcessor):
         elif self.method == "torchcrepe":
             with torch.inference_mode():
                 f0, harmonicity = torchcrepe.predict(
-                    torch.from_numpy(wave).unsqueeze(0),
+                    torch.from_numpy(waveform).unsqueeze(0),
                     sample_rate,
                     None,
                     self.f0_min,
@@ -737,7 +728,7 @@ class PitchProcessor(BaseSpectrogramProcessor):
                 yingram = getattr(self, "yingram")
 
             with torch.inference_mode():
-                f0 = yingram(torch.FloatTensor(wave).to(self.device)).cpu()
+                f0 = yingram(torch.FloatTensor(waveform).to(self.device)).cpu()
                 f0 = torch.cat([f0, torch.zeros((f0.shape[0], 1))], dim=1)
                 f0 = np.clip(f0.transpose(1, 0).numpy().T, a_min=0, a_max=4)
 
@@ -822,9 +813,7 @@ class LPCProcessor(BaseSpectrogramProcessor):
         inputs={"magnitude", "mel"},
         outputs={"lpc", "lpc_feat"},
     )
-    def process(
-        self, ds: tp.Union[SpectrogramDataSample, tp.Any]
-    ) -> SpectrogramDataSample:
+    def process(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
         return super().process(ds)
 
     def lpc_from_linear(

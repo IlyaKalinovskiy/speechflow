@@ -18,7 +18,7 @@ class DummyStyle(Component):
 
     @property
     def output_dim(self):
-        return self.params.style_emb_dim
+        return self.params.vp_output_dim
 
     def encode(self, x, x_mask, **kwargs):
         return x

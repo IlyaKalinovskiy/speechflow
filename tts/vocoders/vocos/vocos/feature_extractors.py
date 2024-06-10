@@ -103,7 +103,7 @@ class AudioFeatures(FeatureExtractor):
         style_feat_type: tp.Literal[
             "linear_spec", "mel_spec", "ssl_feat", "speaker_emb"
         ] = "mel_spec",
-        style_use_vae: bool = True,
+        style_use_gmvae: bool = True,
         style_use_fsq: bool = False,
         vq_type: tp.Literal["vq", "rvq", "rfsq", "rlfq"] = "rlfq",
         vq_emb_dim: int = 256,
@@ -186,15 +186,15 @@ class AudioFeatures(FeatureExtractor):
                 base_encoder_type=style_encoder_type,
                 source=style_feat_type,
                 source_dim=_get_feat_dim(style_feat_type),
-                style_emb_dim=condition_emb_dim,
+                vp_output_dim=condition_emb_dim,
                 min_spec_len=128,
                 max_spec_len=512,
-                use_vae=style_use_vae,
+                use_gmvae=style_use_gmvae,
                 use_fsq=style_use_fsq,
             )
             self.style_enc = StyleEncoder(style_params, 0)
 
-            if style_use_vae:
+            if style_use_gmvae:
                 self.vae_scheduler = VAELoss(
                     scale=0.00002,
                     every_iter=1,
@@ -404,7 +404,7 @@ class AudioFeatures(FeatureExtractor):
                 source, source_mask, model_inputs=inputs
             )
 
-            if self.style_enc.params.use_vae:
+            if self.style_enc.params.use_gmvae:
                 for name, val in style_losses.items():
                     if "kl_loss" in name:
                         val = self.vae_scheduler(global_step, val, name)

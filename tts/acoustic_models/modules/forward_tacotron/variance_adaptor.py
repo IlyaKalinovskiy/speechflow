@@ -78,7 +78,10 @@ class ForwardVarianceAdaptor(Component):
             for key in vp_params.to_dict():
                 if key in predictor_params.to_dict():
                     setattr(vp_params, key, getattr(predictor_params, key))
-            vp_params.vp_output_dim = variance_params.dim
+
+            if "Encoder" not in variance_params.predictor_type:
+                vp_params.vp_output_dim = variance_params.dim
+
             self.predictors[name] = predictor_cls(vp_params, content_dim)
 
         self.embeddings = torch.nn.ModuleDict()

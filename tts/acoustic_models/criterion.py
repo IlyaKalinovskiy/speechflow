@@ -39,32 +39,10 @@ class TTSLoss(BaseCriterion):
                     self.spectral_loss.append(loss)
                 elif isinstance(loss, BaseAttention):
                     self.attention_loss.append(loss)
-                elif isinstance(loss, TokenDurations):
-                    self.durations_loss = loss
-                elif isinstance(loss, Energy):
-                    self.energy_loss = loss
-                elif isinstance(loss, Pitch):
-                    self.pitch_loss = loss
-                elif isinstance(loss, SpectralFlatness):
-                    self.spectral_flatness_loss = loss
-                elif isinstance(loss, AggregateEnergy):
-                    self.aggregate_energy_loss = loss
-                elif isinstance(loss, AggregatePitch):
-                    self.aggregate_pitch_loss = loss
-                elif isinstance(loss, AggregateSpectralFlatness):
-                    self.aggregate_spectral_flatness_loss = loss
-                elif isinstance(loss, AggregateMel):
-                    self.aggregate_mel_loss = loss
-                elif isinstance(loss, AggregateCurvEnergy):
-                    self.aggregate_curv_energy_loss = loss
-                elif isinstance(loss, AggregateCurvPitch):
-                    self.aggregate_curv_pitch_loss = loss
                 elif isinstance(loss, Gate):
                     self.gate_loss = loss
                 elif isinstance(loss, VAELoss):
                     self.vae_loss = loss
-                elif isinstance(loss, TokenDurations):
-                    self.word_durations_loss = loss
                 elif isinstance(loss, InverseSpeakerLoss):
                     self.inverse_speaker_loss = loss
                 elif isinstance(loss, MLELoss):

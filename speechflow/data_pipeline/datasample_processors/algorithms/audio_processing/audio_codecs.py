@@ -185,11 +185,11 @@ class VocosAC(BaseAudioCodecModel):
             spectrogram_lengths=lens,
             linear_spectrogram=ds.magnitude.unsqueeze(0).to(self.device),
             linear_spectrogram_lengths=lens,
-            ssl_embeddings=ds.ssl_feat.encode.unsqueeze(0).to(self.device),
-            ssl_embeddings_lengths=lens,
+            ssl_feat=ds.ssl_feat.encode.unsqueeze(0).to(self.device),
+            ssl_feat_lengths=lens,
             energy=ds.energy.unsqueeze(0).to(self.device),
             pitch=ds.pitch.unsqueeze(0).to(self.device),
-            speaker_embedding=ds.speaker_emb.to(self.device),
+            speaker_emb=ds.speaker_emb.to(self.device),
             lang_id=torch.LongTensor([self.voc.lang_id_map[ds.lang]] * len(lens)).to(
                 self.device
             ),

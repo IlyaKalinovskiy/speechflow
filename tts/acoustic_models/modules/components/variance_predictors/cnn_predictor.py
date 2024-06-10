@@ -13,7 +13,6 @@ __all__ = ["CNNPredictor", "CNNPredictorParams"]
 
 
 class CNNPredictorParams(VariancePredictorParams):
-    latent_dim: int = 256
     kernel_sizes: tp.Tuple[int, ...] = (3, 7, 13, 3)
     dropout: float = 0.1
     as_encoder: bool = False
@@ -63,13 +62,11 @@ class CNNPredictor(Component):
             nn.Dropout(params.dropout),
         )
 
-        self.latent = nn.Linear(params.vp_inner_dim, params.latent_dim)
-
         self.predictor = nn.Sequential(
             nn.ReLU(),
-            nn.Linear(params.latent_dim, params.latent_dim),
+            nn.Linear(params.vp_inner_dim, params.vp_inner_dim),
             nn.ReLU(),
-            nn.Linear(params.latent_dim, params.vp_output_dim),
+            nn.Linear(params.vp_inner_dim, params.vp_output_dim),
         )
 
     @property
@@ -77,7 +74,7 @@ class CNNPredictor(Component):
         return (
             self.params.vp_output_dim
             if self.params.as_encoder
-            else self.params.latent_dim
+            else self.params.vp_inner_dim
         )
 
     def encode(self, x, x_mask, **kwargs):
@@ -91,7 +88,7 @@ class CNNPredictor(Component):
         for conv_1 in after_first_conv:
             after_second_conv += conv_1
 
-        output = self.latent(after_second_conv)
+        output = after_second_conv
 
         if output.shape[1] > 1 and x_mask is not None:
             output = apply_mask(output, x_mask)

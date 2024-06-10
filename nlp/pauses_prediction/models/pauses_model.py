@@ -36,7 +36,7 @@ class SimpleModel(EmbeddingCalculator):
 
     def forward(self, inputs: PausesPredictionInput) -> PausesPredictionOutput:  # type: ignore
         ling_feat = self.get_ling_feat(inputs)  # type: ignore
-        speaker_embedding = self.get_speaker_embedding(inputs)  # type: ignore
+        speaker_emb = self.get_speaker_embedding(inputs)  # type: ignore
 
         sil_masks = inputs.sil_masks
         ilens = inputs.input_lengths
@@ -47,10 +47,8 @@ class SimpleModel(EmbeddingCalculator):
 
         encoder_output = self.encoder(x, ilens)
 
-        if speaker_embedding is not None:
-            se_to_concat = speaker_embedding.unsqueeze(1).expand(
-                -1, encoder_output.size(1), -1
-            )
+        if speaker_emb is not None:
+            se_to_concat = speaker_emb.unsqueeze(1).expand(-1, encoder_output.size(1), -1)
             encoder_output = torch.cat([encoder_output, se_to_concat], dim=-1)
 
         predicted_durations = self.decoder(encoder_output)

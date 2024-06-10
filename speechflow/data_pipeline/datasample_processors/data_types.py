@@ -60,9 +60,9 @@ class AudioCodecFeatures(ToTensor, ToNumpy):
 @dataclass(eq=False)
 class AudioDataSample(DataSample):
     audio_chunk: AudioChunk = None  # type: ignore
-    lang: tp.Optional[str] = None  # type: ignore
-    lang_id: tp.Optional[int] = None  # type: ignore
-    speaker_name: tp.Optional[str] = None  # type: ignore
+    lang: str = None  # type: ignore
+    lang_id: int = None  # type: ignore
+    speaker_name: str = None  # type: ignore
     speaker_id: int = 0
     speaker_emb: tp_DATA = None  # type: ignore
     speaker_emb_mean: tp_DATA = None  # type: ignore
@@ -87,12 +87,12 @@ class AudioDataSample(DataSample):
 @dataclass(eq=False)
 class SpectrogramDataSample(AudioDataSample):
     magnitude: tp_DATA = None  # type: ignore
+    mel: tp_DATA = None  # type: ignore
     energy: tp_DATA = None  # type: ignore
     spectral_flatness: tp_DATA = None  # type: ignore
     spectral_tilt: tp_DATA = None  # type: ignore
     spectral_envelope: tp_DATA = None  # type: ignore
     pitch: tp_DATA = None  # type: ignore
-    mel: tp_DATA = None  # type: ignore
     precomputed_mel: tp_DATA = None  # type: ignore
     averages: tp.Dict[str, tp_DATA] = None  # type: ignore
     ranges: tp.Dict[str, tp_DATA] = None  # type: ignore
@@ -109,7 +109,7 @@ class SpectrogramDataSample(AudioDataSample):
 @dataclass(eq=False)
 class TextDataSample(DataSample):
     sent: Sentence = None  # type: ignore
-    symbols: tp.Optional[tp.Tuple[str, ...]] = None  # type: ignore
+    symbols: tp.Tuple[str, ...] = None  # type: ignore
     transcription: tp_DATA = None  # type: ignore
     ling_feat: tp.Dict[str, tp_DATA] = None  # type: ignore
     intonation_type: int = None  # type: ignore
@@ -136,8 +136,7 @@ class TTSDataSample(SpectrogramDataSample, TextDataSample, ProsodySSMLDataSample
     gate: tp_DATA = None  # type: ignore
     aggregated: tp.Dict[str, tp_DATA] = None  # type: ignore
     concatenate: tp_DATA = None  # type: ignore
-    pauses_durations: tp.Optional[torch.Tensor] = None
-    style_condition: tp.Optional[torch.Tensor] = None
+    pauses_durations: torch.Tensor = None  # type: ignore
 
     def __str__(self) -> str:
         return self.sent.text_orig if self.sent else ""
@@ -155,9 +154,9 @@ class ProsodyPredictionDataSample(TTSDataSample):
     binary: tp_DATA = None  # type: ignore
     category: tp_DATA = None  # type: ignore
     pad_id: int = None  # type: ignore
-    lang: tp.Optional[str] = None  # type: ignore
+    lang: str = None  # type: ignore
     word_ids: tp_DATA = None  # type: ignore
-    seed_by_words: tp.Optional[tp.List[int]] = None  # type: ignore
+    seed_by_words: tp.List[int] = None  # type: ignore
 
     def __len__(self) -> int:
         return self.input_ids.shape[0]

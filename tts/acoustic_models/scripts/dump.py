@@ -482,7 +482,7 @@ def main(
 if __name__ == "__main__":
     """
     example:
-        dump.py -cd=../configs/tts/tts_data_24khz.yml -nproc=32 -ngpu=4
+        dump.py -cd=../configs/tts/tts_data_24khz.yml -nproc=10 -ngpu=1
 
     """
     main(**parse_args().__dict__)

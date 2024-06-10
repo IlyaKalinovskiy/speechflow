@@ -118,13 +118,13 @@ class CondionalLayerNorm(nn.Module):
         torch.nn.init.constant_(self.W_bias.weight, 0.0)
         torch.nn.init.constant_(self.W_bias.bias, 0.0)
 
-    def forward(self, x, speaker_embedding):
+    def forward(self, x, speaker_emb):
         mean = x.mean(dim=-1, keepdim=True)
         var = ((x - mean) ** 2).mean(dim=-1, keepdim=True)
         std = (var + self.epsilon).sqrt()
         y = (x - mean) / std
-        scale = self.W_scale(speaker_embedding)
-        bias = self.W_bias(speaker_embedding)
+        scale = self.W_scale(speaker_emb)
+        bias = self.W_bias(speaker_emb)
         if y.ndim == 3:
             y *= scale.unsqueeze(1)
             y += bias.unsqueeze(1)

@@ -81,11 +81,7 @@ class Optimizer:
         module_params = [p for p in module.parameters() if p.requires_grad]
 
         if len(module_params) > 0:
-            if parent_module_name == "GMVariationalAutoencoder":
-                net_params.append({"params": module_params, "weight_decay": 0})
-            else:
-                net_params.append({"params": module_params})
-
+            net_params.append({"params": module_params})
             net_params[-1].update(
                 {
                     "module_name": module_name,

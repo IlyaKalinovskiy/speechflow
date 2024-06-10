@@ -49,11 +49,11 @@ net:
     inner_channels_enc: 256
     inner_channels_dec: 512
 
-    use_dnn_speaker_emb: True
+    use_dnn_speaker_emb: true
     speaker_biometric_model: wespeaker
 
-    # use_alignment_encoder: True
+    # use_alignment_encoder: true
     # alignment_encoder_temperature: 15.0
     # alignment_encoder_dist_type: cosine
 
-    # use_mas_correction: True
+    # use_mas_correction: true

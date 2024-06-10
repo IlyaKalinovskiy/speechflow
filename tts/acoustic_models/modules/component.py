@@ -220,7 +220,7 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
             if feat.shape[1] > 1 and average_by_time:
                 feat = torch.mean(feat, dim=1, keepdim=True)
 
-            if name == "speaker_embedding":
+            if name == "speaker_emb":
                 feat = F.normalize(feat, dim=-1)
 
             g.append(feat.detach() if detach else feat)

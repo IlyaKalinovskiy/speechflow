@@ -96,7 +96,7 @@ class SpectrogramCollate(AudioCollate):
             spectral_envelope = [sample.spectral_envelope for sample in batch]  # type: ignore
             height = spectral_envelope[0].size(1)
             spectral_envelope, env_lens = pad_2d(
-                spectral_envelope, height=height, multiple=multiple
+                spectral_envelope, n_channel=height, multiple=multiple
             )
         else:
             spectral_envelope = None
@@ -111,7 +111,7 @@ class SpectrogramCollate(AudioCollate):
             else:
                 pitch = [sample.pitch for sample in batch]  # type: ignore
                 pitch, pitch_lens = pad_2d(
-                    pitch, height=pitch[0].shape[1], multiple=multiple
+                    pitch, n_channel=pitch[0].shape[1], multiple=multiple
                 )
         else:
             pitch = None

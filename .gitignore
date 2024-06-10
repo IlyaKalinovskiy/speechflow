@@ -27,6 +27,7 @@ __pycache__/
 *.ckpt
 *.pt
 **/temp/
+**/dump*/
 **/_jit/
 **/_logs/
 **/*experiments*/

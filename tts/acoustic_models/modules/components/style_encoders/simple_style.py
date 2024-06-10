@@ -23,12 +23,12 @@ class SimpleStyle(Component):
         self.proj = nn.Sequential(
             nn.Linear(input_dim, 2 * input_dim),
             nn.ReLU(),
-            nn.Linear(2 * input_dim, params.style_emb_dim),
+            nn.Linear(2 * input_dim, params.vp_output_dim),
         )
 
     @property
     def output_dim(self):
-        return self.params.style_emb_dim
+        return self.params.vp_output_dim
 
     def encode(self, x, x_mask, **kwargs):
         return self.proj(x.squeeze(-1))

@@ -47,17 +47,17 @@ class MultiHeadAttention(nn.Module):
         self.attention = ScaledDotProductAttention(temperature=np.power(d_k, 0.5))
 
         if cln:
-            self.speaker_embedding = True
+            self.speaker_emb = True
             self.layer_norm = CondionalLayerNorm(d_model)
         else:
-            self.speaker_embedding = False
+            self.speaker_emb = False
             self.layer_norm = nn.LayerNorm(d_model)
 
         self.fc = nn.Linear(n_head * d_v, d_model)
 
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, q, k, v, speaker_embedding, mask=None):
+    def forward(self, q, k, v, speaker_emb, mask=None):
 
         d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
 
@@ -83,8 +83,8 @@ class MultiHeadAttention(nn.Module):
         )  # b x lq x (n*dv)
 
         output = self.dropout(self.fc(output))
-        if self.speaker_embedding:
-            output = self.layer_norm(output + residual, speaker_embedding)
+        if self.speaker_emb:
+            output = self.layer_norm(output + residual, speaker_emb)
         else:
             output = self.layer_norm(output + residual)
 
@@ -114,22 +114,22 @@ class PositionwiseFeedForward(nn.Module):
         )
 
         if cln:
-            self.speaker_embedding = True
+            self.speaker_emb = True
             self.layer_norm = CondionalLayerNorm(d_in)
         else:
-            self.speaker_embedding = False
+            self.speaker_emb = False
             self.layer_norm = nn.LayerNorm(d_in)
 
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, speaker_embedding):
+    def forward(self, x, speaker_emb):
         residual = x
         output = x.transpose(1, 2)
         output = self.w_2(F.relu(self.w_1(output)))
         output = output.transpose(1, 2)
         output = self.dropout(output)
-        if self.speaker_embedding:
-            output = self.layer_norm(output + residual, speaker_embedding)
+        if self.speaker_emb:
+            output = self.layer_norm(output + residual, speaker_emb)
         else:
             output = self.layer_norm(output + residual)
 
@@ -150,13 +150,13 @@ class FFTBlock(torch.nn.Module):
             d_model, d_inner, kernel_size, cln, dropout=dropout
         )
 
-    def forward(self, enc_input, speaker_embedding, mask=None, slf_attn_mask=None):
+    def forward(self, enc_input, speaker_emb, mask=None, slf_attn_mask=None):
         enc_output, enc_slf_attn = self.slf_attn(
-            enc_input, enc_input, enc_input, speaker_embedding, mask=slf_attn_mask
+            enc_input, enc_input, enc_input, speaker_emb, mask=slf_attn_mask
         )
         enc_output = apply_mask(enc_output, mask.unsqueeze(-1))
 
-        enc_output = self.pos_ffn(enc_output, speaker_embedding)
+        enc_output = self.pos_ffn(enc_output, speaker_emb)
         enc_output = apply_mask(enc_output, mask)
 
         return enc_output, enc_slf_attn

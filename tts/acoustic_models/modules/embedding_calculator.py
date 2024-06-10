@@ -40,25 +40,25 @@ class EmbeddingCalculator(BaseTorchModel):
         if params.use_onehot_speaker_emb:
             self.n_speakers = params.n_speakers
             one_hot = F.one_hot(torch.arange(0, self.n_speakers), self.n_speakers)
-            self.register_buffer("speaker_embedding", one_hot.float())
+            self.register_buffer("speaker_emb", one_hot.float())
             params.speaker_emb_dim = self.n_speakers
             self.speaker_emb_dim = params.speaker_emb_dim
         elif params.use_learnable_speaker_emb:
             self.n_speakers = params.n_speakers
-            self.speaker_embedding = nn.Embedding(
+            self.speaker_emb = nn.Embedding(
                 num_embeddings=self.n_speakers,
                 embedding_dim=params.speaker_emb_dim,
             )
-            nn.init.orthogonal_(self.speaker_embedding.weight)
+            nn.init.orthogonal_(self.speaker_emb.weight)
             self.speaker_emb_dim = params.speaker_emb_dim
         elif params.use_dnn_speaker_emb or params.use_mean_dnn_speaker_emb:
             self.n_speakers = None  # type: ignore
-            self.speaker_embedding = None
+            self.speaker_emb = None
             self.speaker_emb_dim = params.speaker_emb_dim
         else:
             self.n_speakers = 1
             self.speaker_emb_dim = 0
-            self.speaker_embedding = None
+            self.speaker_emb = None
             self.use_speaker_emb = False
 
         if self.params.use_dnn_speaker_emb:
@@ -66,7 +66,7 @@ class EmbeddingCalculator(BaseTorchModel):
                 model_type=params.speaker_biometric_model
             )
             if self.speaker_emb_dim != bio_processor.embedding_dim:
-                self.speaker_embedding_proj = Regression(
+                self.speaker_emb_proj = Regression(
                     bio_processor.embedding_dim,
                     self.speaker_emb_dim,
                     p_dropout=0.5,
@@ -77,7 +77,7 @@ class EmbeddingCalculator(BaseTorchModel):
                 model_type=params.speaker_biometric_model
             )
             if self.speaker_emb_dim != bio_processor.embedding_dim:
-                self.speaker_embedding_proj = nn.Linear(
+                self.speaker_emb_proj = nn.Linear(
                     bio_processor.embedding_dim, self.speaker_emb_dim, bias=False
                 )
 
@@ -144,20 +144,20 @@ class EmbeddingCalculator(BaseTorchModel):
         speaker_ids = inputs.speaker_id
 
         if self.params.use_onehot_speaker_emb:
-            speaker_embedding = self.speaker_embedding[speaker_ids]
+            speaker_emb = self.speaker_emb[speaker_ids]
         elif self.params.use_learnable_speaker_emb:
-            speaker_embedding = self.speaker_embedding(speaker_ids)
+            speaker_emb = self.speaker_emb(speaker_ids)
         elif self.params.use_dnn_speaker_emb:
-            speaker_embedding = inputs.speaker_emb
+            speaker_emb = inputs.speaker_emb
         elif self.params.use_mean_dnn_speaker_emb:
-            speaker_embedding = inputs.speaker_emb_mean
+            speaker_emb = inputs.speaker_emb_mean
         else:
-            speaker_embedding = None
+            speaker_emb = None
 
-        if hasattr(self, "speaker_embedding_proj"):
-            speaker_embedding = self.speaker_embedding_proj(speaker_embedding).squeeze(1)
+        if hasattr(self, "speaker_emb_proj"):
+            speaker_emb = self.speaker_emb_proj(speaker_emb).squeeze(1)
 
-        return speaker_embedding
+        return speaker_emb
 
     def get_speaker_biometric_embedding(
         self, inputs: TTSForwardInput
@@ -168,10 +168,8 @@ class EmbeddingCalculator(BaseTorchModel):
 
         biometric_embedding = inputs.speaker_emb
 
-        if hasattr(self, "speaker_embedding_proj"):
-            biometric_embedding = self.speaker_embedding_proj(
-                biometric_embedding
-            ).squeeze(1)
+        if hasattr(self, "speaker_emb_proj"):
+            biometric_embedding = self.speaker_emb_proj(biometric_embedding).squeeze(1)
 
         return biometric_embedding
 

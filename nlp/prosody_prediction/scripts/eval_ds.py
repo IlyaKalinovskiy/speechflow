@@ -42,13 +42,13 @@ def eval(data_loader, model, callback, batch_processor, log_to_file=True):
             texts.append(callback._log_text(batch, outputs))
 
     if outputs_all.binary:
-        outputs_all.binary, _ = pad_2d(outputs_all.binary, pad_id=0, height=2)
-        targets_all.binary, _ = pad(targets_all.binary, pad_id=-100)
+        outputs_all.binary, _ = pad_2d(outputs_all.binary, pad_val=0, n_channel=2)
+        targets_all.binary, _ = pad(targets_all.binary, pad_val=-100)
     if outputs_all.category:
         outputs_all.category, _ = pad_2d(
-            outputs_all.category, pad_id=0, height=outputs_all.category[0].shape[1]
+            outputs_all.category, pad_val=0, n_channel=outputs_all.category[0].shape[1]
         )
-        targets_all.category, _ = pad(targets_all.category, pad_id=-100)
+        targets_all.category, _ = pad(targets_all.category, pad_val=-100)
 
     metrics, report = callback.compute_metrics(outputs_all, targets_all)
 

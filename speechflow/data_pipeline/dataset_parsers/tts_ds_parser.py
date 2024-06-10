@@ -63,10 +63,10 @@ class TTSDSParser(BaseDSParser):
             file_path=metadata.get("file_path", Path()),
             label=metadata.get("label", ""),
             audio_chunk=sega.audio_chunk,
+            lang=sega.sent.lang,
             sent=sega.sent,
             word_timestamps=word_ts,
             phoneme_timestamps=phoneme_ts,
-            lang=sega.sent.lang,
             speaker_name=sega.meta.get("speaker_name"),
             intonation_type=metadata.get("intonation_type"),  # type: ignore
             index=(metadata.get("index_text"), metadata.get("index_wave")),

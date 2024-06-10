@@ -236,7 +236,7 @@ class TTSAudioSynthesizer(Callback):
                         self.text_for_synthesis,
                         self.tts.lang,
                         speaker_name=speaker_name,
-                        speaker_embedding_index=-1,
+                        speaker_emb_index=-1,
                     )
                 )
             except Exception as e:

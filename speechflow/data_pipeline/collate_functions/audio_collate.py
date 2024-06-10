@@ -18,10 +18,9 @@ __all__ = [
 
 @dataclass
 class AudioCollateOutput(BaseCollateOutput):
-    waveform: Tensor = None
-    waveform_lengths: Tensor = None
     mu_law_waveform: Tensor = None
     lpc_waveform: Tensor = None
+    waveform_lengths: Tensor = None
     lang_id: Tensor = None
     speaker_id: Tensor = None
     speaker_emb: Tensor = None
@@ -121,6 +120,7 @@ class AudioCollate(BaseCollate):
 
         collated.mu_law_waveform = mu_law_waveform
         collated.lpc_waveform = lpc_waveform
+        collated.waveform_lengths = waveform_lens
         collated.lang_id = lang_id
         collated.speaker_id = speaker_id
         collated.speaker_emb = speaker_emb
@@ -132,5 +132,4 @@ class AudioCollate(BaseCollate):
         collated.ssl_feat_lengths = ssl_feat_lens
         collated.ac_feat = ac_feat
         collated.ac_feat_lengths = ac_feat_lens
-        collated.waveform_lengths = waveform_lens
         return collated

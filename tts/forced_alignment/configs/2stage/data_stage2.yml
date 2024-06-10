@@ -5,7 +5,7 @@ dirs:
 
 file_search:
   ext: .TextGridStage1
-  with_subfolders: True
+  with_subfolders: true
 
 data_server:
   n_processes: 1
@@ -64,8 +64,8 @@ preproc:
           f_max: 8000
     add_pauses_from_timestamps:
       min_len: 0.03
-      use_pauses_from_asr: True
-      check_phoneme_length: True
+      use_pauses_from_asr: true
+      check_phoneme_length: true
     text:
       type: TextProcessor
       lang: MULTILANG
@@ -100,15 +100,15 @@ singleton_handlers:
 
 processor:
   type: DataProcessor
-  output_collated_only: True
+  output_collated_only: true
 
 sampler:
   train:
     type: WeightedSampler
-    comb_by_len: True
+    comb_by_len: true
     epoch_size: 250000
     fields_to_compute_weight: [lang, speaker_name, uid]
     chunks_ratio: [0.3, 0.3, 0.4]
   test:
     type: SimpleSampler
-    comb_by_len: True
+    comb_by_len: true
