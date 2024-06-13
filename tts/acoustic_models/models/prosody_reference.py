@@ -26,18 +26,18 @@ class ProsodyReference:
     speaker_name: tp.Optional[str] = None
     speaker_id: tp.Optional[int] = None
 
+    speaker_emb: tp.Optional[npt.NDArray] = None
     speaker_emb_index: tp.Optional[tp.Union[int, tp.Tuple[str, int]]] = None
-    speaker_bio_emb: tp.Optional[npt.NDArray] = None
     speaker_emb_mean: tp.Optional[npt.NDArray] = None
-    speaker_wav_path: tp.Optional[tp.Union[str, Path]] = None
-    speaker_wav_chunk: tp.Optional[AudioChunk] = None
+    speaker_audio_path: tp.Optional[tp.Union[str, Path]] = None
+    speaker_audio_chunk: tp.Optional[AudioChunk] = None
     speaker_spectrogram: tp.Optional[npt.NDArray] = None
     speaker_ssl_embeddings: tp.Optional[npt.NDArray] = None
 
+    style_emb: tp.Optional[npt.NDArray] = None
     style_emb_index: tp.Optional[tp.Union[int, tp.Tuple[str, int]]] = None
-    style_bio_emb: tp.Optional[npt.NDArray] = None
-    style_wav_path: tp.Optional[tp.Union[str, Path]] = None
-    style_wav_chunk: tp.Optional[AudioChunk] = None
+    style_audio_path: tp.Optional[tp.Union[str, Path]] = None
+    style_audio_chunk: tp.Optional[AudioChunk] = None
     style_spectrogram: tp.Optional[npt.NDArray] = None
     style_ssl_embeddings: tp.Optional[npt.NDArray] = None
 
@@ -57,10 +57,10 @@ class ProsodyReference:
         )
 
     def speaker_reference_is_empty(self):
-        return self.speaker_emb_index is None and self.speaker_wav_chunk is None
+        return self.speaker_emb_index is None and self.speaker_audio_chunk is None
 
     def style_reference_is_empty(self):
-        return self.style_emb_index is None and self.style_wav_chunk is None
+        return self.style_emb_index is None and self.style_audio_chunk is None
 
     def is_empty(self):
         return self.speaker_reference_is_empty() and self.style_reference_is_empty()
@@ -73,10 +73,10 @@ class ProsodyReference:
         elif isinstance(ref, (tuple, list)) and isinstance(ref[0], (int, str)):
             setattr(self, f"{ref_type}_emb_index", tuple(ref))
         elif isinstance(ref, Path):
-            setattr(self, f"{ref_type}_wav_path", ref)
+            setattr(self, f"{ref_type}_audio_path", ref)
         elif isinstance(ref, (tuple, list)):
             wave, sr = ref
-            setattr(self, f"{ref_type}_wav_chunk", AudioChunk(data=wave, sr=sr))
+            setattr(self, f"{ref_type}_audio_chunk", AudioChunk(data=wave, sr=sr))
         else:
             raise AttributeError(
                 "Incorrect format of reference audio."
@@ -84,8 +84,14 @@ class ProsodyReference:
             )
 
     def _sampling_reference(
-        self, ref_type: str, all_speaker: tp.List[str], bio_embeddings: tp.Dict
+        self,
+        ref_type: str,
+        all_speakers: tp.List[str],
+        bio_embeddings: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ):
+        if bio_embeddings is None:
+            bio_embeddings = {name: [0] for name in all_speakers}
+
         if isinstance(getattr(self, f"{ref_type}_emb_index"), int):
             if getattr(self, f"{ref_type}_emb_index") == -1:
                 emb_index = random.randint(0, len(bio_embeddings[self.speaker_name]) - 1)
@@ -98,26 +104,30 @@ class ProsodyReference:
             if isinstance(sp_name, (str, int)):
                 if sp_name == -1:
                     sp_name = random.choice(list(bio_embeddings.keys()))
-                if sp_name not in all_speaker:
+                if sp_name not in all_speakers:
                     raise ValueError(f"Speaker {sp_name} not found in current TTS model!")
                 if emb_index == -1:
                     emb_index = random.randint(0, len(bio_embeddings[sp_name]) - 1)
                 setattr(self, f"{ref_type}_emb_index", (sp_name, emb_index))
 
-        if isinstance(getattr(self, f"{ref_type}_wav_path"), str):
+        if isinstance(getattr(self, f"{ref_type}_audio_path"), str):
             setattr(
-                self, f"{ref_type}_wav_path", Path(getattr(self, f"{ref_type}_wav_path"))
+                self,
+                f"{ref_type}_audio_path",
+                Path(getattr(self, f"{ref_type}_audio_path")),
             )
 
-        wav_path = getattr(self, f"{ref_type}_wav_path")
-        if wav_path is not None:
-            if not wav_path.exists():
+        audio_path = getattr(self, f"{ref_type}_audio_path")
+        if audio_path is not None:
+            if not audio_path.exists():
                 raise FileNotFoundError(
-                    f"Reference file {wav_path.as_posix()} not found!"
+                    f"Reference file {audio_path.as_posix()} not found!"
                 )
             else:
                 setattr(
-                    self, f"{ref_type}_wav_chunk", AudioChunk(file_path=wav_path).load()
+                    self,
+                    f"{ref_type}_audio_chunk",
+                    AudioChunk(file_path=audio_path).load(),
                 )
 
     def set_speaker_name(self, speaker_name: str):
@@ -137,9 +147,7 @@ class ProsodyReference:
             self.speaker_id = speaker_id_map.get(self.speaker_name, 0)
 
             if mean_bio_embeddings is not None:
-                self.speaker_emb_mean = mean_bio_embeddings.get_embedding(
-                    self.speaker_name
-                )
+                self.speaker_emb_mean = mean_bio_embeddings[self.speaker_name]
 
     def set_bio_embedding(
         self, bio_proc: callable, bio_embeddings: tp.Optional[tp.Dict] = None
@@ -149,7 +157,7 @@ class ProsodyReference:
             if bio_embeddings is not None and getattr(self, attr_name) is not None:
                 sp_name, emb_index = getattr(self, attr_name)
                 emb_meta = bio_embeddings[sp_name][emb_index]
-                bio_emb = emb_meta[1]
+                bio_emb = emb_meta[1] if emb_meta.ndim == 2 else emb_meta
                 setattr(self, f"{ref_type}_bio_emb", bio_emb)
 
                 try:
@@ -164,7 +172,7 @@ class ProsodyReference:
 
                 continue
 
-            attr_name = f"{ref_type}_wav_chunk"
+            attr_name = f"{ref_type}_audio_chunk"
             if getattr(self, attr_name) is not None:
                 audio_chunk = getattr(self, attr_name)
                 ds = AudioDataSample(audio_chunk=audio_chunk)
@@ -174,7 +182,7 @@ class ProsodyReference:
 
     def set_spectrogram_reference(self, mel_pipe: callable):
         for ref_type in ["speaker", "style"]:
-            attr_name = f"{ref_type}_wav_chunk"
+            attr_name = f"{ref_type}_audio_chunk"
             if getattr(self, attr_name) is not None:
                 audio_chunk = getattr(self, attr_name)
                 ds = AudioDataSample(audio_chunk=audio_chunk)
@@ -184,7 +192,7 @@ class ProsodyReference:
 
     def set_ssl_embeddings(self, ssl_proc: callable):
         for ref_type in ["speaker", "style"]:
-            attr_name = f"{ref_type}_wav_chunk"
+            attr_name = f"{ref_type}_audio_chunk"
             if getattr(self, attr_name) is not None:
                 audio_chunk = getattr(self, attr_name)
                 mel = getattr(self, f"{ref_type}_spectrogram")
@@ -197,7 +205,7 @@ class ProsodyReference:
         try:
             self.model_feat.update(
                 model.get_speaker_embedding(
-                    self.speaker_id, self.speaker_bio_emb, self.speaker_emb_mean
+                    self.speaker_id, self.speaker_emb, self.speaker_emb_mean
                 )
             )
         except Exception as e:
@@ -205,7 +213,7 @@ class ProsodyReference:
 
         self.model_feat.update(
             model.get_style_embedding(
-                self.speaker_bio_emb,
+                self.speaker_emb,
                 self.speaker_spectrogram,
                 self.speaker_ssl_embeddings,
             )
@@ -221,40 +229,44 @@ class ProsodyReference:
 
     def copy_speaker_reference(self, item: "ProsodyReference"):
         self.speaker_emb_index = item.speaker_emb_index
-        self.speaker_bio_emb = item.speaker_bio_emb
+        self.speaker_emb = item.speaker_emb
         self.speaker_emb_mean = item.speaker_emb_mean
-        self.speaker_wav_path = item.speaker_wav_path
-        self.speaker_wav_chunk = item.speaker_wav_chunk
+        self.speaker_audio_path = item.speaker_audio_path
+        self.speaker_audio_chunk = item.speaker_audio_chunk
         self.speaker_spectrogram = item.speaker_spectrogram
         self.speaker_ssl_embeddings = item.speaker_ssl_embeddings
 
     def copy_style_reference(self, item: "ProsodyReference"):
         self.style_emb_index = item.style_emb_index
-        self.style_bio_emb = item.style_bio_emb
-        self.style_wav_path = item.style_wav_path
-        self.style_wav_chunk = item.style_wav_chunk
+        self.style_emb = item.style_emb
+        self.style_audio_path = item.style_audio_path
+        self.style_audio_chunk = item.style_audio_chunk
         self.style_spectrogram = item.style_spectrogram
         self.style_ssl_embeddings = item.style_ssl_embeddings
 
-    def sampling_reference(self, all_speaker: tp.List[str], bio_embeddings: tp.Dict):
-        self._sampling_reference("speaker", all_speaker, bio_embeddings)
-        self._sampling_reference("style", all_speaker, bio_embeddings)
+    def sampling_reference(
+        self,
+        all_speakers: tp.List[str],
+        bio_embeddings: tp.Optional[tp.Dict[str, tp.Any]] = None,
+    ):
+        self._sampling_reference("speaker", all_speakers, bio_embeddings)
+        self._sampling_reference("style", all_speakers, bio_embeddings)
 
     def swap_reference(self, _from: str, _to: str):
+        setattr(self, f"{_to}_emb", getattr(self, f"{_from}_bio_emb"))
         setattr(self, f"{_to}_emb_index", getattr(self, f"{_from}_emb_index"))
-        setattr(self, f"{_to}_bio_emb", getattr(self, f"{_from}_bio_emb"))
-        setattr(self, f"{_to}_wav_path", getattr(self, f"{_from}_wav_path"))
-        setattr(self, f"{_to}_wav_chunk", getattr(self, f"{_from}_wav_chunk"))
+        setattr(self, f"{_to}_audio_path", getattr(self, f"{_from}_audio_path"))
+        setattr(self, f"{_to}_audio_chunk", getattr(self, f"{_from}_audio_chunk"))
         setattr(self, f"{_to}_spectrogram", getattr(self, f"{_from}_spectrogram"))
         setattr(self, f"{_to}_ssl_embeddings", getattr(self, f"{_from}_ssl_embeddings"))
 
     def filling(self):
         assert self.speaker_name is not None
 
-        if self.style_bio_emb is None and self.speaker_bio_emb is not None:
-            self.style_bio_emb = self.speaker_bio_emb
-        if self.speaker_bio_emb is None and self.style_bio_emb is not None:
-            self.speaker_bio_emb = self.style_bio_emb
+        if self.style_emb is None and self.speaker_emb is not None:
+            self.style_emb = self.speaker_emb
+        if self.speaker_emb is None and self.style_emb is not None:
+            self.speaker_emb = self.style_emb
 
         if self.style_spectrogram is None and self.speaker_spectrogram is not None:
             self.style_spectrogram = self.speaker_spectrogram
@@ -352,7 +364,11 @@ class ComplexProsodyReference:
     def get(self, tag: str) -> ProsodyReference:
         return self.refs[tag]
 
-    def preprocessing(self, all_speaker: tp.List[str], bio_embeddings: tp.Dict):
+    def preprocessing(
+        self,
+        all_speakers: tp.List[str],
+        bio_embeddings: tp.Optional[tp.Dict[str, tp.Any]] = None,
+    ):
         for ref in self.refs.values():
             if ref.speaker_name is None:
                 ref.speaker_name = self.default.speaker_name
@@ -361,7 +377,7 @@ class ComplexProsodyReference:
             if ref.is_empty():
                 ref.speaker_emb_index = 0
 
-            ref.sampling_reference(all_speaker, bio_embeddings)
+            ref.sampling_reference(all_speakers, bio_embeddings)
 
         # print("style reference:", self.default.speaker_emb_index)
 
@@ -420,15 +436,18 @@ class ComplexProsodyReference:
     def initialize(
         self,
         speaker_id_map: tp.Dict,
-        mean_bio_embeddings: tp.Dict,
-        bio_embeddings: tp.Dict,
-        bio_proc: callable,
-        mel_pip: callable,
-        ssl_proc: callable,
+        bio_embeddings: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        mean_bio_embeddings: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        bio_proc: tp.Optional[callable] = None,
+        mel_pip: tp.Optional[callable] = None,
+        ssl_proc: tp.Optional[callable] = None,
         seed: int = 0,
     ):
         if not self.is_initialize:
             set_random_seed(seed)
+
+            if bio_embeddings is None:
+                bio_embeddings = mean_bio_embeddings
 
             self.preprocessing(list(speaker_id_map.keys()), bio_embeddings)
             self.set_speaker_id(speaker_id_map, mean_bio_embeddings)

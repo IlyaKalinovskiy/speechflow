@@ -9,7 +9,12 @@ from omegaconf import DictConfig, DictKeyType, OmegaConf
 
 from speechflow.io.utils import check_path, tp_PATH
 from speechflow.io.yaml_io import yaml_dump, yaml_load
-from speechflow.utils.dictutils import flatten_dict, multi_trim_dict, trim_dict
+from speechflow.utils.dictutils import (
+    find_field,
+    flatten_dict,
+    multi_trim_dict,
+    trim_dict,
+)
 
 __all__ = ["Config"]
 
@@ -39,17 +44,22 @@ class Config(DictConfig):
 
     @property
     def raw_file_path(self) -> Path:
-        return self._metadata.resolver_cache.get("raw_file_path", "")
+        return self._metadata.resolver_cache.get("raw_file_path", Path())
 
-    def get(self, key: DictKeyType, default_value: tp.Any = None) -> tp.Any:
-        value = super().get(key, default_value)
-        return Config(value) if isinstance(value, tp.MutableMapping) else value
+    def get(
+        self, key: DictKeyType, default_value: tp.Any = None, mutable: bool = False
+    ) -> tp.Any:
+        if mutable:
+            return super().get(key, default_value)
+        else:
+            value = super().get(key, default_value)
+            return Config(value) if isinstance(value, tp.MutableMapping) else value
 
-    def section(self, key: str) -> "Config":
-        section = self.get(key, {})
+    def section(self, key: str, mutable: bool = False) -> "Config":
+        section = self.get(key, {}, mutable=mutable)
         if not isinstance(section, tp.MutableMapping):
             raise ValueError(f"Section {section} is not dictionary!")
-        return Config(section)
+        return section if mutable else Config(section)
 
     def create_section(self, keys: tp.Set[str]):
         for key in keys:
@@ -69,6 +79,11 @@ class Config(DictConfig):
         as_dict = self.to_dict()
         as_dict = flatten_dict(as_dict, sep=sep)
         return Config(as_dict)
+
+    def find_field(
+        self, key: str, default_value: tp.Any = None, all_result: bool = False
+    ) -> tp.Optional[tp.Any]:
+        return find_field(self, key, default_value, all_result)
 
     def to_dict(self) -> tp.Dict[str, tp.Any]:
         return OmegaConf.to_object(self)

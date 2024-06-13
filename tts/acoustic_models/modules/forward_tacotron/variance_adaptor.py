@@ -747,7 +747,7 @@ class ForwardVarianceAdaptor(Component):
         else:
             spec_lengths = max_spec_len = spec_mask = None
 
-        if spec_lengths is None:
+        if spec_lengths is None and inputs.model_inputs.output_lengths is not None:
             spec_lengths = inputs.model_inputs.output_lengths
             max_spec_len = spec_lengths.max()
             spec_mask = get_mask_from_lengths(spec_lengths)

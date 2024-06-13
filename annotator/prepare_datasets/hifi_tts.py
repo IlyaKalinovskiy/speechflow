@@ -22,7 +22,7 @@ if __name__ == "__main__":
     )
     args = arguments_parser.parse_args()
 
-    data_root = Path(args.data_root)
+    data_root = args.data_root
 
     for file in data_root.rglob("*.json"):
         for line in file.read_text(encoding="utf-8").split("\n"):

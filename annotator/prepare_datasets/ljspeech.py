@@ -9,10 +9,10 @@ if __name__ == "__main__":
     )
     args = arguments_parser.parse_args()
 
-    metadata_path: Path = args.data_root / "metadata.csv"
+    metadata_path = args.data_root / "metadata.csv"
     metadata = metadata_path.read_text(encoding="utf-8").split("\n")
 
-    output_path: Path = args.data_root / "wavs"
+    output_path = args.data_root / "wavs"
     all_files = []
     for line in metadata:
         if line.strip():

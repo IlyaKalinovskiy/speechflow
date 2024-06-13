@@ -135,7 +135,7 @@ class SpeakerIDSetter(metaclass=Singleton):
 
     @staticmethod
     def _get_speaker_overall_duration(data: tp.List[TTSDataSample]):
-        audio_duration: dict = {}
+        audio_duration: tp.Dict[str, tp.Any] = {}
         for ds in data:
             duration = ds.audio_chunk.duration
             if duration:
@@ -361,12 +361,12 @@ class StatisticsRange(metaclass=Singleton):
         self, data_subset_name: str, statistics_file: tp_PATH = "ranges.json", **kwargs
     ):
         if isinstance(statistics_file, tp.Mapping):  # evaluation hack
-            self.statistics: dict = statistics_file  # type: ignore
+            self.statistics: tp.Dict[str, tp.Any] = statistics_file  # type: ignore
             return
 
         self.statistics_file = Path(statistics_file)
         if self.statistics_file.is_file():
-            self.statistics: dict = json.loads(self.statistics_file.read_text(encoding="utf-8"))  # type: ignore
+            self.statistics: tp.Dict[str, tp.Any] = json.loads(self.statistics_file.read_text(encoding="utf-8"))  # type: ignore
         else:
             raise ValueError("ranges.json not found! First do execute dump.py")
 
@@ -398,30 +398,37 @@ class MeanBioEmbeddings(metaclass=Singleton):
     def __init__(
         self,
         data_subset_name: str,
-        mean_embeddings_file: tp_PATH = "mean_bio_embeddings.json",
+        mean_embeddings_file: tp.Union[
+            tp_PATH, tp.MutableMapping
+        ] = "mean_bio_embeddings.json",
         **kwargs,
     ):
         if isinstance(mean_embeddings_file, tp.MutableMapping):  # evaluation hack
-            self.mean_bio_embeddings: dict = mean_embeddings_file  # type: ignore
-            return
-
-        self.mean_embeddings_file = Path(mean_embeddings_file)
-        if self.mean_embeddings_file.is_file():
-            self.mean_bio_embeddings: dict = json.loads(self.mean_embeddings_file.read_text(encoding="utf-8"))  # type: ignore
+            self.mean_bio_embeddings: tp.Dict[str, tp.Any] = mean_embeddings_file  # type: ignore
         else:
-            raise ValueError(
-                "mean_bio_embeddings.json not found! First do execute dump.py"
-            )
+            self.mean_embeddings_file = Path(mean_embeddings_file)
+            if self.mean_embeddings_file.is_file():
+                self.mean_bio_embeddings: tp.Dict[str, tp.Any] = json.loads(
+                    self.mean_embeddings_file.read_text(encoding="utf-8")
+                )  # type: ignore
+            else:
+                raise ValueError(
+                    "mean_bio_embeddings.json not found! First do execute dump.py"
+                )
+
+        self.mean_bio_embeddings = {
+            s: np.asarray([emb], dtype=np.float32)
+            for s, emb in self.mean_bio_embeddings.items()
+        }
 
     def __call__(self, data: Dataset) -> Dataset:
         return data
 
-    def get_keys(self) -> tp.List[str]:
+    def get_speakers(self) -> tp.List[str]:
         return list(self.mean_bio_embeddings.keys())
 
     def get_embedding(self, speaker_name: str) -> npt.NDArray:
-        emb = self.mean_bio_embeddings[speaker_name]
-        return np.asarray(emb, dtype=np.float32)
+        return self.mean_bio_embeddings[speaker_name][0]
 
     @staticmethod
     def aggregate(a: "MeanBioEmbeddings", b: "MeanBioEmbeddings") -> "MeanBioEmbeddings":
@@ -563,7 +570,7 @@ class DatasetStatistics(metaclass=Singleton):
 
             try:
                 item = []
-                dump_data: dict = pickle.loads(file_path.read_bytes())
+                dump_data: tp.Dict[str, tp.Any] = pickle.loads(file_path.read_bytes())
                 file_path = dump_data["fields"].get("file_path")
                 if file_path is None or not Path(file_path).exists():
                     continue

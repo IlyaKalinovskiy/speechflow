@@ -34,13 +34,17 @@ class BaseTorchModelParams(pydantic.BaseModel):
         strict_init: bool = True,
     ):
         if not isinstance(cfg, BaseTorchModelParams):
-            return cls.init_from_config(Config(cfg), strict_init)
+            return cls.init_from_config(cfg, strict_init)
         else:
             return cfg
 
     @classmethod
-    def init_from_config(cls, cfg: Config, strict_init: bool = True):
-        cfg = cfg.to_dict()
+    def init_from_config(
+        cls, cfg: tp.Union[tp.MutableMapping, Config], strict_init: bool = True
+    ):
+        if isinstance(cfg, Config):
+            cfg = cfg.to_dict()
+
         cfg = cls.check_deprecated_params_recursive(cfg)
 
         params = cls()
