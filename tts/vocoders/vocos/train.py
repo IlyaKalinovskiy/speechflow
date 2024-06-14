@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 
 from speechflow.logging.server import LoggingServer
 
-assert int(pl.__version__[0]) == 1, RuntimeError("pytorch_lightning 1.8.6 required")
+assert int(pl.__version__[0]) == 1, RuntimeError("pytorch_lightning==1.8.6 required")
 
 from pytorch_lightning.cli import LightningCLI
 

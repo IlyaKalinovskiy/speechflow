@@ -42,8 +42,8 @@ class BaseSSLModel(torch.nn.Module):
     def __init__(
         self,
         device: str = "cpu",
-        audio_duration_min: tp.Optional[float] = None,
-        audio_duration_max: tp.Optional[float] = None,
+        min_audio_duration: tp.Optional[float] = None,
+        max_audio_duration: tp.Optional[float] = None,
     ):
         super().__init__()
 
@@ -51,11 +51,11 @@ class BaseSSLModel(torch.nn.Module):
         self.sample_rate = 16000
         self.embedding_dim = 0
 
-        self._audio_duration_min = audio_duration_min
-        self._audio_duration_max = audio_duration_max
+        self._min_audio_duration = min_audio_duration
+        self._max_audio_duration = max_audio_duration
 
-        if self._audio_duration_max is not None:
-            self._audio_duration_max = int(audio_duration_max * self.sample_rate)
+        if self._max_audio_duration is not None:
+            self._max_audio_duration = int(max_audio_duration * self.sample_rate)
 
     def preprocessing(self, audio_chunk: AudioChunk) -> torch.Tensor:
         assert np.issubdtype(
@@ -74,9 +74,12 @@ class BaseSSLModel(torch.nn.Module):
 
         audio_chunk = audio_chunk.resample(sr=self.sample_rate, fast=True)
 
-        if self._audio_duration_max is not None:
+        if self._min_audio_duration is not None:
+            pass
+
+        if self._max_audio_duration is not None:
             data = torch.tensor(
-                audio_chunk.waveform[: self._audio_duration_max], device=self.device
+                audio_chunk.waveform[: self._max_audio_duration], device=self.device
             )
         else:
             data = torch.tensor(audio_chunk.waveform, device=self.device)
@@ -84,7 +87,7 @@ class BaseSSLModel(torch.nn.Module):
         return data.unsqueeze(0)
 
     def postprocessing(self, feat: SSLFeatures) -> SSLFeatures:
-        if self._audio_duration_min is not None:
+        if self._min_audio_duration is not None:
             pass
         return feat
 
@@ -93,11 +96,11 @@ class Whisper(BaseSSLModel):
     def __init__(
         self,
         device: str = "cpu",
-        audio_duration_min: tp.Optional[float] = None,
-        audio_duration_max: tp.Optional[float] = None,
+        min_audio_duration: tp.Optional[float] = None,
+        max_audio_duration: tp.Optional[float] = None,
         model_name: str = "tiny",  # tiny, base, small, medium, large
     ):
-        super().__init__(device, audio_duration_min, audio_duration_max)
+        super().__init__(device, min_audio_duration, max_audio_duration)
 
         self.sample_rate = 16000
         self.embedding_dim = 384
@@ -127,8 +130,8 @@ class Wav2Vec(BaseSSLModel):
     def __init__(
         self,
         device: str = "cpu",
-        audio_duration_min: tp.Optional[float] = None,
-        audio_duration_max: tp.Optional[float] = None,
+        min_audio_duration: tp.Optional[float] = None,
+        max_audio_duration: tp.Optional[float] = None,
         model_name: tp.Optional[
             tp.Union[str, Path]
         ] = "anton-l/wav2vec2-large-xlsr-53-russian",
@@ -138,7 +141,7 @@ class Wav2Vec(BaseSSLModel):
         stream_mod: tp.Optional[dict] = None,
         trim_pad: bool = True,
     ):
-        super().__init__(device, audio_duration_min, audio_duration_max)
+        super().__init__(device, min_audio_duration, max_audio_duration)
 
         self.sample_rate = 16000
         self.embedding_dim = 1024
@@ -368,13 +371,13 @@ class WavLM(BaseSSLModel):
     def __init__(
         self,
         device: str = "cpu",
-        audio_duration_min: tp.Optional[float] = None,
-        audio_duration_max: tp.Optional[float] = None,
+        min_audio_duration: tp.Optional[float] = None,
+        max_audio_duration: tp.Optional[float] = None,
         model_name: tp.Literal["WAVLM_BASE_PLUS", "WAVLM_LARGE"] = "WAVLM_LARGE",
         model_dir: tp.Optional[tp_PATH] = None,
         num_layer: int = 9,
     ):
-        super().__init__(device, audio_duration_min, audio_duration_max)
+        super().__init__(device, min_audio_duration, max_audio_duration)
         """
         num_layer: 9 - asr task, base+; -1 asr task large
         more details: https://arxiv.org/pdf/2110.13900.pdf (see Fig. 2)
@@ -414,11 +417,11 @@ class ECAPABiometric(BaseSSLModel):
     def __init__(
         self,
         device: str = "cpu",
-        audio_duration_min: tp.Optional[float] = None,
-        audio_duration_max: tp.Optional[float] = None,
+        min_audio_duration: tp.Optional[float] = None,
+        max_audio_duration: tp.Optional[float] = None,
         model_name: tp.Optional[tp.Union[str, Path]] = "spkrec-ecapa-voxceleb",
     ):
-        super().__init__(device, audio_duration_min, audio_duration_max)
+        super().__init__(device, min_audio_duration, max_audio_duration)
 
         self.sample_rate = 16000
         self.embedding_dim = 192

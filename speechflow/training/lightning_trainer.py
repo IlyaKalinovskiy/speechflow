@@ -45,7 +45,7 @@ class LightningEngine(pl.LightningModule):
         self.validation_losses = []
 
         assert int(pl.__version__[0]) >= 2, RuntimeError(
-            "pytorch_lightning 2.0.7 or higher required"
+            "pytorch_lightning==2.0.7 or higher required"
         )
 
     def on_fit_start(self):
@@ -336,7 +336,7 @@ class GANLightningEngineWithManualOptimization(GANLightningEngine):
         self.validation_epoch_end = None
 
         assert int(pl.__version__[0]) >= 2, RuntimeError(
-            "pytorch_lightning 2.0.7 or higher required"
+            "pytorch_lightning==2.0.7 or higher required"
         )
 
     def on_fit_start(self):

@@ -191,6 +191,7 @@ class DACHead(FourierHead):
         with_sm_loss: bool = False,
         sm_loss_every_iter: int = 1,
         sm_loss_max_iter: int = 1_000_000_000,
+        speaker_biometric_model: str = "speechbrain",
     ):
         super().__init__()
         self.with_dac_loss = with_dac_loss
@@ -204,7 +205,7 @@ class DACHead(FourierHead):
         self.proj = Regression(dim, self.dac_model.embedding_dim, hidden_dim=dim)
 
         if with_sm_loss:
-            self.bio = VoiceBiometricProcessor("wespeaker:tiny")
+            self.bio = VoiceBiometricProcessor(speaker_biometric_model)
         else:
             self.bio = None
 

@@ -464,7 +464,7 @@ class DatasetStatistics(metaclass=Singleton):
         self.transcription_length: tp.Dict[str, tp.List[int]] = defaultdict(list)
         self.wave_duration: tp.Dict[str, tp.List[float]] = defaultdict(list)
         self.max_transcription_length: int = 0
-        self.max_wave_duration: float = 0.0
+        self.max_audio_duration: float = 0.0
         self.segmentations: tp.List[tp.Tuple[str, bytes]] = []
         self.speaker_emb: tp.Dict[str, tp.List[tp.Any]] = defaultdict(list)
         self.cache_folder = self._get_cache_folder(self.dump)
@@ -524,7 +524,7 @@ class DatasetStatistics(metaclass=Singleton):
             self.max_transcription_length = max(
                 max(v) for v in self.transcription_length.values()
             )
-            self.max_wave_duration = max(max(v) for v in self.wave_duration.values())
+            self.max_audio_duration = max(max(v) for v in self.wave_duration.values())
 
     def _add_phonemes_stat(self, data: tp.List[TTSDataSample]):
         for ds in tqdm(data, "Counting phonemes statistics over dataset"):
@@ -643,7 +643,7 @@ class DatasetStatistics(metaclass=Singleton):
         c.max_transcription_length = max(
             a.max_transcription_length, b.max_transcription_length
         )
-        c.max_wave_duration = max(a.max_wave_duration, b.max_wave_duration)
+        c.max_audio_duration = max(a.max_audio_duration, b.max_audio_duration)
         return c
 
 

@@ -45,21 +45,21 @@ class VoiceBiometricProcessor(BaseDSProcessor):
         self,
         model_type: tp.Literal["resemblyzer", "speechbrain", "wespeaker"] = "resemblyzer",
         model_name: tp.Optional[tp.Union[str, Path]] = None,
-        max_wave_duration: tp.Optional[float] = None,
-        fast_wave_resample: bool = True,
+        max_audio_duration: tp.Optional[float] = None,
+        fast_resample: bool = True,
         random_crop: bool = False,
         device: str = "cpu",
     ):
         super().__init__(device=device)
         self._model_type = model_type
         self._model_name = model_name
-        self._max_wave_duration = max_wave_duration
-        self._fast_wave_resample = fast_wave_resample
+        self._max_audio_duration = max_audio_duration
+        self._fast_resample = fast_resample
         self._random_crop = random_crop
         self._encoder = None
 
-        if random_crop and max_wave_duration is None:
-            raise ValueError("Set the crop size in max_wave_duration argument.")
+        if random_crop and max_audio_duration is None:
+            raise ValueError("Set the crop size in max_audio_duration argument.")
 
         if self._model_type.startswith("resemblyzer"):
             self._sample_rate = 16000
@@ -102,7 +102,7 @@ class VoiceBiometricProcessor(BaseDSProcessor):
                     Path(self._model_name).absolute().as_posix()
                 )
             else:
-                self._encoder = wespeaker.load_model(self._model_name)
+                self._encoder = wespeaker.load_model(str(self._model_name))
             self._encoder.model.eval()
             if self.device != "cpu":
                 self._encoder.set_gpu(int(self.device[5:]))
@@ -123,18 +123,18 @@ class VoiceBiometricProcessor(BaseDSProcessor):
         return self._embedding_dim
 
     @torch.inference_mode()
-    def _get_embedding(self, wave):
+    def _get_embedding(self, waveform):
         assert self._encoder is not None
         if self._model_type.startswith("resemblyzer"):
-            wav_input = preprocess_wav(wave)
-            embedding = self._encoder.embed_utterance(wav_input)
+            waveform = preprocess_wav(waveform)
+            embedding = self._encoder.embed_utterance(waveform)
         elif self._model_type.startswith("speechbrain"):
-            wave = torch.from_numpy(wave).to(self.device)
-            embedding = self._encoder.encode_batch(wave).cpu().numpy().flatten()
+            waveform = torch.from_numpy(waveform).to(self.device)
+            embedding = self._encoder.encode_batch(waveform).cpu().numpy().flatten()
         elif self._model_type.startswith("wespeaker"):
-            wave = torch.from_numpy(wave).to(self.device)
+            waveform = torch.from_numpy(waveform).to(self.device)
             feats = self._encoder.compute_fbank(
-                wave.unsqueeze(0), sample_rate=self._sample_rate, cmn=True
+                waveform.unsqueeze(0), sample_rate=self._sample_rate, cmn=True
             )
             feats = feats.unsqueeze(0).to(self.device)
             outputs = self._encoder.model(feats)
@@ -152,50 +152,67 @@ class VoiceBiometricProcessor(BaseDSProcessor):
         audio_chunk = ds.audio_chunk
 
         if self._random_crop:
-            begin = audio_chunk.duration - self._max_wave_duration
+            begin = audio_chunk.duration - self._max_audio_duration
             if begin > 0:
                 begin *= random.random()
-                end = begin + self._max_wave_duration
+                end = begin + self._max_audio_duration
                 audio_chunk = audio_chunk.trim(begin=begin, end=end)
         else:
-            if self._max_wave_duration and audio_chunk.duration > self._max_wave_duration:
-                audio_chunk = audio_chunk.trim(end=self._max_wave_duration)
+            if (
+                self._max_audio_duration
+                and audio_chunk.duration > self._max_audio_duration
+            ):
+                audio_chunk = audio_chunk.trim(end=self._max_audio_duration)
 
-        audio_chunk = audio_chunk.resample(
-            sr=self._sample_rate, fast=self._fast_wave_resample
-        )
+        audio_chunk = audio_chunk.resample(sr=self._sample_rate, fast=self._fast_resample)
 
         ds.speaker_emb = self._get_embedding(audio_chunk.waveform)
         return ds.to_numpy()
 
     @lazy_initialization
     def compute_sm_loss(self, audio, audio_gt, sample_rate: int):
-        if self._model_type.startswith("wespeaker"):
-            if self._encoder.device != audio.device:
-                self._encoder.model.to(audio.device)
+        if self._model_type.startswith("speechbrain"):
 
-            def get_feat(_audio):
-                feats = []
-                for waveform in _audio:
-                    feats.append(
-                        self._encoder.compute_fbank(
-                            waveform, sample_rate=sample_rate, cmn=True
-                        )
-                    )
-                return torch.stack(feats)
+            def compute_feat(_waveform):
+                return _waveform.squeeze(0)
 
-            _feat = get_feat(audio)
-            _sp_emb = self._encoder.model(_feat)[-1]
+            def compute_embedding(_feat):
+                return self._encoder.encode_batch(_feat).squeeze(1)
 
-            with torch.no_grad():
-                _feat_gt = get_feat(audio_gt)
-                _sp_emb_gt = self._encoder.model(_feat_gt)[-1]
+        elif self._model_type.startswith("wespeaker"):
 
-            return torch.mean(
-                1.0 - F.cosine_similarity(_sp_emb, _sp_emb_gt.detach()), dim=0
-            )
+            def compute_feat(_waveform):
+                return self._encoder.compute_fbank(
+                    _waveform, sample_rate=sample_rate, cmn=True
+                )
+
+            def compute_embedding(_feat):
+                return self._encoder.model(_feat)[-1]
+
         else:
             raise NotImplementedError
+
+        if self._encoder.device != audio.device:
+            if hasattr(self._encoder, "model"):
+                self._encoder.model.to(audio.device)
+            else:
+                self._encoder.to(audio.device)
+                self._encoder.device = audio.device
+
+        def get_feat(_audio):
+            feats = []
+            for waveform in _audio:
+                feats.append(compute_feat(waveform))
+            return torch.stack(feats)
+
+        _feat = get_feat(audio)
+        _sp_emb = compute_embedding(_feat)
+
+        with torch.no_grad():
+            _feat_gt = get_feat(audio_gt)
+            _sp_emb_gt = compute_embedding(_feat_gt)
+
+        return torch.mean(1.0 - F.cosine_similarity(_sp_emb, _sp_emb_gt.detach()), dim=0)
 
 
 @PipeRegistry.registry(inputs={"speaker_name"}, outputs={"speaker_emb_mean"})
@@ -211,21 +228,21 @@ if __name__ == "__main__":
     from speechflow.utils.profiler import Profiler
 
     wav_path = get_root_dir() / "tests/data/test_audio.wav"
-    ref_wave = AudioChunk(wav_path).load()
+    ref_waveform = AudioChunk(wav_path).load()
 
     for model in ["resemblyzer", "speechbrain", "wespeaker"]:
         print(model)
         bio = VoiceBiometricProcessor(model_type=model)
-        clean_emb = bio.process(AudioDataSample(audio_chunk=ref_wave)).speaker_emb
+        clean_emb = bio.process(AudioDataSample(audio_chunk=ref_waveform)).speaker_emb
         clean_emb = torch.from_numpy(clean_emb)
 
         for noise_scale in [0.001, 0.01, 0.1, 0.5]:
-            noise_wave = ref_wave.copy()
-            noise_wave.data += np.random.random(noise_wave.data.shape) * noise_scale  # type: ignore
+            noise_waveform = ref_waveform.copy()
+            noise_waveform.data += np.random.random(noise_waveform.data.shape) * noise_scale  # type: ignore
 
             with Profiler():
                 noise_emb = bio.process(
-                    AudioDataSample(audio_chunk=noise_wave)
+                    AudioDataSample(audio_chunk=noise_waveform)
                 ).speaker_emb
                 noise_emb = torch.from_numpy(noise_emb)
 

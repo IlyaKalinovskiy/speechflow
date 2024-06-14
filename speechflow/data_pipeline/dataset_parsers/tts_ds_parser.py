@@ -242,39 +242,39 @@ class TTSDSParser(BaseDSParser):
 
     @staticmethod
     @PipeRegistry.registry(inputs={"sega"}, outputs={"sega"})
-    def wave_strip(
+    def audio_strip(
         metadata: Metadata,
         pad: tp.Optional[float] = None,
         add_fade: bool = False,
         fade_threshold: float = 0.05,
     ) -> tp.List[Metadata]:
         sega: AudioSeg = metadata["sega"]
-        wave_begin = sega.ts_bos
-        wave_end = sega.ts_eos
+        audio_begin = sega.ts_bos
+        audio_end = sega.ts_eos
 
         if pad:
             pad = max(0.0, pad)
 
             assert sega.ts_by_words
-            wave_begin = sega.ts_by_words.begin
-            wave_end = sega.ts_by_words.end
+            audio_begin = sega.ts_by_words.begin
+            audio_end = sega.ts_by_words.end
 
             pad_begin = pad
             if len(sega.meta.get("bos_label", "")) > 0:
                 pad_begin /= 2
-            offset = min(pad_begin, wave_begin - sega.audio_chunk.begin)
-            wave_begin -= offset
+            offset = min(pad_begin, audio_begin - sega.audio_chunk.begin)
+            audio_begin -= offset
 
             pad_end = pad
             if len(sega.meta.get("eos_label", "")) > 0:
                 pad_end /= 2
-            offset = min(pad_end, sega.audio_chunk.end - wave_end)
-            wave_end += offset
+            offset = min(pad_end, sega.audio_chunk.end - audio_end)
+            audio_end += offset
 
-        sega.ts_bos = wave_begin
-        sega.ts_eos = wave_end
-        sega.audio_chunk.begin = wave_begin
-        sega.audio_chunk.end = wave_end
+        sega.ts_bos = audio_begin
+        sega.ts_eos = audio_end
+        sega.audio_chunk.begin = audio_begin
+        sega.audio_chunk.end = audio_end
 
         if add_fade:
             assert sega.ts_by_words
@@ -284,18 +284,6 @@ class TTSDSParser(BaseDSParser):
             right_dura = 0.0 if right_dura < fade_threshold else right_dura / 2
             sega.audio_chunk.fade_duration = (left_dura, right_dura)
 
-        return [metadata]
-
-    @staticmethod
-    @PipeRegistry.registry(inputs={"sega"}, outputs={"sega"})
-    def load(
-        metadata: Metadata,
-        sample_rate: int = None,  # type: ignore
-        dtype=np.float32,
-        mode: tp.Optional[str] = None,
-    ) -> tp.List[Metadata]:
-        sega: AudioSeg = metadata["sega"]
-        sega.audio_chunk.load(sr=sample_rate, dtype=dtype, mode=mode)
         return [metadata]
 
     @staticmethod

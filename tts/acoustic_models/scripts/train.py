@@ -47,7 +47,7 @@ def update_model_config(cfg: Config, dl: DataLoader):
             "max_input_length", int(ds_stat.max_transcription_length * 1.1)
         )
         cfg["net"]["params"].setdefault(
-            "max_output_length", int(ds_stat.max_wave_duration * sr / hop_len * 1.1)
+            "max_output_length", int(ds_stat.max_audio_duration * sr / hop_len * 1.1)
         )
 
     speaker_id_handler = dl.client.find_info("SpeakerIDSetter")

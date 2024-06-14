@@ -91,6 +91,7 @@ class AudioFeatures(FeatureExtractor):
         linear_spectrogram_dim: int = 513,
         mel_spectrogram_dim: int = 80,
         ssl_feat_dim: int = 768,
+        style_emb_dim: int = 256,
         condition_emb_dim: int = 32,
         encoder_type: str = "RNNEncoder",
         encoder_num_blocks: int = 1,
@@ -101,7 +102,7 @@ class AudioFeatures(FeatureExtractor):
             "SimpleStyle", "StyleSpeech", "StyleTTS2"
         ] = "StyleSpeech",
         style_feat_type: tp.Literal[
-            "linear_spec", "mel_spec", "ssl_feat", "speaker_emb"
+            "linear_spec", "mel_spec", "ssl_feat", "speaker_emb", "style_emb"
         ] = "mel_spec",
         style_use_gmvae: bool = True,
         style_use_fsq: bool = False,
@@ -134,6 +135,8 @@ class AudioFeatures(FeatureExtractor):
                 return ssl_feat_dim
             elif style_feat_type == "speaker_emb":
                 return speaker_emb_dim
+            elif style_feat_type == "style_emb":
+                return style_emb_dim
             else:
                 raise NotImplementedError(f"feat_name '{feat_name}' is not supported")
 
@@ -273,6 +276,7 @@ class AudioFeatures(FeatureExtractor):
                 vp_num_layers=encoder_num_layers,
                 vp_output_dim=1,
                 use_ssl_adjustment=True,
+                ssl_feat_dim=ssl_feat_dim,
             )
             self.pitch_predictor = FrameLevelPredictorWithDiscriminator(
                 pitch_predictor_params, in_dim
@@ -391,10 +395,15 @@ class AudioFeatures(FeatureExtractor):
             source, source_lengths = inputs.ssl_feat, inputs.ssl_feat_lengths
         elif self.style_feat_type == "speaker_emb":
             source, source_lengths = inputs.speaker_emb, None
+        elif self.style_feat_type == "style_emb":
+            source, source_lengths = inputs.additional_inputs["style_emb"], None
         else:
             raise NotImplementedError
 
-        source_mask = get_mask_from_lengths(source_lengths)
+        if source_lengths is not None:
+            source_mask = get_mask_from_lengths(source_lengths)
+        else:
+            source_mask = None
 
         style_emb = None
         style_losses = {}

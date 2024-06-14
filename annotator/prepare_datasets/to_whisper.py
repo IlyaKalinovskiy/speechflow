@@ -10,8 +10,8 @@ from speechflow.data_pipeline.dataset_parsers import EasyDSParser
 
 
 def _to_whisper(wav_path: Path):
-    if wav_path.with_suffix(".whisp.wav").exists():
-        return True
+    if "whisp.wav" in wav_path.as_posix() or wav_path.with_suffix(".whisp.wav").exists():
+        return False
 
     ds = AudioDataSample(file_path=wav_path)
 

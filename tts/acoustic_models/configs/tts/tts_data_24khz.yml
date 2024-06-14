@@ -24,9 +24,9 @@ dataset:
 parser:
   type: TTSDSParser
   dump: !join [*data_root, *dump_folder]
-  pipe: [wave_strip, split_by_phrases, check_phoneme_length, get_simple_intonation_type]
+  pipe: [audio_strip, split_by_phrases, check_phoneme_length, get_simple_intonation_type]
   pipe_cfg:
-    wave_strip:
+    audio_strip:
       pad: 0.25
       add_fade: true
     split_by_phrases:
@@ -54,7 +54,7 @@ preproc:
     voice_bio_speechbrain:
       type: VoiceBiometricProcessor
       model_type: speechbrain
-      max_wave_duration: 5
+      max_audio_duration: 5
       random_crop: true
     store_bio_emb:
       type: store_field
@@ -63,11 +63,11 @@ preproc:
     voice_bio_wespeaker:
       type: VoiceBiometricProcessor
       model_type: wespeaker
-      max_wave_duration: 5
+      max_audio_duration: 5
       random_crop: true
     speech_quality:
       type: SpeechQualityAssessment
-      max_wave_duration: 5
+      max_audio_duration: 5
       random_crop: true
     spectrogram:
       type: SpectralProcessor

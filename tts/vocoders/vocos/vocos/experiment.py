@@ -25,7 +25,6 @@ from tts.vocoders.vocos.vocos.loss import (
     GeneratorLoss,
     MelSpecReconstructionLoss,
     MultiResolutionSTFTLoss,
-    SubBandMultiResolutionSTFTLoss,
 )
 from tts.vocoders.vocos.vocos.models import Backbone
 from tts.vocoders.vocos.vocos.modules import safe_log
@@ -87,9 +86,6 @@ class VocosExp(pl.LightningModule):
         self.feat_matching_loss = FeatureMatchingLoss()
         self.melspec_loss = MelSpecReconstructionLoss(sample_rate=sample_rate)
         self.mr_melspec_loss = MultiResolutionSTFTLoss(fft_sizes, hop_sizes, win_sizes)
-        self.mb_mr_melspec_loss = SubBandMultiResolutionSTFTLoss(
-            subbands, fft_sizes, hop_sizes, win_sizes
-        )
 
         self.train_discriminator = False
         self.base_mel_coeff = self.mel_loss_coeff = mel_loss_coeff
@@ -160,7 +156,7 @@ class VocosExp(pl.LightningModule):
         # train discriminator
         if optimizer_idx == 0 and self.train_discriminator:
             with torch.no_grad():
-                audio_hat, mb_audio_hat, _ = self(batch, **kwargs)
+                audio_hat, _, _ = self(batch, **kwargs)
 
             real_score_mp, gen_score_mp, _, _ = self.multiperioddisc(
                 y=audio_input,
@@ -187,7 +183,7 @@ class VocosExp(pl.LightningModule):
 
         # train generator
         if optimizer_idx == 1:
-            audio_hat, mb_audio_hat, feat_losses = self(batch, **kwargs)
+            audio_hat, _, feat_losses = self(batch, **kwargs)
             if self.train_discriminator:
                 _, gen_score_mp, fmap_rs_mp, fmap_gs_mp = self.multiperioddisc(
                     y=audio_input,
@@ -220,9 +216,6 @@ class VocosExp(pl.LightningModule):
             melspec_loss = self.melspec_loss(audio_hat, audio_input)
             mr_melspec_loss = self.mr_melspec_loss(audio_hat, audio_input)
             mel_loss = melspec_loss + mr_melspec_loss
-
-            if mb_audio_hat is not None:
-                mel_loss += self.mb_mr_melspec_loss(mb_audio_hat, audio_input)
 
             loss = (
                 loss_gen_mp
@@ -294,7 +287,7 @@ class VocosExp(pl.LightningModule):
         kwargs["ac_latent_gt"] = batch.collated_samples.ac_feat
         kwargs["speaker_emb_gt"] = batch.collated_samples.speaker_emb
 
-        audio_hat, mb_audio_hat, feat_losses = self(batch, **kwargs)
+        audio_hat, _, feat_losses = self(batch, **kwargs)
 
         audio_16_khz = torchaudio.functional.resample(
             audio_input, orig_freq=self.hparams.sample_rate, new_freq=16000
@@ -429,7 +422,7 @@ class VocosExp(pl.LightningModule):
         config.update(self.trainer.datamodule.hparams)  # type: ignore
         checkpoint["config"] = config
 
-        data_cfg_path = Path(config["data"]["init_args"]["train_params"]["data_cfg_path"])
+        data_cfg_path = Path(config["data"]["init_args"]["config"]["cfg_path"])
         data_cfg = yaml.load(
             data_cfg_path.read_text(encoding="utf-8"), Loader=get_yaml_loader()
         )

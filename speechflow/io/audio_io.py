@@ -55,7 +55,9 @@ class AudioChunk:
                 try:
                     self.sr = int(librosa.get_samplerate(path=self.file_path.as_posix()))
                     if LIBROSA_VERSION[1] <= 9:
-                        self.end = librosa.get_duration(filename=self.file_path.as_posix())
+                        self.end = librosa.get_duration(
+                            filename=self.file_path.as_posix()
+                        )
                     else:
                         self.end = librosa.get_duration(path=self.file_path.as_posix())
                 except:
@@ -99,7 +101,7 @@ class AudioChunk:
         load_entire_file: bool = False,
     ) -> "AudioChunk":
         assert isinstance(self.file_path, Path), "wav path not set!"
-        assert self.file_path.exists(), "wav file not found!"
+        assert self.file_path.exists(), f"wav file {self.file_path.as_posix()} not found!"
 
         if load_entire_file:
             self.data, self.sr = librosa.load(self.file_path, sr=sr)

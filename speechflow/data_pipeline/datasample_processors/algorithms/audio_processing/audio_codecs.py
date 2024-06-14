@@ -41,8 +41,8 @@ class BaseAudioCodecModel(torch.nn.Module):
         self,
         device: str = "cpu",
         feat_type: ACFeatureType = ACFeatureType.continuous,
-        audio_duration_min: tp.Optional[float] = None,
-        audio_duration_max: tp.Optional[float] = None,
+        min_audio_duration: tp.Optional[float] = None,
+        max_audio_duration: tp.Optional[float] = None,
     ):
         super().__init__()
 
@@ -54,11 +54,11 @@ class BaseAudioCodecModel(torch.nn.Module):
             ACFeatureType[feat_type] if isinstance(feat_type, str) else feat_type
         )
 
-        self._audio_duration_min = audio_duration_min
-        self._audio_duration_max = audio_duration_max
+        self._min_audio_duration = min_audio_duration
+        self._max_audio_duration = max_audio_duration
 
-        if self._audio_duration_max is not None:
-            self._audio_duration_max = int(audio_duration_max * self.sample_rate)
+        if self._max_audio_duration is not None:
+            self._max_audio_duration = int(max_audio_duration * self.sample_rate)
 
     def preprocess(self, audio_chunk: AudioChunk) -> torch.Tensor:
         assert np.issubdtype(
@@ -67,9 +67,9 @@ class BaseAudioCodecModel(torch.nn.Module):
 
         audio_chunk = audio_chunk.resample(sr=self.sample_rate, fast=True)
 
-        if self._audio_duration_max is not None:
+        if self._max_audio_duration is not None:
             data = torch.tensor(
-                audio_chunk.waveform[: self._audio_duration_max], device=self.device
+                audio_chunk.waveform[: self._max_audio_duration], device=self.device
             )
         else:
             data = torch.tensor(audio_chunk.waveform, device=self.device)
@@ -77,7 +77,7 @@ class BaseAudioCodecModel(torch.nn.Module):
         return data.unsqueeze(0)
 
     def postprocessing(self, feat: AudioCodecFeatures) -> AudioCodecFeatures:
-        if self._audio_duration_min is not None:
+        if self._min_audio_duration is not None:
             pass
         return feat
 
@@ -87,10 +87,10 @@ class DAC(BaseAudioCodecModel):
         self,
         device: str = "cpu",
         feat_type: ACFeatureType = ACFeatureType.continuous,
-        audio_duration_min: tp.Optional[float] = None,
-        audio_duration_max: tp.Optional[float] = None,
+        min_audio_duration: tp.Optional[float] = None,
+        max_audio_duration: tp.Optional[float] = None,
     ):
-        super().__init__(device, feat_type, audio_duration_min, audio_duration_max)
+        super().__init__(device, feat_type, min_audio_duration, max_audio_duration)
 
         self.sample_rate = 24000
 
@@ -104,7 +104,7 @@ class DAC(BaseAudioCodecModel):
             raise NotImplementedError(f"feature {self._feat_type} is not supported")
 
         model_path = dac.utils.download(model_type=f"{self.sample_rate // 1000}khz")
-        self.model = dac.DAC.load(str(model_path))
+        self.model = dac.DAC.load(model_path.as_posix())
         self.model.to(device)
 
     @torch.inference_mode()
@@ -145,12 +145,12 @@ class VocosAC(BaseAudioCodecModel):
         ckpt_path: Path,
         device: str = "cpu",
         feat_type: ACFeatureType = ACFeatureType.continuous,
-        audio_duration_min: tp.Optional[float] = None,
-        audio_duration_max: tp.Optional[float] = None,
+        min_audio_duration: tp.Optional[float] = None,
+        max_audio_duration: tp.Optional[float] = None,
     ):
         from tts.vocoders.eval_interface import VocoderEvaluationInterface
 
-        super().__init__(device, feat_type, audio_duration_min, audio_duration_max)
+        super().__init__(device, feat_type, min_audio_duration, max_audio_duration)
 
         self.sample_rate = 24000
 

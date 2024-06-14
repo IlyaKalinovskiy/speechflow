@@ -6,9 +6,56 @@ import torchaudio
 from torch import nn
 from torch.nn import functional as F
 
-from tts.vocoders.vocos.common.audio_transforms import SpectrogramTransform
-from tts.vocoders.vocos.common.pqmf import PQMF
 from tts.vocoders.vocos.vocos.modules import safe_log
+
+
+class SpectrogramTransform(nn.Module):
+    """Simple transform for computing STFT from given waveform.
+
+    Args:
+        fft_size (int): fft_size for stft
+        hop_size (int): hop_size for stft
+        win_size (int): win_size for stft
+
+    """
+
+    def __init__(self, fft_size: int = 1024, hop_size: int = 256, win_size: int = 800):
+        super().__init__()
+        self.fft_size = fft_size
+        self.hop_size = hop_size
+        self.win_size = win_size
+        self.window = nn.Parameter(torch.hann_window(win_size), requires_grad=False)
+
+    def transform(self, waveform: torch.Tensor, global_step: int) -> torch.Tensor:
+        if len(waveform.shape) == 3:
+            waveform = waveform.squeeze(1)
+
+        # Always compute spectrogram in FP32:
+        input_tensor_dtype = waveform.type()
+        if input_tensor_dtype != torch.float32:
+            waveform = waveform.type(torch.float32)
+            self.window.data = self.window.data.type(torch.float32)
+
+        x_stft = torch.stft(
+            waveform,
+            self.fft_size,
+            self.hop_size,
+            self.win_size,
+            self.window.data,
+            return_complex=False,
+        )
+        real = x_stft[..., 0]
+        imag = x_stft[..., 1]
+        outputs = torch.clamp(real**2 + imag**2, min=1e-7).transpose(2, 1)
+        outputs = torch.sqrt(outputs)
+
+        if input_tensor_dtype != torch.float32:
+            outputs = outputs.type(input_tensor_dtype)
+
+        return outputs.unsqueeze(1)
+
+    def forward(self, waveform: torch.Tensor, global_step: int) -> torch.Tensor:
+        return self.transform(waveform, global_step)
 
 
 class MelSpecReconstructionLoss(nn.Module):
@@ -200,28 +247,3 @@ class MultiResolutionSTFTLoss(nn.Module):
             Tensor: L1 loss between the mel-scaled magnitude spectrograms.
         """
         return self.compute_loss_value(y_hat, y)
-
-
-class SubBandMultiResolutionSTFTLoss(MultiResolutionSTFTLoss):
-    def __init__(
-        self,
-        subbands: int,
-        fft_sizes: Union[int, Tuple[int, ...]],
-        hop_sizes: Union[int, Tuple[int, ...]],
-        win_sizes: Union[int, Tuple[int, ...]],
-    ):
-        super().__init__(fft_sizes, hop_sizes, win_sizes)
-        self.subbands = subbands
-        if self.subbands > 1:
-            self.pqmf = PQMF(subbands=subbands)
-
-    def compute_loss_value(self, y_hat, y) -> torch.Tensor:
-        if self.subbands == 1:
-            return 0
-
-        y_mb = self.pqmf.analysis(y.unsqueeze(1))
-        y_mb = y_mb.reshape(-1, y_mb.size(2))
-
-        y_hat_mb = y_hat.reshape(-1, y_hat.size(2))
-
-        return super().compute_loss_value(y_hat_mb, y_mb)

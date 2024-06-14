@@ -291,6 +291,12 @@ class SignalProcessor(BaseAudioProcessor):
         if random.random() > p:
             return ds
 
+        whisp_wav_path = ds.audio_chunk.file_path.with_suffix(".whisp.wav")
+        if whisp_wav_path.exists():
+            ds.audio_chunk.file_path = whisp_wav_path
+            ds.audio_chunk.load(sr=ds.audio_chunk.sr, dtype=ds.audio_chunk.dtype)
+            return ds
+
         ds.audio_chunk = self._sound_effects.whisper(ds.audio_chunk)
         return ds
 

@@ -28,19 +28,19 @@ class SpeechQualityAssessment(BaseDSProcessor):
     def __init__(
         self,
         model_type: str = "nisqa",
-        max_wave_duration: tp.Optional[float] = 10,
-        fast_wave_resample: bool = True,
+        max_audio_duration: tp.Optional[float] = 10,
+        fast_resample: bool = True,
         random_crop: bool = False,
         device: str = "cpu",
     ):
         super().__init__(device=device)
         self._model_type = model_type
-        self._max_wave_duration = max_wave_duration
-        self._fast_wave_resample = fast_wave_resample
+        self._max_audio_duration = max_audio_duration
+        self._fast_resample = fast_resample
         self._random_crop = random_crop
 
-        if random_crop and max_wave_duration is None:
-            raise ValueError("Set the crop size in max_wave_duration argument.")
+        if random_crop and max_audio_duration is None:
+            raise ValueError("Set the crop size in max_audio_duration argument.")
 
         if self._model_type == "cdpam":
             self._cdpam = None
@@ -81,18 +81,19 @@ class SpeechQualityAssessment(BaseDSProcessor):
         audio_chunk = ds.audio_chunk
 
         if self._random_crop:
-            begin = audio_chunk.duration - self._max_wave_duration
+            begin = audio_chunk.duration - self._max_audio_duration
             if begin > 0:
                 begin *= random.random()
-                end = begin + self._max_wave_duration
+                end = begin + self._max_audio_duration
                 audio_chunk = audio_chunk.trim(begin=begin, end=end)
         else:
-            if self._max_wave_duration and audio_chunk.duration > self._max_wave_duration:
-                audio_chunk = audio_chunk.trim(end=self._max_wave_duration)
+            if (
+                self._max_audio_duration
+                and audio_chunk.duration > self._max_audio_duration
+            ):
+                audio_chunk = audio_chunk.trim(end=self._max_audio_duration)
 
-        audio_chunk = audio_chunk.resample(
-            sr=self._sample_rate, fast=self._fast_wave_resample
-        )
+        audio_chunk = audio_chunk.resample(sr=self._sample_rate, fast=self._fast_resample)
 
         if self._model_type == "cdpam":
             wave = torch.round(torch.from_numpy(audio_chunk.waveform) * 32768.0)

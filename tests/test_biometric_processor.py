@@ -32,7 +32,7 @@ wespeaker_test_output = tests_data_dir / "biometric/wespeaker_embedding_test.pkl
 def test_bio_processor(
     model_type: str, path_to_wav: tp.Union[Path, str], precompute_path: Path
 ):
-    proc = VoiceBiometricProcessor(model_type, fast_wave_resample=False)
+    proc = VoiceBiometricProcessor(model_type, fast_resample=False)
     ds = AudioDataSample(audio_chunk=AudioChunk(file_path=path_to_wav))
     ds.audio_chunk.load()
     ds = proc.process(ds)
