@@ -155,6 +155,8 @@ class DumpProcessor:
     @staticmethod
     def get_name_and_fields(function) -> tp.Tuple[str, tp.List[str], str]:
         """Returns function name and a list of modified outputs."""
+        init_params: Config = getattr(function, "init_params", Config.empty())
+
         while isinstance(function, partial):
             function = function.func
 
@@ -162,7 +164,6 @@ class DumpProcessor:
         fields = [fields] if isinstance(fields, str) else fields
         name_attr = "_classname" if hasattr(function, "_classname") else "__name__"
         func_name = getattr(function, name_attr)
-        init_params: Config = getattr(function, "init_params", Config.empty())
         return func_name, fields, init_params.hash
 
     def _load_preproc_data(

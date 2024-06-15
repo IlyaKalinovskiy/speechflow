@@ -36,7 +36,9 @@ class Config(DictConfig):
 
     @property
     def hash(self) -> str:
-        return hashlib.md5(self.to_yaml().encode("utf-8")).hexdigest()
+        flat = self.flatten().to_dict()
+        flat = {k: v for k, v in flat.items() if "device" not in k}
+        return hashlib.md5(yaml_dump(flat).encode("utf-8")).hexdigest()[:8]
 
     @property
     def raw_file(self) -> str:
@@ -77,7 +79,7 @@ class Config(DictConfig):
 
     def flatten(self, sep: str = ".") -> "Config":
         as_dict = self.to_dict()
-        as_dict = flatten_dict(as_dict, sep=sep)
+        as_dict = flatten_dict(as_dict, name="cfg", sep=sep)
         return Config(as_dict)
 
     def find_field(

@@ -145,7 +145,6 @@ def init_data_preprocessing_from_config(
             method = functools.partial(method, **step_arguments)
 
         init_params = step_config.copy()
-        init_params.pop("device", None)
 
         try:
             setattr(method, "init_params", init_params)
@@ -586,11 +585,17 @@ class DataPipeline:
         }
 
         try:
-            dump_obj = deepcopy(self)
-            for name in self.subsets:
-                dump_obj[name].sampler = None
+            LOGGER.info(trace(self, message="Pickling DataPipeline"))
 
-            info["data_pipeline"] = Serialize.dump(dump_obj)
+            temp = {}
+            for name in self.subsets:
+                temp[name] = self[name].sampler
+                self[name].sampler = None
+
+            info["data_pipeline"] = Serialize.dump(self)
+
+            for name in self.subsets:
+                self[name].sampler = temp[name]
         except (TypeError, pickle.PickleError) as e:
             LOGGER.warning(
                 trace(self, e, "Current pipelines configuration not support pickle!")
