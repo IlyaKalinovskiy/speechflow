@@ -91,7 +91,7 @@ class AudioFeatures(FeatureExtractor):
         linear_spectrogram_dim: int = 513,
         mel_spectrogram_dim: int = 80,
         ssl_feat_dim: int = 768,
-        style_emb_dim: int = 256,
+        style_emb_dim: int = 192,
         condition_emb_dim: int = 32,
         encoder_type: str = "RNNEncoder",
         encoder_num_blocks: int = 1,
@@ -104,8 +104,9 @@ class AudioFeatures(FeatureExtractor):
         style_feat_type: tp.Literal[
             "linear_spec", "mel_spec", "ssl_feat", "speaker_emb", "style_emb"
         ] = "mel_spec",
-        style_use_gmvae: bool = True,
+        style_use_gmvae: bool = False,
         style_use_fsq: bool = False,
+        style_gmvae_n_components: int = 16,
         vq_type: tp.Literal["vq", "rvq", "rfsq", "rlfq"] = "rlfq",
         vq_emb_dim: int = 256,
         vq_codebook_size: int = 1024,
@@ -194,6 +195,7 @@ class AudioFeatures(FeatureExtractor):
                 max_spec_len=512,
                 use_gmvae=style_use_gmvae,
                 use_fsq=style_use_fsq,
+                gmvae_n_components=style_gmvae_n_components,
             )
             self.style_enc = StyleEncoder(style_params, 0)
 

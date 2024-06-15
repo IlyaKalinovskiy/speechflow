@@ -70,6 +70,8 @@ net:
 
     use_average_emb: true
     averages:
+      rate:
+        interval: [0, 64]
       energy:
         interval: [0, 150]
 
@@ -100,7 +102,7 @@ net:
           vp_params:
             base_encoder_type: SimpleStyle
             source: ecapa_emb
-            source_dim: 256
+            source_dim: 192
             use_gmvae: true
             gmvae_n_components: 16
       spectrogram_encoder:
@@ -115,6 +117,9 @@ net:
         cat_to_content: []
       aggregate_energy:
         predictor_type: TokenLevelPredictor
+        predictor_params:
+          vp_params:
+            use_lm: true
         as_embedding: true
         interval: [0, 1.5]
         n_bins: 256
@@ -122,6 +127,9 @@ net:
         cat_to_content: [1]
       aggregate_pitch:
         predictor_type: TokenLevelPredictor
+        predictor_params:
+          vp_params:
+            use_lm: true
         log_scale: true
         as_embedding: true
         interval: [0, 1.5]
@@ -130,6 +138,9 @@ net:
         cat_to_content: [1]
       aggregate_curv_energy:
         predictor_type: TokenLevelPredictor
+        predictor_params:
+          vp_params:
+            use_lm: true
         dim: 2
         as_embedding: true
         interval: [-1.58, 1.58]
@@ -138,6 +149,9 @@ net:
         cat_to_content: [1]
       aggregate_curv_pitch:
         predictor_type: TokenLevelPredictor
+        predictor_params:
+          vp_params:
+            use_lm: true
         dim: 2
         as_embedding: true
         interval: [-1.58, 1.58]
@@ -146,7 +160,7 @@ net:
         cat_to_content: [1]
       durations:
         predictor_type: TokenLevelDP
-        denormalize: true
+        denormalize: false
       energy:
         predictor_type: FrameLevelPredictor
         denormalize: true
@@ -157,6 +171,9 @@ net:
         cat_to_content: [0]
       pitch:
         predictor_type: FrameLevelPredictor
+        predictor_params:
+          vp_params:
+            use_ssl_adjustment: true
         denormalize: true
         log_scale: true
         as_embedding: true

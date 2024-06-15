@@ -130,7 +130,7 @@ class EmbeddingCalculator(BaseTorchModel):
         return x
 
     def get_lang_embedding(self, inputs: TTSForwardInput) -> tp.Optional[torch.Tensor]:
-        if not hasattr(inputs, "lang_ids") or inputs.lang_id is None:
+        if not hasattr(inputs, "lang_id") or inputs.lang_id is None:
             return None
 
         if self.lang_embedding is not None:

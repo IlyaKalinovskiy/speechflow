@@ -1,4 +1,3 @@
-import json
 import random
 import shutil
 import typing as tp
@@ -24,7 +23,7 @@ from tqdm import tqdm
 from speechflow.data_pipeline.collate_functions.tts_collate import TTSCollateOutput
 from speechflow.data_pipeline.core import Batch
 from speechflow.data_server.helpers import LoaderParams, init_data_loader_from_config
-from speechflow.io import Config
+from speechflow.io import Config, json_dump_to_file
 from speechflow.logging.server import LoggingServer
 
 LOGGER = logging.getLogger("root")
@@ -121,11 +120,15 @@ def update_config(cfg: Config, n_processes: int, n_gpus: int) -> Config:
     cfg["data_server"]["n_processes"] = n_processes
     cfg["data_server"]["n_gpus"] = n_gpus
     cfg["data_server"]["memory_save"] = False
-    cfg["processor"]["verbose_logging"] = True
+    # cfg["processor"]["verbose_logging"] = True
+
     if "dump" in cfg["processor"]:
         cfg["processor"]["dump"]["skip_samples_without_dump"] = False
 
-    cfg["preproc"]["pipe_cfg"]["voice_bio"].pop("mean_embeddings_file", None)
+    for item in cfg["preproc"]["pipe_cfg"].values():
+        if item.get("type") == "VoiceBiometricProcessor":
+            item.pop("mean_embeddings_file", None)
+
     cfg["singleton_handlers"]["SpeakerIDSetter"].pop("mean_embeddings_file", None)
     if "MeanBioEmbeddings" in cfg["singleton_handlers"]["handlers"]:
         cfg["singleton_handlers"]["handlers"].remove("MeanBioEmbeddings")
@@ -354,6 +357,7 @@ def main(
                     raise RuntimeError(
                         "Compute ranges supported for multispeaker configuration only"
                     )
+                lang_id_map = speaker_id_handler.id2lang
                 speaker_id_map = speaker_id_handler.id2speaker
 
                 if len(data_loader) < subset_size:
@@ -419,10 +423,11 @@ def main(
                         contours = contours_gathering(batch, contours, contour_length)
 
                 if data_loader.subset_name == "train":
+                    lang_id_map_path = dump_folder / "lang_id_map.json"
+                    json_dump_to_file(lang_id_map_path, lang_id_map)
+
                     speaker_id_map_path = dump_folder / "speaker_id_map.json"
-                    speaker_id_map_path.write_text(
-                        json.dumps(speaker_id_map, indent=4), encoding="utf-8"
-                    )
+                    json_dump_to_file(speaker_id_map_path, speaker_id_map)
 
                     all_speakers_ranges: tp.Dict[str, tp.Dict] = defaultdict(dict)
                     for attr in attributes:
@@ -440,9 +445,7 @@ def main(
                             }
 
                     ranges_path = dump_folder / file_name
-                    ranges_path.write_text(
-                        json.dumps(all_speakers_ranges, indent=4), encoding="utf-8"
-                    )
+                    json_dump_to_file(ranges_path, all_speakers_ranges)
 
                     if speaker_emb_mean:
                         mean_embeddings = {}
@@ -454,9 +457,7 @@ def main(
                             mean_embeddings[sp_name] = mean_emb.tolist()
 
                         mean_embeddings_path = dump_folder / "mean_bio_embeddings.json"
-                        mean_embeddings_path.write_text(
-                            json.dumps(mean_embeddings, indent=4), encoding="utf-8"
-                        )
+                        json_dump_to_file(mean_embeddings_path, mean_embeddings)
 
                     if contours_clustering:
                         all_contours = np.stack(contours)

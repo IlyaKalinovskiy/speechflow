@@ -214,33 +214,38 @@ class DumpProcessor:
                 s for s in samples if self._get_sample_path(s) not in self.skip_samples
             ]
             if num_samples != len(samples):
-                log_to_file(
+                message = (
                     f"{num_samples - len(samples)} samples thrown out as blacklisted!"
                 )
+                log_to_file(trace(self, message=message))
 
         if self.skip_samples_without_dump:
             num_samples = len(samples)
             samples = [s for s in samples if self._get_filename(s).exists()]
             if num_samples != len(samples):
-                log_to_file(
-                    f"{num_samples - len(samples)} samples thrown out because no dump was found for them!"
-                )
+                message = f"{num_samples - len(samples)} samples thrown out because no dump was found for them!"
+                log_to_file(trace(self, message=message))
 
         for sample in samples:
             file_path = self._get_filename(sample)
             if not file_path.exists():
-                LOGGER.warning(f"Dump for {sample.file_path.as_posix()} not found.")
+                if self.verbose_logging:
+                    message = f"Dump for {sample.file_path.as_posix()} not found."
+                    LOGGER.info(trace(self, message=message))
                 continue
 
-            with open(file_path.as_posix(), "rb") as f:
-                dump_data: dict = TensorUnpickler(f).load()
+            try:
+                with open(file_path.as_posix(), "rb") as f:
+                    dump_data: tp.Dict[str, tp.Any] = TensorUnpickler(f).load()
+            except EOFError:
+                file_path.unlink()
+                continue
 
             dumped_fields = dump_data["fields"]
             if len(dumped_fields) != len(self.fields):
-                message = (
-                    f"Not all fields are calculated for {sample.file_path.as_posix()}!"
-                )
-                LOGGER.warning(trace(self, message=message))
+                if self.verbose_logging:
+                    message = f"Not all fields are calculated for {sample.file_path.as_posix()}!"
+                    LOGGER.warning(trace(self, message=message))
 
             sample.update(dumped_fields)
 
@@ -274,18 +279,16 @@ class DumpProcessor:
                 if k in self.fields and v is not None
             }
             if len(dump_data) != len(self.fields):
-                message = (
-                    f"Not all fields are calculated for {sample.file_path.as_posix()}!"
-                )
-                LOGGER.warning(trace(self, message=message))
+                if self.verbose_logging:
+                    message = f"Not all fields are calculated for {sample.file_path.as_posix()}!"
+                    LOGGER.warning(trace(self, message=message))
 
             all_dump_data = {"fields": dump_data}
             if self.preproc_functions_storage:
                 all_dump_data["functions"] = self.preproc_functions_storage[file_path]
-                message = (
-                    f"dump functions with keys: {list(all_dump_data['functions'].keys())}"
-                )
-                LOGGER.warning(trace(self, message=message))
+                if self.verbose_logging:
+                    message = f"dump functions with keys: {list(all_dump_data['functions'].keys())}"
+                    LOGGER.info(trace(self, message=message))
 
             file_path.write_bytes(pickle.dumps(all_dump_data))
 

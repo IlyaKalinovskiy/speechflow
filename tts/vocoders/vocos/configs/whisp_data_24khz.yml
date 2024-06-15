@@ -35,7 +35,7 @@ parser:
 
 preproc:
   pipe: [audio_load,
-         style, store_field, voice_bio, speech_quality,
+         style, store_style, voice_bio, speech_quality,
          spectrogram, melscale,
          energy, pitch, enhancement_energy, enhancement_pitch,
          average_by_time, norm,
@@ -56,7 +56,8 @@ preproc:
       model_type: speechbrain
       max_audio_duration: 5
       random_crop: true
-    store_field:
+    store_style:
+      type: store_field
       key: speaker_emb
       as_key: style_emb
     voice_bio:

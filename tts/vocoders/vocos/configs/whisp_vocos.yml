@@ -23,7 +23,7 @@ model:
     cdpam_device: cuda:0
 
     # automatic evaluation
-    evaluate_utmos: true
+    evaluate_utmos: false
     evaluate_pesq: true
     evaluate_periodicty: true
 
@@ -73,7 +73,7 @@ trainer:
   logger:
     class_path: pytorch_lightning.loggers.TensorBoardLogger
     init_args:
-      save_dir: vc_vocos_logs_RU_FV2_mel_l4_gain
+      save_dir: vc_vocos_whisp
   callbacks:
     - class_path: pytorch_lightning.callbacks.LearningRateMonitor
     - class_path: pytorch_lightning.callbacks.ModelSummary

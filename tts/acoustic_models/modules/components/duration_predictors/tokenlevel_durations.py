@@ -75,54 +75,57 @@ class TokenLevelDP(Component):
         w_lengths = m_inputs.additional_inputs.get("word_lengths")
         w_inv_dura = m_inputs.additional_inputs.get("word_invert_lengths")
 
+        t_target = m_inputs.durations
+
         x_by_words, _ = self.lr(x, w_inv_dura, w_lengths.shape[1])
         w_predict, w_ctx = self.token_encoder.process_content(
             x_by_words, m_inputs.num_words, m_inputs
         )
         w_predict = F.relu(w_predict)
 
-        w_lens = torch.expm1(w_predict[..., 1]).unsqueeze(-1)
+        w_dura = torch.expm1(w_predict[..., 1]).unsqueeze(-1)
         if self.training:
-            w_lens = w_target.unsqueeze(-1)
+            w_dura = w_target.unsqueeze(-1)
 
         w_ctx, _ = self.hard_lr(w_ctx, w_lengths, x.shape[1])
-        w_lens, _ = self.hard_lr(w_lens, w_lengths, x.shape[1])
+        w_dura, _ = self.hard_lr(w_dura, w_lengths, x.shape[1])
 
-        x_by_tokens = self.token_proj(torch.cat([x, w_ctx, w_lens], dim=2))
+        x_by_tokens = self.token_proj(torch.cat([x, w_ctx, w_dura], dim=2))
         t_predict, t_ctx = self.token_encoder.process_content(
             x_by_tokens, m_inputs.token_lengths, m_inputs
         )
         t_predict = F.relu(t_predict)
 
-        durations_predict = torch.expm1(t_predict[..., 0])
-        # durations_predict = p_proj[..., 1] * w_len.squeeze(-1)
+        t_dura = torch.expm1(t_predict[..., 0])
+        # t_dura = p_proj[..., 1] * w_dura.squeeze(-1)
 
         if self.training:
-            d = m_inputs.durations
             if self.params.add_noise:
-                w_target = (w_target + torch.randn_like(w_target)).clip(min=0.1)
-                d = (d + 0.1 * torch.randn_like(d)).clip(min=0.1)
+                w_target = (w_target + 0.1 * torch.randn_like(w_target)).clip(min=0.01)
+                t_target = (t_target + 0.1 * torch.randn_like(t_target)).clip(min=0.01)
 
             if m_inputs.global_step % self.params.every_iter == 0:
-                losses["dur_token_loss"] = F.l1_loss(w_predict[..., 0], w_target)
-                losses["dur_token_log_loss"] = F.l1_loss(
+                losses["dur_loss_by_words"] = F.l1_loss(w_predict[..., 0], w_target)
+                losses["dur_log_loss_by_words"] = F.l1_loss(
                     w_predict[..., 1], torch.log1p(w_target)
                 )
-                losses["dur_phoneme_loss"] = F.l1_loss(t_predict[..., 0], torch.log1p(d))
-                losses["dur_phoneme_rel_loss"] = F.l1_loss(
-                    t_predict[..., 1], d / w_lens.squeeze(-1).clip(min=0.1)
+                losses["dur_log_loss_by_tokens"] = F.l1_loss(
+                    t_predict[..., 0], torch.log1p(t_target)
+                )
+                losses["dur_rel_loss_by_tokens"] = F.l1_loss(
+                    t_predict[..., 1], t_target / w_dura.squeeze(-1).clip(min=0.01)
                 )
 
             durations = m_inputs.durations
         else:
-            durations = durations_predict
+            durations = t_dura
 
         return (
             durations,
             {
                 "dp_context": t_ctx,
                 "dp_context_mask": x_mask,
-                "dp_predict": durations_predict,
+                "dp_predict": t_dura,
             },
             losses,
         )

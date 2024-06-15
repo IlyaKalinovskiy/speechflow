@@ -99,7 +99,7 @@ class FrameLevelPredictor(Component):
                 if var_by_frames.ndim == 2:
                     var_by_frames = var_by_frames.unsqueeze(-1)
 
-                losses[f"{name}_frame_loss"] = F.l1_loss(enc_predict, var_by_frames)
+                losses[f"{name}_loss_by_frames"] = F.l1_loss(enc_predict, var_by_frames)
                 content[f"{name}_vp_target"] = var_by_frames
 
             var = var_by_frames.squeeze(-1)

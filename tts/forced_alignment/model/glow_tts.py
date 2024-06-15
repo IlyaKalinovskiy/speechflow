@@ -217,7 +217,7 @@ class GlowTTS(EmbeddingCalculator):
 
     def forward(self, inputs: AlignerForwardInput, mas_correction: bool = False) -> AlignerForwardOutput:  # type: ignore
         x = inputs.transcription
-        lang_ids = inputs.lang_id
+        lang_id = inputs.lang_id
         text_lengths = inputs.input_lengths
 
         if self.params.audio_feat == "mel":
@@ -230,7 +230,7 @@ class GlowTTS(EmbeddingCalculator):
         y = y.transpose(1, 2)
         output_lengths = inputs.output_lengths
 
-        lang_emb = self.lang_emb(lang_ids)
+        lang_emb = self.lang_emb(lang_id)
         speaker_emb = self.get_speaker_embedding(inputs)  # type: ignore
         ling_feat_emb = self.get_ling_feat(inputs)  # type: ignore
 

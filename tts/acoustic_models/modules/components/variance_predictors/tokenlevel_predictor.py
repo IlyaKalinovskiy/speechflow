@@ -6,12 +6,8 @@ from pydantic import Field
 from torch import nn
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import (
-    get_lengths_from_durations,
-    get_mask_from_lengths,
-)
+from speechflow.training.utils.tensor_utils import get_mask_from_lengths
 from tts.acoustic_models.modules.common import SoftLengthRegulator
-from tts.acoustic_models.modules.common.blocks import Regression
 from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.components.discriminators import SignalDiscriminator
 from tts.acoustic_models.modules.params import VariancePredictorParams
@@ -113,20 +109,13 @@ class TokenLevelPredictor(Component):
         var_predict = tk_predict.squeeze(-1)
 
         if self.training:
-            target = kwargs.get("target")
-            if target.ndim == 2:
-                target = target.unsqueeze(-1)
+            target_by_tokens = kwargs.get("target")
+            if target_by_tokens.ndim == 2:
+                target_by_tokens = target_by_tokens.unsqueeze(-1)
 
-            target_by_words = self.lr(target, word_inv_lengths, max_num_words)[0]
-            target_by_tokens = target
+            losses[f"{name}_loss_by_tokens"] = F.l1_loss(tk_predict, target_by_tokens)
 
-            if wd_predict is not None and target_by_words is not None:
-                losses[f"{name}_word_loss"] = F.l1_loss(wd_predict, target_by_words)
-
-            if tk_predict is not None and target_by_tokens is not None:
-                losses[f"{name}_token_loss"] = F.l1_loss(tk_predict, target_by_tokens)
-
-            var = target.squeeze(-1)
+            var = target_by_tokens.squeeze(-1)
         else:
             var = var_predict
 

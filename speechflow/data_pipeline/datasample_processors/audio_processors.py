@@ -113,22 +113,9 @@ class SignalProcessor(BaseAudioProcessor):
             else:
                 raise FileNotFoundError(f"File {ds.file_path.as_posix()} not found!")
 
-            ds.audio_chunk.load(
-                sr=sample_rate, dtype=dtype, load_entire_file=load_entire_file
-            )
-        else:
-            if ds.audio_chunk.empty:
-                ds.audio_chunk.load(
-                    sr=sample_rate, dtype=dtype, load_entire_file=load_entire_file
-                )
-            else:
-                if ds.audio_chunk.sr != sample_rate:
-                    assert (
-                        ds.audio_chunk.sr >= sample_rate
-                    ), "target sample rate cannot be upper than current"
-                    ds.audio_chunk.resample(sample_rate, inplace=True).astype(
-                        dtype, inplace=True
-                    )
+        ds.audio_chunk.load(
+            sr=sample_rate, dtype=dtype, load_entire_file=load_entire_file
+        )
         return ds
 
     @staticmethod
@@ -293,8 +280,10 @@ class SignalProcessor(BaseAudioProcessor):
 
         whisp_wav_path = ds.audio_chunk.file_path.with_suffix(".whisp.wav")
         if whisp_wav_path.exists():
+            tmp = ds.audio_chunk.file_path
             ds.audio_chunk.file_path = whisp_wav_path
             ds.audio_chunk.load(sr=ds.audio_chunk.sr, dtype=ds.audio_chunk.dtype)
+            ds.audio_chunk.file_path = tmp
             return ds
 
         ds.audio_chunk = self._sound_effects.whisper(ds.audio_chunk)
