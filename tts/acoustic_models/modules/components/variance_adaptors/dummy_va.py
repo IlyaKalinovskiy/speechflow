@@ -7,14 +7,20 @@ from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.data_types import EncoderOutput, VarianceAdaptorOutput
 from tts.acoustic_models.modules.params import VarianceAdaptorParams
 
-__all__ = ["DummyVarianceAdaptor"]
+__all__ = ["DummyVarianceAdaptor", "DummyVarianceAdaptorParams"]
+
+
+class DummyVarianceAdaptorParams(VarianceAdaptorParams):
+    pass
 
 
 class DummyVarianceAdaptor(Component):
-    params: VarianceAdaptorParams
+    params: DummyVarianceAdaptorParams
 
     def __init__(
-        self, params: VarianceAdaptorParams, input_dim: tp.Union[int, tp.Tuple[int, ...]]
+        self,
+        params: DummyVarianceAdaptorParams,
+        input_dim: tp.Union[int, tp.Tuple[int, ...]],
     ):
         super().__init__(params, input_dim)
 

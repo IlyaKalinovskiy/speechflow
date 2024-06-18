@@ -13,7 +13,7 @@ from speechflow.training.losses.vae_loss import VAELoss
 from speechflow.training.utils.tensor_utils import get_mask_from_lengths
 from tts.acoustic_models.batch_processor import TTSBatchProcessor
 from tts.acoustic_models.data_types import TTSForwardInput
-from tts.acoustic_models.modules import PARALLEL_ENCODERS
+from tts.acoustic_models.modules import TTS_ENCODERS
 from tts.acoustic_models.modules.additional_modules import (
     AdditionalModules,
     AdditionalModulesParams,
@@ -305,7 +305,7 @@ class AudioFeatures(FeatureExtractor):
             )
             self.encoder = SFEncoder(enc_params, in_dim)
         else:
-            enc_cls, enc_params_cls = PARALLEL_ENCODERS[encoder_type]
+            enc_cls, enc_params_cls = TTS_ENCODERS[encoder_type]
             enc_params = enc_params_cls(
                 encoder_num_blocks=encoder_num_blocks,
                 encoder_num_layers=encoder_num_layers,
@@ -345,7 +345,7 @@ class AudioFeatures(FeatureExtractor):
             self.addm = None
 
         if use_auxiliary_loss:
-            enc_cls, enc_params_cls = PARALLEL_ENCODERS[encoder_type]
+            enc_cls, enc_params_cls = TTS_ENCODERS[encoder_type]
             enc_params = enc_params_cls(
                 encoder_num_blocks=encoder_num_blocks,
                 encoder_num_layers=encoder_num_layers,

@@ -38,7 +38,7 @@ class TokenLevelPredictor(Component):
     ):
         super().__init__(params, input_dim)
 
-        from tts.acoustic_models.modules import PARALLEL_ENCODERS
+        from tts.acoustic_models.modules import TTS_ENCODERS
 
         def _init_encoder(_enc_cls, _enc_params_cls, _encoder_params):
             _enc_params = _enc_params_cls.init_from_parent_params(params, _encoder_params)
@@ -48,19 +48,21 @@ class TokenLevelPredictor(Component):
             _enc_params.encoder_output_dim = params.vp_output_dim
             return _enc_cls(_enc_params, input_dim)
 
-        enc_cls, enc_params_cls = PARALLEL_ENCODERS[params.word_encoder_type]
+        enc_cls, enc_params_cls = TTS_ENCODERS[params.word_encoder_type]
         self.word_encoder = _init_encoder(
             enc_cls, enc_params_cls, params.word_encoder_params
         )
 
-        enc_cls, enc_params_cls = PARALLEL_ENCODERS[params.token_encoder_type]
-        self.token_proj = nn.Linear(params.vp_inner_dim + input_dim, input_dim)
+        enc_cls, enc_params_cls = TTS_ENCODERS[params.token_encoder_type]
+        self.token_proj = nn.Linear(
+            params.vp_inner_dim + input_dim, input_dim, bias=False
+        )
         self.token_encoder = _init_encoder(
             enc_cls, enc_params_cls, params.token_encoder_params
         )
 
         if params.use_lm:
-            self.lm_proj = nn.Linear(params.lm_feat_dim, input_dim)
+            self.lm_proj = nn.Linear(params.lm_feat_dim, input_dim, bias=False)
 
         self.lr = SoftLengthRegulator()
         self.hard_lr = SoftLengthRegulator(hard=True)
@@ -83,19 +85,17 @@ class TokenLevelPredictor(Component):
         max_num_tokens = m_inputs.transcription_lengths.max().item()
         max_num_words = m_inputs.num_words.max().item()
 
-        x_by_words, _ = self.lr(x, word_inv_lengths, max_num_words)
+        x_by_words, _ = self.lr(x.detach(), word_inv_lengths, max_num_words)
         x_by_tokens = x
 
         wd_mask = get_mask_from_lengths(m_inputs.num_words)
         tk_mask = get_mask_from_lengths(m_inputs.transcription_lengths)
 
         if self.params.use_lm:
-            wd = x_by_words + self.lm_proj(m_inputs.lm_feat)
-        else:
-            wd = x_by_words
+            x_by_words = x_by_words + self.lm_proj(m_inputs.lm_feat)
 
         wd_predict, wd_ctx = self.word_encoder.process_content(
-            wd, m_inputs.num_words, m_inputs
+            x_by_words, m_inputs.num_words, m_inputs
         )
         wd_enc, _ = self.hard_lr(wd_ctx, word_length, max_num_tokens)
 
@@ -113,18 +113,14 @@ class TokenLevelPredictor(Component):
             if target_by_tokens.ndim == 2:
                 target_by_tokens = target_by_tokens.unsqueeze(-1)
 
-            losses[f"{name}_loss_by_tokens"] = F.l1_loss(tk_predict, target_by_tokens)
-
-            var = target_by_tokens.squeeze(-1)
-        else:
-            var = var_predict
+            losses[f"{name}_loss_by_tokens"] = F.mse_loss(tk_predict, target_by_tokens)
 
         return (
-            var,
+            var_predict.squeeze(-1),
             {
                 f"{name}_vp_context": context,
                 f"{name}_vp_context_mask": context_mask,
-                f"{name}_vp_predict": var_predict.unsqueeze(-1),
+                f"{name}_vp_predict": var_predict,
                 f"{name}_vp_target": kwargs.get("target"),
             },
             losses,

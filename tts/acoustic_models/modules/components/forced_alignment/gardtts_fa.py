@@ -94,9 +94,9 @@ class GradTTSFA(Component):
     ):
         super().__init__(params, input_dim)
 
-        from tts.acoustic_models.modules import PARALLEL_ENCODERS
+        from tts.acoustic_models.modules import TTS_ENCODERS
 
-        enc_cls, params_cls = PARALLEL_ENCODERS[params.text_encoder_type]
+        enc_cls, params_cls = TTS_ENCODERS[params.text_encoder_type]
         enc_params = params_cls.init_from_parent_params(
             params, params.text_encoder_params
         )

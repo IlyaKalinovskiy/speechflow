@@ -35,7 +35,7 @@ class FrameLevelPredictor(Component):
     ):
         super().__init__(params, input_dim)
 
-        from tts.acoustic_models.modules import PARALLEL_ENCODERS
+        from tts.acoustic_models.modules import TTS_ENCODERS
 
         def _init_encoder(_enc_cls, _enc_params_cls, _encoder_params, _input_dim):
             _enc_params = _enc_params_cls.init_from_parent_params(params, _encoder_params)
@@ -45,7 +45,7 @@ class FrameLevelPredictor(Component):
             _enc_params.encoder_output_dim = 1
             return _enc_cls(_enc_params, _input_dim)
 
-        enc_cls, enc_params_cls = PARALLEL_ENCODERS[params.frame_encoder_type]
+        enc_cls, enc_params_cls = TTS_ENCODERS[params.frame_encoder_type]
         self.frame_encoder = _init_encoder(
             enc_cls, enc_params_cls, params.frame_encoder_params, input_dim
         )
@@ -102,11 +102,7 @@ class FrameLevelPredictor(Component):
                 losses[f"{name}_loss_by_frames"] = F.l1_loss(enc_predict, var_by_frames)
                 content[f"{name}_vp_target"] = var_by_frames
 
-            var = var_by_frames.squeeze(-1)
-        else:
-            var = enc_predict.squeeze(-1)
-
-        return var, content, losses
+        return enc_predict.squeeze(-1), content, losses
 
 
 class FrameLevelPredictorWithDiscriminatorParams(FrameLevelPredictorParams):

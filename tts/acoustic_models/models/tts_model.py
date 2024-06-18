@@ -14,10 +14,10 @@ from speechflow.training.utils.tensor_utils import get_mask_from_lengths
 from speechflow.utils.dictutils import find_field
 from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
 from tts.acoustic_models.modules import (
-    PARALLEL_ADAPTORS,
-    PARALLEL_DECODERS,
-    PARALLEL_ENCODERS,
-    PARALLEL_POSTNETS,
+    TTS_DECODERS,
+    TTS_ENCODERS,
+    TTS_POSTNETS,
+    TTS_VARIANCE_ADAPTORS,
 )
 from tts.acoustic_models.modules.additional_modules import (
     AdditionalModules,
@@ -70,7 +70,7 @@ class ParallelTTSModel(BaseTorchModel):
             current_pos=ModeStage.s_0,
         )
 
-        cls, params_cls = PARALLEL_ENCODERS[params.encoder_type]
+        cls, params_cls = TTS_ENCODERS[params.encoder_type]
         encoder_params = params_cls.init_from_parent_params(params, params.encoder_params)
         self.encoder = cls(encoder_params, input_dim=self.mode_0.output_dim)
 
@@ -86,18 +86,18 @@ class ParallelTTSModel(BaseTorchModel):
                 if var_names:
                     va_params = copy(params)
                     va_params.va_variances = var_names  # type: ignore
-                    adaptor, _ = PARALLEL_ADAPTORS[va_params.va_type]
+                    adaptor, _ = TTS_VARIANCE_ADAPTORS[va_params.va_type]
                     self.va.append(adaptor(va_params, input_dim=input_dim))
                     input_dim = self.va[-1].output_dim
         else:
-            adaptor, _ = PARALLEL_ADAPTORS["DummyVarianceAdaptor"]
+            adaptor, _ = TTS_VARIANCE_ADAPTORS["DummyVarianceAdaptor"]
             self.va.append(adaptor(params, input_dim=input_dim))
 
         self.mode_2 = Mode(
             params, input_dim=self.va[-1].output_dim[0], current_pos=ModeStage.s_2
         )
 
-        cls, params_cls = PARALLEL_DECODERS[params.decoder_type]
+        cls, params_cls = TTS_DECODERS[params.decoder_type]
         decoder_params = params_cls.init_from_parent_params(params, params.decoder_params)
         self.decoder = cls(decoder_params, input_dim=self.mode_2.output_dim)
 
@@ -106,7 +106,7 @@ class ParallelTTSModel(BaseTorchModel):
         )
 
         if params.postnet_type is not None:
-            cls, params_cls = PARALLEL_POSTNETS[params.postnet_type]
+            cls, params_cls = TTS_POSTNETS[params.postnet_type]
             postnet_params = params_cls.init_from_parent_params(
                 params, params.postnet_params
             )

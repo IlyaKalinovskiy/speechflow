@@ -3,6 +3,7 @@ import typing as tp
 import torch
 
 from pydantic import Field
+from torch import nn
 from torch.nn import functional as F
 
 from tts.acoustic_models.modules.common import SoftLengthRegulator
@@ -23,7 +24,8 @@ class TokenLevelDPParams(VariancePredictorParams):
     word_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
     token_encoder_type: str = "RNNEncoder"
     token_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
-    add_noise: bool = True
+    use_lm: bool = False
+    add_noise: bool = False
     every_iter: int = 2
 
 
@@ -35,7 +37,7 @@ class TokenLevelDP(Component):
     ):
         super().__init__(params, input_dim)
 
-        from tts.acoustic_models.modules import PARALLEL_ENCODERS
+        from tts.acoustic_models.modules import TTS_ENCODERS
 
         def _init_encoder(_enc_cls, _enc_params_cls, _encoder_params):
             _enc_params = _enc_params_cls.init_from_parent_params(params, _encoder_params)
@@ -45,18 +47,21 @@ class TokenLevelDP(Component):
             _enc_params.encoder_output_dim = 2
             return _enc_cls(_enc_params, input_dim)
 
-        enc_cls, enc_params_cls = PARALLEL_ENCODERS[params.word_encoder_type]
+        enc_cls, enc_params_cls = TTS_ENCODERS[params.word_encoder_type]
         self.word_encoder = _init_encoder(
             enc_cls, enc_params_cls, params.word_encoder_params
         )
 
-        enc_cls, enc_params_cls = PARALLEL_ENCODERS[params.token_encoder_type]
+        enc_cls, enc_params_cls = TTS_ENCODERS[params.token_encoder_type]
         self.token_encoder = _init_encoder(
             enc_cls, enc_params_cls, params.token_encoder_params
         )
-        self.token_proj = torch.nn.Linear(
-            input_dim + params.vp_inner_dim + 1, input_dim, bias=False
+        self.token_proj = nn.Linear(
+            input_dim + params.vp_inner_dim, input_dim, bias=False
         )
+
+        if params.use_lm:
+            self.lm_proj = nn.Linear(params.lm_feat_dim, input_dim, bias=False)
 
         self.lr = SoftLengthRegulator()
         self.hard_lr = SoftLengthRegulator(hard=True)
@@ -77,7 +82,11 @@ class TokenLevelDP(Component):
 
         t_target = m_inputs.durations
 
-        x_by_words, _ = self.lr(x, w_inv_dura, w_lengths.shape[1])
+        x_by_words, _ = self.lr(x.detach(), w_inv_dura, w_lengths.shape[1])
+
+        if self.params.use_lm:
+            x_by_words = x_by_words + self.lm_proj(m_inputs.lm_feat)
+
         w_predict, w_ctx = self.token_encoder.process_content(
             x_by_words, m_inputs.num_words, m_inputs
         )
@@ -90,7 +99,7 @@ class TokenLevelDP(Component):
         w_ctx, _ = self.hard_lr(w_ctx, w_lengths, x.shape[1])
         w_dura, _ = self.hard_lr(w_dura, w_lengths, x.shape[1])
 
-        x_by_tokens = self.token_proj(torch.cat([x, w_ctx, w_dura], dim=2))
+        x_by_tokens = self.token_proj(torch.cat([x, w_ctx], dim=2))
         t_predict, t_ctx = self.token_encoder.process_content(
             x_by_tokens, m_inputs.token_lengths, m_inputs
         )
@@ -101,8 +110,8 @@ class TokenLevelDP(Component):
 
         if self.training:
             if self.params.add_noise:
-                w_target = (w_target + 0.1 * torch.randn_like(w_target)).clip(min=0.01)
-                t_target = (t_target + 0.1 * torch.randn_like(t_target)).clip(min=0.01)
+                w_target = (w_target + 0.1 * torch.randn_like(w_target)).clip(min=0.1)
+                t_target = (t_target + 0.1 * torch.randn_like(t_target)).clip(min=0.1)
 
             if m_inputs.global_step % self.params.every_iter == 0:
                 losses["dur_loss_by_words"] = F.l1_loss(w_predict[..., 0], w_target)
@@ -121,7 +130,7 @@ class TokenLevelDP(Component):
             durations = t_dura
 
         return (
-            durations,
+            durations.squeeze(-1),
             {
                 "dp_context": t_ctx,
                 "dp_context_mask": x_mask,

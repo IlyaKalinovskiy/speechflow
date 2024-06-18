@@ -25,12 +25,12 @@ class WrapperDecoder(Component):
     def __init__(self, params: WrapperDecoderParams, input_dim):
         super().__init__(params, input_dim)
 
-        from tts.acoustic_models.modules import PARALLEL_DECODERS, PARALLEL_ENCODERS
+        from tts.acoustic_models.modules import TTS_DECODERS, TTS_ENCODERS
 
-        if params.base_decoder_type in PARALLEL_ENCODERS:
-            components = PARALLEL_ENCODERS
-        elif params.base_decoder_type in PARALLEL_DECODERS:
-            components = PARALLEL_DECODERS
+        if params.base_decoder_type in TTS_ENCODERS:
+            components = TTS_ENCODERS
+        elif params.base_decoder_type in TTS_DECODERS:
+            components = TTS_DECODERS
         else:
             raise RuntimeError(f"Component '{params.base_decoder_type}' not found")
 
@@ -39,7 +39,7 @@ class WrapperDecoder(Component):
             params, params.base_decoder_params
         )
 
-        if components == PARALLEL_ENCODERS:
+        if components == TTS_ENCODERS:
             dec_params.encoder_num_blocks = params.decoder_num_blocks
             dec_params.encoder_num_layers = params.decoder_num_layers
             dec_params.encoder_inner_dim = params.decoder_inner_dim

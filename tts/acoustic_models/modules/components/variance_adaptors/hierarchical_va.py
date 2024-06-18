@@ -1,9 +1,11 @@
 import typing as tp
+import logging
 
 import torch
 
 from torch.nn import functional as F
 
+from speechflow.logging import trace
 from speechflow.training.utils.tensor_utils import (
     get_lengths_from_durations,
     get_mask_from_lengths,
@@ -14,16 +16,27 @@ from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.data_types import EncoderOutput, VarianceAdaptorOutput
 from tts.acoustic_models.modules.params import VarianceAdaptorParams
 
-__all__ = ["ForwardVarianceAdaptor"]
+__all__ = ["HierarchicalVarianceAdaptor", "HierarchicalVarianceAdaptorParams"]
+
+LOGGER = logging.getLogger("root")
 
 
-class ForwardVarianceAdaptor(Component):
-    params: VarianceAdaptorParams
+class HierarchicalVarianceAdaptorParams(VarianceAdaptorParams):
+    pass
+
+
+class HierarchicalVarianceAdaptor(Component):
+    params: HierarchicalVarianceAdaptorParams
 
     def __init__(
-        self, params: VarianceAdaptorParams, input_dim: tp.Union[int, tp.Tuple[int, ...]]
+        self,
+        params: HierarchicalVarianceAdaptorParams,
+        input_dim: tp.Union[int, tp.Tuple[int, ...]],
     ):
-        from tts.acoustic_models.modules import LENGTH_REGULATORS, VARIANCE_PREDICTORS
+        from tts.acoustic_models.modules import (
+            TTS_LENGTH_REGULATORS,
+            TTS_VARIANCE_PREDICTORS,
+        )
 
         super().__init__(params, input_dim)
         self.input_dim = (
@@ -37,7 +50,7 @@ class ForwardVarianceAdaptor(Component):
         self.predictors = torch.nn.ModuleDict()
         for name in self.va_variances:
             variance_params = self.va_variance_params[name]
-            predictor_cls = VARIANCE_PREDICTORS[variance_params.predictor_type]
+            predictor_cls = TTS_VARIANCE_PREDICTORS[variance_params.predictor_type]
             predictor_params = variance_params.predictor_params
 
             if isinstance(predictor_cls, tuple):
@@ -99,7 +112,9 @@ class ForwardVarianceAdaptor(Component):
         for name in self.va_variances:
             variance_params = self.va_variance_params[name]
             if not variance_params.aggregate_by_tokens:
-                length_regulator_cls = LENGTH_REGULATORS[params.va_length_regulator_type]
+                length_regulator_cls = TTS_LENGTH_REGULATORS[
+                    params.va_length_regulator_type
+                ]
                 self.length_regulators[name] = length_regulator_cls()
 
         self._length_regulator_ssml = None
@@ -132,10 +147,12 @@ class ForwardVarianceAdaptor(Component):
 
     @property
     def length_regulator_ssml(self):
-        from tts.acoustic_models.modules import LENGTH_REGULATORS
+        from tts.acoustic_models.modules import TTS_LENGTH_REGULATORS
 
         if self._length_regulator_ssml is None:
-            length_regulator_cls = LENGTH_REGULATORS[self.params.va_length_regulator_type]
+            length_regulator_cls = TTS_LENGTH_REGULATORS[
+                self.params.va_length_regulator_type
+            ]
             self._length_regulator_ssml = length_regulator_cls()
             self._length_regulator_ssml.sigma = torch.nn.Parameter(
                 torch.tensor(999999.0), requires_grad=False
@@ -175,7 +192,7 @@ class ForwardVarianceAdaptor(Component):
         inputs: EncoderOutput, variance_names, variance_params
     ) -> tp.Dict[str, torch.Tensor]:
         targets = {}
-        content = ForwardVarianceAdaptor._get_x(inputs)
+        content = HierarchicalVarianceAdaptor._get_x(inputs)
         for var_name in variance_names:
             target_name = var_name
             if variance_params[var_name].target is not None:
@@ -429,7 +446,7 @@ class ForwardVarianceAdaptor(Component):
                 **kwargs,
             )
         except Exception as e:
-            print(f"{name} prediction failed: {e}")
+            LOGGER.error(trace(self, e, message=f"{name} prediction failed"))
             raise e
 
         if modifier is not None and prediction.shape[1] == modifier.shape[1]:
@@ -578,9 +595,8 @@ class ForwardVarianceAdaptor(Component):
                 embedding_ = embedding_.expand(-1, content_.shape[1], -1)
             delta = content_.shape[1] - embedding_.shape[1]
             if abs(delta) > 1:
-                print(
-                    f"delta: {delta}, content.shape: {content_.shape}, embedding.shape: {embedding_.shape}"
-                )
+                message = f"delta: {delta}, content.shape: {content_.shape}, embedding.shape: {embedding_.shape}"
+                LOGGER.warning(trace(self, message=message))
             if delta > 0:
                 shape = list(embedding_.shape)
                 shape[1] = delta

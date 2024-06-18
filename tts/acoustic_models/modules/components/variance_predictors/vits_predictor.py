@@ -128,7 +128,7 @@ class VITSPredictor(Component):
 
     @staticmethod
     def _init_content_encoders(params, input_dim):
-        from tts.acoustic_models.modules import PARALLEL_ENCODERS
+        from tts.acoustic_models.modules import TTS_ENCODERS
 
         if params.mode == VITSMode.dual:
             assert len(input_dim) == 2
@@ -146,9 +146,7 @@ class VITSPredictor(Component):
             max_length = [params.max_output_length]
 
         for i in range(2 if params.mode == VITSMode.dual else 1):
-            encoder_cls, encoder_params_cls = PARALLEL_ENCODERS[
-                params.content_encoder_type[i]
-            ]
+            encoder_cls, encoder_params_cls = TTS_ENCODERS[params.content_encoder_type[i]]
 
             params.content_encoder_params.update(
                 {
@@ -178,9 +176,9 @@ class VITSPredictor(Component):
 
     @staticmethod
     def _init_audio_encoder(params):
-        from tts.acoustic_models.modules import PARALLEL_ENCODERS
+        from tts.acoustic_models.modules import TTS_ENCODERS
 
-        encoder_cls, encoder_params_cls = PARALLEL_ENCODERS[params.audio_encoder_type]
+        encoder_cls, encoder_params_cls = TTS_ENCODERS[params.audio_encoder_type]
         params.audio_encoder_params.update(
             {
                 "encoder_num_layers": params.vp_num_layers,

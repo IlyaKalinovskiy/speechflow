@@ -69,6 +69,4 @@ class ForwardEncoder(Component):
         else:
             content = [encoder_output.content, adaptor_encoder_output.content]
 
-        x.additional_content["text_feat"] = encoder_output.content
-
         return EncoderOutput.copy_from(x).set_content(content)

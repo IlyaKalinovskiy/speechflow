@@ -222,7 +222,7 @@ class VarianceParams(BaseTorchModelParams):
 
 
 class VarianceAdaptorParams(VariancePredictorParams):
-    va_type: str = "ForwardVarianceAdaptor"
+    va_type: str = "VarianceAdaptor"
     va_length_regulator_type: str = "SoftLengthRegulator"  # "LengthRegulator"
     va_variances: tp.Dict[int, tp.Tuple[str, ...]] = None  # type: ignore
     va_variance_params: tp.Dict[str, VarianceParams] = None  # type: ignore

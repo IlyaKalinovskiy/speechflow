@@ -52,9 +52,9 @@ class SFEncoder(Component):
     def __init__(self, params: SFEncoderParams, input_dim):
         super().__init__(params, input_dim)
 
-        from tts.acoustic_models.modules import PARALLEL_ENCODERS
+        from tts.acoustic_models.modules import TTS_ENCODERS
 
-        base_enc_cls, base_enc_params_cls = PARALLEL_ENCODERS[params.base_encoder_type]
+        base_enc_cls, base_enc_params_cls = TTS_ENCODERS[params.base_encoder_type]
         base_enc_params = base_enc_params_cls.init_from_parent_params(
             params, params.base_encoder_params
         )

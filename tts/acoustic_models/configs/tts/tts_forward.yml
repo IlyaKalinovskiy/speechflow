@@ -79,7 +79,7 @@ net:
       1: [speaker_emb, average_emb, speech_quality_emb]
 
     encoder_type: ForwardEncoder
-    va_type: ForwardVarianceAdaptor
+    va_type: HierarchicalVarianceAdaptor
     decoder_type: ForwardDecoder
     decoder_inner_dim: 1024
 
@@ -160,6 +160,10 @@ net:
         cat_to_content: [1]
       durations:
         predictor_type: TokenLevelDP
+        predictor_params:
+          vp_params:
+            use_lm: true
+            add_noise: true
         denormalize: false
       energy:
         predictor_type: FrameLevelPredictor
