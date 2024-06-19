@@ -1,3 +1,4 @@
+import typing as tp
 import argparse
 
 from pathlib import Path
@@ -10,8 +11,15 @@ from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.fs import find_files
 
 
-def trim_checkpoint(checkpoint: dict) -> dict:
-    remove_keys = ["callbacks", "optimizer_states", "lr_schedulers", "scripts", "dataset"]
+def prune(checkpoint: tp.Dict[str, tp.Any]) -> tp.Dict[str, tp.Any]:
+    remove_keys = [
+        "callbacks",
+        "optimizer_states",
+        "lr_schedulers",
+        "scripts",
+        "dataset",
+        "files",
+    ]
     checkpoint = {k: v for k, v in checkpoint.items() if k not in remove_keys}
 
     remove_names = ["criterion", "discriminator_model"]
@@ -20,6 +28,13 @@ def trim_checkpoint(checkpoint: dict) -> dict:
         k: v for k, v in state_dict.items() if all(name not in k for name in remove_names)
     }
     checkpoint["state_dict"] = state_dict
+
+    if "lang_id_map" in checkpoint:
+        print("langs:", list(checkpoint["lang_id_map"].keys()))
+
+    if "speaker_id_map" in checkpoint:
+        print("speakers:", list(checkpoint["speaker_id_map"].keys()))
+
     return checkpoint
 
 
@@ -43,7 +58,7 @@ def prune_checkpoint(
             out_ckpt_path = ckpt_path.with_suffix(".pt")
 
         checkpoint = ExperimentSaver.load_checkpoint(ckpt_path)
-        checkpoint = trim_checkpoint(checkpoint)
+        checkpoint = prune(checkpoint)
 
         if state_dict_only:
             checkpoint = {"state_dict": checkpoint["state_dict"]}

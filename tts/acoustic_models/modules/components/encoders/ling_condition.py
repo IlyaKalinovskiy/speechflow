@@ -29,7 +29,7 @@ class LinguisticCondition(Component):
         if self.params.cat_ling_feat:
             dim += self.input_dim
         if self.params.cat_lm_feat:
-            dim += self.params.lm_proj_dim
+            dim += self.params.lm_feat_proj_dim
         return dim
 
     def add_ling_features(self, x: torch.Tensor, inputs: ComponentInput):
@@ -39,13 +39,13 @@ class LinguisticCondition(Component):
             x = torch.cat([x, ling_feat], dim=2)
 
         if self.params.cat_lm_feat:
-            lm_emb = inputs.embeddings["lm_feat"]
-            if lm_emb.shape[1] != x.shape[1]:
-                token_length = inputs.model_inputs.additional_inputs["token_lengths"]
-                lm_emb, _ = self.hard_lr(lm_emb, token_length, x.shape[1])
+            lm_feat = inputs.embeddings["lm_feat"]
+            if lm_feat.shape[1] != x.shape[1]:
+                token_length = inputs.model_inputs.additional_inputs["word_lengths"]
+                lm_feat, _ = self.hard_lr(lm_feat, token_length, x.shape[1])
 
-            lm_emb = self.seq_dropout(lm_emb)
-            x = torch.cat([x, lm_emb], dim=2)
+            lm_feat = self.seq_dropout(lm_feat)
+            x = torch.cat([x, lm_feat], dim=2)
 
         return x
 

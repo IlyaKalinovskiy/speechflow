@@ -163,8 +163,8 @@ class EmbeddingCalculator(BaseTorchModel):
         self, inputs: TTSForwardInput
     ) -> tp.Optional[torch.Tensor]:
         if getattr(inputs, "additional_inputs", None) is not None:
-            if inputs.additional_inputs.get("biometric") is not None:  # type: ignore
-                return inputs.additional_inputs.get("biometric")  # type: ignore
+            if inputs.additional_inputs.get("speaker_bio_emb") is not None:  # type: ignore
+                return inputs.additional_inputs.get("speaker_bio_emb")  # type: ignore
 
         biometric_embedding = inputs.speaker_emb
 

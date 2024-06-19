@@ -75,8 +75,8 @@ class ProsodyReference:
         elif isinstance(ref, Path):
             setattr(self, f"{ref_type}_audio_path", ref)
         elif isinstance(ref, (tuple, list)):
-            wave, sr = ref
-            setattr(self, f"{ref_type}_audio_chunk", AudioChunk(data=wave, sr=sr))
+            waveform, sr = ref
+            setattr(self, f"{ref_type}_audio_chunk", AudioChunk(data=waveform, sr=sr))
         else:
             raise AttributeError(
                 "Incorrect format of reference audio."
@@ -157,7 +157,7 @@ class ProsodyReference:
             if bio_embeddings is not None and getattr(self, attr_name) is not None:
                 sp_name, emb_index = getattr(self, attr_name)
                 emb_meta = bio_embeddings[sp_name][emb_index]
-                bio_emb = emb_meta[1] if emb_meta.ndim == 2 else emb_meta
+                bio_emb = emb_meta[0] if emb_meta.ndim == 2 else emb_meta
                 setattr(self, f"{ref_type}_bio_emb", bio_emb)
 
                 try:
@@ -180,13 +180,13 @@ class ProsodyReference:
                 setattr(self, f"{ref_type}_bio_emb", bio_emb)
                 continue
 
-    def set_spectrogram_reference(self, mel_pipe: callable):
+    def set_spectrogram_reference(self, spectrogram_pipe: callable):
         for ref_type in ["speaker", "style"]:
             attr_name = f"{ref_type}_audio_chunk"
             if getattr(self, attr_name) is not None:
                 audio_chunk = getattr(self, attr_name)
                 ds = AudioDataSample(audio_chunk=audio_chunk)
-                ref_ds = mel_pipe.preprocessing_datasample([ds.copy()])[0]
+                ref_ds = spectrogram_pipe.preprocessing_datasample([ds.copy()])[0]
                 setattr(self, f"{ref_type}_spectrogram", ref_ds.mel)
                 continue
 
@@ -439,8 +439,8 @@ class ComplexProsodyReference:
         bio_embeddings: tp.Optional[tp.Dict[str, tp.Any]] = None,
         mean_bio_embeddings: tp.Optional[tp.Dict[str, tp.Any]] = None,
         bio_proc: tp.Optional[callable] = None,
-        mel_pip: tp.Optional[callable] = None,
-        ssl_proc: tp.Optional[callable] = None,
+        spectrogram_pipe: tp.Optional[callable] = None,
+        # ssl_proc: tp.Optional[callable] = None,
         seed: int = 0,
     ):
         if not self.is_initialize:
@@ -452,8 +452,8 @@ class ComplexProsodyReference:
             self.preprocessing(list(speaker_id_map.keys()), bio_embeddings)
             self.set_speaker_id(speaker_id_map, mean_bio_embeddings)
             self.set_bio_embedding(bio_proc, bio_embeddings)
-            self.set_spectrogram_reference(mel_pip)
-            self.set_ssl_embeddings(ssl_proc)
+            self.set_spectrogram_reference(spectrogram_pipe)
+            # self.set_ssl_embeddings(ssl_proc)
             self.postprocessing()
 
             self.is_initialize = True

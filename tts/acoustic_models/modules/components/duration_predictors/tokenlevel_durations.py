@@ -24,7 +24,7 @@ class TokenLevelDPParams(VariancePredictorParams):
     word_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
     token_encoder_type: str = "RNNEncoder"
     token_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
-    use_lm: bool = False
+    add_lm_feat: bool = False
     add_noise: bool = False
     every_iter: int = 2
 
@@ -60,7 +60,7 @@ class TokenLevelDP(Component):
             input_dim + params.vp_inner_dim, input_dim, bias=False
         )
 
-        if params.use_lm:
+        if params.add_lm_feat:
             self.lm_proj = nn.Linear(params.lm_feat_dim, input_dim, bias=False)
 
         self.lr = SoftLengthRegulator()
@@ -84,7 +84,7 @@ class TokenLevelDP(Component):
 
         x_by_words, _ = self.lr(x.detach(), w_inv_dura, w_lengths.shape[1])
 
-        if self.params.use_lm:
+        if self.params.add_lm_feat:
             x_by_words = x_by_words + self.lm_proj(m_inputs.lm_feat)
 
         w_predict, w_ctx = self.token_encoder.process_content(

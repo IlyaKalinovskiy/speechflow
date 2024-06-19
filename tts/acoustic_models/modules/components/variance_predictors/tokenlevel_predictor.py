@@ -25,7 +25,7 @@ class TokenLevelPredictorParams(VariancePredictorParams):
     word_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
     token_encoder_type: str = "RNNEncoder"
     token_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
-    use_lm: bool = False
+    add_lm_feat: bool = False
 
 
 class TokenLevelPredictor(Component):
@@ -61,7 +61,7 @@ class TokenLevelPredictor(Component):
             enc_cls, enc_params_cls, params.token_encoder_params
         )
 
-        if params.use_lm:
+        if params.add_lm_feat:
             self.lm_proj = nn.Linear(params.lm_feat_dim, input_dim, bias=False)
 
         self.lr = SoftLengthRegulator()
@@ -91,7 +91,7 @@ class TokenLevelPredictor(Component):
         wd_mask = get_mask_from_lengths(m_inputs.num_words)
         tk_mask = get_mask_from_lengths(m_inputs.transcription_lengths)
 
-        if self.params.use_lm:
+        if self.params.add_lm_feat:
             x_by_words = x_by_words + self.lm_proj(m_inputs.lm_feat)
 
         wd_predict, wd_ctx = self.word_encoder.process_content(

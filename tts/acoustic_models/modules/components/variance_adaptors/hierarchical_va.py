@@ -369,9 +369,6 @@ class HierarchicalVarianceAdaptor(Component):
             durations_content = {}
             durations_loss = {}
 
-        if variance_params is not None:
-            durations = torch.expm1(durations)
-
         if variance_params.denormalize:
             _range = model_inputs.ranges["durations"]
             durations = durations * _range[:, 2:3] + _range[:, 0:1]
@@ -752,7 +749,7 @@ class HierarchicalVarianceAdaptor(Component):
         else:
             variance_predictions = getattr(inputs, "variance_predictions", None)
             if variance_predictions is not None and "durations" in variance_predictions:
-                durations = torch.expm1(variance_predictions["durations"])
+                durations = variance_predictions["durations"]
 
         if durations is not None:
             (

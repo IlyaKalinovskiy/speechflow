@@ -50,7 +50,7 @@ class SpeakerIDSetter(metaclass=Singleton):
         min_samples: tp.Optional[int] = None,
         min_duration: tp.Optional[float] = None,  # in hours
         resume_from_checkpoint: tp.Optional[Path] = None,
-        remove_unknown_speakers: bool = True,
+        remove_unknown_speakers: bool = False,
         mean_embeddings_file: tp.Optional[tp.Union[str, Path]] = None,
         **kwargs,
     ):

@@ -118,12 +118,13 @@ class BaseTorchModel(torch.nn.Module):
         return params.to_dict() if as_dict else params
 
     def load_params(self, state_dict: tp.Dict[str, torch.Tensor], *args):
-        if "params_after_init" in state_dict:
+        if "params" in state_dict:
             params: tp.Dict = state_dict.pop("params", {})
             for key, value in params.items():
                 if self.get_params()[key] != value:
                     LOGGER.warning(f"Mismatch value for key {key}!")
 
+        if "params_after_init" in state_dict:
             params_after_init: tp.Dict = state_dict.pop("params_after_init", {})
             for key, value in params_after_init.items():
                 if self.get_params(after_init=True)[key] != value:

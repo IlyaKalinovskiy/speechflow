@@ -20,9 +20,12 @@ import speechflow
 from nlp.prosody_prediction.eval_interface import ProsodyPredictionInterface
 from speechflow.data_pipeline.core.components import PipelineComponents
 from speechflow.data_pipeline.datasample_processors import add_pauses_from_text
+from speechflow.data_pipeline.datasample_processors.biometric_processors import (
+    VoiceBiometricProcessor,
+)
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
 from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
-from speechflow.io import AudioChunk, check_path, tp_PATH
+from speechflow.io import check_path, tp_PATH
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.init import init_class_from_config, init_method_from_config
 from speechflow.utils.seed import set_all_seed
@@ -282,6 +285,14 @@ class TTSEvaluationInterface:
             }
         )
 
+        if "voice_bio_wespeaker" in data_cfg["preproc"]["pipe"]:
+            self.bio_proc = init_class_from_config(
+                VoiceBiometricProcessor,
+                data_cfg["preproc"]["pipe_cfg"].voice_bio_wespeaker,
+            )()
+        else:
+            self.bio_proc = None
+
         self.add_pauses_from_text = init_method_from_config(
             add_pauses_from_text, data_cfg["preproc"]["pipe_cfg"]["add_pauses_from_text"]
         )
@@ -329,7 +340,7 @@ class TTSEvaluationInterface:
                 with ExperimentSaver.portable_pathlib():
                     return pickle.loads(info_path[0].read_bytes())
 
-        return {}
+        raise FileNotFoundError(f"*info.pkl file not found!")
 
     @staticmethod
     def _dump_to_file(file_name: str, data: tp.Any):
@@ -465,6 +476,8 @@ class TTSEvaluationInterface:
             self.speaker_id_map,
             self.bio_embs,
             self.mean_bio_embs.mean_bio_embeddings,
+            self.bio_proc,
+            self.spectrogram_pipe,
             seed=ctx.seed,
         )
 
@@ -480,6 +493,7 @@ class TTSEvaluationInterface:
 
         ds = TTSDataSample(
             lang_id=lang_id,
+            mel=ctx.prosody_reference.default.style_spectrogram,
             speaker_name=ctx.prosody_reference.default.speaker_name,
             speaker_emb=ctx.prosody_reference.default.speaker_emb,
             speaker_emb_mean=ctx.prosody_reference.default.speaker_emb_mean,
@@ -497,7 +511,7 @@ class TTSEvaluationInterface:
                 ds.averages[key] = deepcopy(opt.average_val[key])
 
             scale = opt.average_val.get(f"{key}_scale", 1.0)
-            ds.averages[key] *= scale
+            ds.averages[key] *= 4 * scale
 
         ds.ranges = {}
         if self.stat_ranges is not None:

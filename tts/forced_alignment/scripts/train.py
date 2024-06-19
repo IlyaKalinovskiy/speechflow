@@ -75,11 +75,6 @@ def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]):
         if model_cfg["net"]["params"].n_speakers < len(ckpt["speaker_id_map"]):
             model_cfg["net"]["params"].n_speakers = len(ckpt["speaker_id_map"])
 
-        # TODO: support old version
-        state_dict = {
-            k.replace("phoneme_proj.", "token_proj."): v for k, v in state_dict.items()
-        }
-
         try:
             model = init_class_from_config(model_cls, model_cfg["net"]["params"])()
             model.load_state_dict(state_dict, strict=True)
