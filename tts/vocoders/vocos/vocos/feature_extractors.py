@@ -113,6 +113,8 @@ class AudioFeatures(FeatureExtractor):
         vq_num_quantizers: int = 1,
         energy_interval: tp.Tuple[float, float] = (0, 150),
         pitch_interval: tp.Tuple[float, float] = (0, 850),
+        average_energy_interval: tp.Tuple[float, float] = (0, 150),
+        average_pitch_interval: tp.Tuple[float, float] = (0, 850),
         use_lang_emb: bool = False,
         use_speaker_emb: bool = False,
         use_speech_quality_emb: bool = False,
@@ -169,7 +171,7 @@ class AudioFeatures(FeatureExtractor):
 
         if use_averages and use_energy:
             self.avr_energy_emb = VarianceEmbedding(
-                interval=energy_interval, emb_dim=condition_emb_dim
+                interval=average_energy_interval, emb_dim=condition_emb_dim
             )
             condition.append("avr_energy_emb<no_detach>")
             condition_dim += condition_emb_dim
@@ -178,7 +180,7 @@ class AudioFeatures(FeatureExtractor):
 
         if use_averages and use_pitch:
             self.avr_pitch_emb = VarianceEmbedding(
-                interval=pitch_interval, emb_dim=condition_emb_dim, log_scale=True
+                interval=average_pitch_interval, emb_dim=condition_emb_dim, log_scale=True
             )
             condition.append("avr_pitch_emb<no_detach>")
             condition_dim += condition_emb_dim

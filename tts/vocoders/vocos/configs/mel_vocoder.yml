@@ -5,7 +5,7 @@ data:
   class_path: tts.vocoders.vocos.vocos.dataset.VocosDataModule
   init_args:
     config:
-      cfg_path: configs/whisp_data_24khz.yml
+      cfg_path: configs/mel_data_24khz.yml
       batch_size: 8
       debug: false
 
@@ -16,7 +16,7 @@ model:
     initial_learning_rate: 5e-4
     mel_loss_coeff: 5.0
     mrd_loss_coeff: 0.1
-    num_warmup_steps: 0  # Optimizers warmup steps
+    num_warmup_steps: 0 # Optimizers warmup steps
     pretrain_mel_steps: 0  # 0 means GAN objective from the first iteration
     with_cdpam: false
     cdpam_every: 1
@@ -30,25 +30,20 @@ model:
     feature_extractor:
       class_path: tts.vocoders.vocos.vocos.feature_extractors.AudioFeatures
       init_args:
-        input_feat_type: ssl_feat
-        ssl_feat_dim: 64
+        input_feat_type: mel_spec
+        output_dim: 256
+        n_langs: 10
+        n_speakers: 10000
+        speaker_emb_dim: 256
         encoder_num_layers: 2
-        vq_num_quantizers: 4
         energy_interval: [0, 1.5]
         pitch_interval: [0, 1.5]
-        style_encoder_type: SimpleStyle
-        style_feat_type: style_emb
-        use_lang_emb: false
+        use_lang_emb: true
         use_speaker_emb: true
         use_speech_quality_emb: true
-        use_style: true
         use_energy: true
         use_pitch: true
-        use_vq: true
         use_averages: true
-        use_range: false
-        use_inverse_grad: true
-        use_auxiliary_loss: true
 
     backbone:
       class_path: tts.vocoders.vocos.vocos.models.VocosResNetBackbone
@@ -73,7 +68,7 @@ trainer:
   logger:
     class_path: pytorch_lightning.loggers.TensorBoardLogger
     init_args:
-      save_dir: vc_vocos_whisp
+      save_dir: mel_vocoder
   callbacks:
     - class_path: pytorch_lightning.callbacks.LearningRateMonitor
     - class_path: pytorch_lightning.callbacks.ModelSummary

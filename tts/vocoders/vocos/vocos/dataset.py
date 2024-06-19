@@ -96,7 +96,7 @@ class VocosDataModule(LightningDataModule):
 
 if __name__ == "__main__":
     cfg = DataConfig(
-        cfg_path="../configs/whisp_data_24khz.yml",
+        cfg_path="../configs/vc_whisp_data_24khz.yml",
         batch_size=4,
         debug=True,
     )
