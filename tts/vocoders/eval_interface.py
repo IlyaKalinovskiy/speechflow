@@ -15,10 +15,11 @@ from speechflow.data_pipeline.datasample_processors.data_types import (
     AudioDataSample,
     SpectrogramDataSample,
 )
-from speechflow.io import AudioChunk
+from speechflow.io import AudioChunk, Config, check_path, tp_PATH
 from speechflow.training.saver import ExperimentSaver
+from speechflow.training.utils.tensor_utils import get_lengths_from_mask
 from speechflow.utils.dictutils import find_field
-from tts.acoustic_models.data_types import TTSForwardOutput
+from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
 from tts.vocoders.data_types import VocoderForwardInput, VocoderInferenceOutput
 from tts.vocoders.vocos.vocos.pretrained import Vocos
 
@@ -27,23 +28,22 @@ __all__ = ["VocoderEvaluationInterface", "VocoderOptions"]
 
 @dataclass
 class VocoderOptions:
-    normalize: bool = False
-    denormalize: bool = False
-    batch_evaluation: bool = True
-    batch_evaluation_type: str = "concatfast"
+    lang: tp.Optional[str] = None
+    speaker_name: tp.Optional[str] = None
 
     def copy(self) -> "VocoderOptions":
         return deepcopy(self)
 
 
 class VocoderLoader:
+    @check_path(assert_file_exists=True)
     def __init__(
         self,
-        ckpt_path: tp.Union[str, Path],
-        device: tp.Union[str, torch.device] = "cpu",
+        ckpt_path: tp_PATH,
+        device: str = "cpu",
         ckpt_preload: tp.Optional[dict] = None,
     ):
-        self.ckpt_path = Path(ckpt_path)
+        self.ckpt_path = ckpt_path
 
         if ckpt_preload is None:
             checkpoint = ExperimentSaver.load_checkpoint(self.ckpt_path)
@@ -74,12 +74,9 @@ class VocoderLoader:
 
     @staticmethod
     def _load_data_pipeline(data_cfg: tp.Dict) -> PipelineComponents:
-        if "StatisticsRange" in data_cfg["singleton_handlers"]["handlers"]:
-            data_cfg["singleton_handlers"]["handlers"].remove("StatisticsRange")
-        if "dump" in data_cfg["processor"]:
-            data_cfg["processor"].pop("dump")
-        data_cfg["collate"]["type"] = "SpecCollate"
-        pipe = PipelineComponents(data_cfg, data_subset_name="test")
+        data_cfg["processor"].pop("dump", None)
+        data_cfg["singleton_handlers"]["handlers"] = []
+        pipe = PipelineComponents(Config(data_cfg).trim("ml"), data_subset_name="test")
         return pipe.with_ignored_fields(
             ignored_data_fields={"sent", "phoneme_timestamps"}
         ).with_ignored_handlers(
@@ -92,17 +89,18 @@ class VocoderLoader:
         model = Vocos.from_hparams("", config=model_cfg["model"]["init_args"])
         model.eval()
 
-        state_dict: dict = checkpoint["state_dict"]
+        state_dict: tp.Dict[str, tp.Any] = checkpoint["state_dict"]
         state_dict = {
             k: v
             for k, v in state_dict.items()
             if "discriminators" not in k and "loss" not in k
         }
         model.load_state_dict(state_dict)
+
+        setattr(model.feature_extractor, "lang_id_map", checkpoint.get("lang_id_map"))
         setattr(
             model.feature_extractor, "speaker_id_map", checkpoint.get("speaker_id_map")
         )
-
         return model
 
 
@@ -122,13 +120,11 @@ class VocoderEvaluationInterface(VocoderLoader):
     @staticmethod
     def find_preemphasis_coef(data_cfg: tp.Dict):
         beta = None
-        for item in data_cfg["preproc"].values():
-            if isinstance(item, list):
-                continue
-            if item.get("type", None) == "SignalProcessor":
+        for item in data_cfg["preproc"]["pipe_cfg"].values():
+            if isinstance(item, dict) and item.get("type", None) == "SignalProcessor":
                 if "preemphasis" in item.get("pipe", []):
-                    if data_cfg["preproc"][item].get("preemphasis"):
-                        beta = data_cfg["preproc"][item]["preemphasis"].get("beta", 0.97)
+                    if item["pipe_cfg"].get("preemphasis"):
+                        beta = item["pipe_cfg"]["preemphasis"].get("beta", 0.97)
                     else:
                         beta = 0.97
         return beta
@@ -142,70 +138,6 @@ class VocoderEvaluationInterface(VocoderLoader):
         output.spectrogram = input.spectrogram
         return output
 
-    def auto_batch_evaluate(
-        self,
-        spectrogram_batch: torch.Tensor,
-        spectrogram_masks: torch.Tensor,
-        opt: VocoderOptions,
-    ) -> tp.List[VocoderInferenceOutput]:
-        batch_size, spectrogram_length, channels = spectrogram_batch.shape
-
-        vocoder_outputs = []
-
-        mask_start_indexes = [
-            spectrogram_length
-            if spectrogram_masks is None
-            else spectrogram_length - int(spectrogram_masks[i].sum())
-            for i in range(batch_size)
-        ]
-
-        if opt.batch_evaluation_type == "concatfast":
-            assert spectrogram_masks is not None
-            input_spectrogram = spectrogram_batch[~spectrogram_masks.bool(), :].unsqueeze(
-                0
-            )
-            vocoder_input = VocoderForwardInput(spectrogram=input_spectrogram)
-            waveform = self.evaluate(vocoder_input, opt).waveform
-
-            upsample_ratio = waveform.shape[1] // input_spectrogram.shape[1]
-            for index in range(batch_size):
-                start_index = sum(mask_start_indexes[:index]) * upsample_ratio
-                end_index = start_index + mask_start_indexes[index] * upsample_ratio
-                vocoder_outputs.append(
-                    VocoderInferenceOutput(waveform=waveform[:, start_index:end_index])
-                )
-            return vocoder_outputs
-
-        elif opt.batch_evaluation_type == "loop":
-            for i in range(batch_size):
-                spectrogram = spectrogram_batch[i, : mask_start_indexes[i], :].unsqueeze(
-                    0
-                )
-                vocoder_input = VocoderForwardInput(
-                    spectrogram=spectrogram,
-                    spectrogram_lengths=mask_start_indexes[i],
-                )
-                vocoder_outputs.append(self.evaluate(vocoder_input, opt))
-
-            return vocoder_outputs
-        else:
-            raise NotImplementedError(
-                f"batch_evaluation_type={opt.batch_evaluation_type}"
-            )
-
-    @staticmethod
-    def convert_spectrogram(spectrogram, opt: VocoderOptions):
-        ds = SpectrogramDataSample(mel=spectrogram)
-        backend = {"backend": "torchaudio"}
-
-        if opt.normalize:
-            ds = MelProcessor(backend).normalize(ds)
-
-        if opt.denormalize:
-            ds = MelProcessor(backend).denormalize(ds)
-
-        return ds.mel
-
     @staticmethod
     def inv_preemphasis(wave: torch.Tensor, beta: float = 0.97) -> torch.Tensor:
         audio_chunk = AudioChunk(data=wave.cpu().numpy(), sr=1)
@@ -216,55 +148,24 @@ class VocoderEvaluationInterface(VocoderLoader):
         return inv_wave
 
     def synthesize(
-        self, tts_output: TTSForwardOutput, opt: tp.Optional[VocoderOptions] = None
+        self,
+        tts_in: TTSForwardInput,
+        tts_out: TTSForwardOutput,
+        opt: tp.Optional[VocoderOptions] = None,
     ) -> tp.Union[VocoderInferenceOutput, tp.List[VocoderInferenceOutput]]:
         if opt is None:
             opt = VocoderOptions()
 
-        spectrogram_to_take = (
-            tts_output.after_postnet_spectrogram
-            if getattr(tts_output, "after_postnet_spectrogram", None) is not None
-            else tts_output.spectrogram
-        )
-        spectrogram_masks = tts_output.masks.get("spec")
+        voc_in = tts_in
+        voc_in.lang_id = voc_in.lang_id * 0 + self.lang_id_map[opt.lang]
+        voc_in.speaker_id = voc_in.speaker_id * 0 + self.speaker_id_map[opt.speaker_name]
+        voc_in.mel_spectrogram = tts_out.after_postnet_spectrogram
+        voc_in.spectrogram_lengths = tts_out.spectrogram_lengths
+        voc_in.energy = tts_out.variance_predictions["energy"]
+        voc_in.pitch = tts_out.variance_predictions["pitch"]
 
-        spectrogram_to_take = self.convert_spectrogram(spectrogram_to_take, opt)
-
-        batch_size = spectrogram_to_take.shape[0]
-        if opt.batch_evaluation and batch_size > 1:
-            try:
-                output = self.auto_batch_evaluate(
-                    spectrogram_to_take, spectrogram_masks, opt
-                )
-            except Exception as e:
-                print(f"{self.__class__.__name__}: {e}")
-                opt = deepcopy(opt)
-                opt.batch_evaluation_type = "loop"
-                output = self.auto_batch_evaluate(
-                    spectrogram_to_take, spectrogram_masks, opt
-                )
-        else:
-            vocoder_input = VocoderForwardInput(
-                spectrogram=spectrogram_to_take,
-                spectrogram_lengths=tts_output.spectrogram_lengths,
-                energy=tts_output.additional_content.get("energy_postprocessed"),
-                pitch=tts_output.additional_content.get("pitch_postprocessed"),
-                speaker_emb=tts_output.additional_content.get("speaker_emb"),
-                additional_inputs=tts_output.additional_content,
-            )
-            output = self.evaluate(vocoder_input, opt)
-
-        if self.preemphasis_coef is not None:
-            if isinstance(output, list):
-                for inference_output in output:
-                    inference_output.waveform = self.inv_preemphasis(
-                        inference_output.waveform, self.preemphasis_coef
-                    )
-            elif isinstance(output, VocoderInferenceOutput):
-                output.waveform = self.inv_preemphasis(
-                    output.waveform, self.preemphasis_coef
-                )
-
+        voc_in.to(self.device)
+        output = self.model(voc_in)
         return output
 
     def resynthesize(

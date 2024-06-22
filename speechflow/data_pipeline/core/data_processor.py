@@ -237,8 +237,11 @@ class DumpProcessor:
             try:
                 with open(file_path.as_posix(), "rb") as f:
                     dump_data: tp.Dict[str, tp.Any] = TensorUnpickler(f).load()
-            except EOFError:
+            except (EOFError, pickle.UnpicklingError):
                 file_path.unlink()
+                continue
+            except Exception as e:
+                LOGGER.error(trace(self, e))
                 continue
 
             dumped_fields = dump_data["fields"]
@@ -400,15 +403,15 @@ class DataProcessor(AbstractDataProcessor):
                     )
                     out_samples.extend(processed_samples)
                 except Exception as e:
-                    tracemessage = trace(
+                    trace_message = trace(
                         DataProcessor,
                         exception=e,
                         message=f"Filepath: {sample.file_path}",
                     )
-                    LOGGER.error(tracemessage)
+                    LOGGER.error(trace_message)
                     if not skip_corrupted_samples:
                         raise DataProcessingError(
-                            message=f"Error occured while processing datasamples. Traceback: \n{tracemessage}",
+                            message=f"Error occured while processing datasamples. Traceback: \n{trace_message}",
                             corrupted_sample=sample,
                         )
                     if self._dump_proc:

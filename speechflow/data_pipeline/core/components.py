@@ -505,7 +505,7 @@ class DataPipeline:
     def is_data_loaded(self) -> bool:
         if self.is_init:
             for pipe in self._pipelines.values():
-                if not pipe.sampler.dataset:
+                if pipe.sampler is None or not pipe.sampler.dataset:
                     return False
             return True
         else:

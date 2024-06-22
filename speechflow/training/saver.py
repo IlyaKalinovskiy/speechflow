@@ -120,7 +120,6 @@ class ExperimentSaver:
             return int(re.split(r"(epoch=)(\d+)(-step)", str(txt))[2])
 
         if expr_path.is_file():
-            assert expr_path.suffix == ".ckpt", "invalid checkpoint file!"
             return expr_path
 
         files = list((expr_path / ExperimentSaver._folder).glob("*.ckpt"))

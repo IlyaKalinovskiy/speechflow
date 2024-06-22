@@ -56,8 +56,8 @@ def prepare_output(
         print(e)
 
     waveform = []
-    for out in voc_out:
-        waveform.append(out.waveform.cpu()[0])
+    for out in voc_out[0][0]:
+        waveform.append(out.cpu())
     waveform = torch.cat(waveform)
 
     return AudioChunk(data=waveform.numpy(), sr=sample_rate), tts_in, tts_out, voc_out
@@ -91,6 +91,7 @@ def synthesize(
     if voc_opt is None:
         voc_opt = VocoderOptions()
 
+    voc_opt.lang = lang
     voc_opt.speaker_name = tts_ctx.prosody_reference.default.speaker_name
 
     tts_ctx = tts_interface.prepare_embeddings(
@@ -109,31 +110,41 @@ def synthesize(
 
     with Profiler(enable=use_profiler):
         tts_out = tts_interface.evaluate(tts_in, tts_ctx, tts_opt)
-        _plot_spectrogram(tts_out.after_postnet_spectrogram)
-        Path("kontur.pkl").write_bytes(pickle.dumps(tts_out.after_postnet_spectrogram))
-        # voc_out = voc_interface.synthesize(
-        #     tts_out,
-        #     voc_opt,
-        # )
+        # _plot_spectrogram(tts_out.after_postnet_spectrogram)
+        tts_in.speaker_emb = (
+            torch.from_numpy(tts_ctx.prosody_reference.default.speaker_bio_emb)
+            .unsqueeze(0)
+            .expand((2, -1))
+        )
+        voc_out = voc_interface.synthesize(
+            tts_in,
+            tts_out,
+            voc_opt,
+        )
 
-    return prepare_output(tts_in, tts_out, voc_out, voc_interface.output_sample_rate)
+    return prepare_output(
+        tts_in, tts_out, voc_out, 24000
+    )  # voc_interface.output_sample_rate)
 
 
 if __name__ == "__main__":
     device = "cpu"
 
-    tts_model_path = Path("C:\\SRS\\epoch=19-step=83340.ckpt")
-    # voc_model_path = Path("P:\\24\\epoch=2749-step=2749999.ckpt")
+    tts_model_path = Path("C:\\SRS\\data\\tts\\epoch=59-step=125040.ckpt")
+    voc_model_path = Path(
+        "C:\\SRS\\data\\tts\\vocos_checkpoint_epoch=2_step=75000_val_loss=8.7801.ckpt"
+    )
     prosody_model_path = None  # Path("P:\\cfm\\prosody_ru\\epoch=14-step=7034.ckpt")
 
+    voc = VocoderEvaluationInterface(
+        ckpt_path=voc_model_path,
+        device=device,
+    )
     tts = TTSEvaluationInterface(
         tts_ckpt_path=tts_model_path,
         prosody_ckpt_path=prosody_model_path,
         device=device,
     )
-    # voc = VocoderEvaluationInterface(
-    #    ckpt_path=voc_model_path, device=device, use_denoiser=False
-    # )
 
     print(tts.get_languages())
     print(tts.get_speakers())
@@ -151,7 +162,7 @@ if __name__ == "__main__":
     ]
 
     for test in tests:
-        for i in range(50):
+        for i in range(1):
             if test["lang"] not in tts.get_languages():
                 continue
 
@@ -162,14 +173,15 @@ if __name__ == "__main__":
                 test["utterances"],
                 test["lang"],
                 tts,
-                None,
+                voc,
                 speaker_name={
                     "default": test["speaker_name"],
                     "vq_encoder": test["source_speaker_name"],
                 },
+                style_reference=Path("C:\\SRS\\5.wav"),
                 seed=get_seed(),
             )
             wave_chunk.save(
-                f"P:\\vc_rnd_ru_v3_{i}.wav",
+                f"vc_rnd_ru_v3_{i}.wav",
                 overwrite=True,
             )

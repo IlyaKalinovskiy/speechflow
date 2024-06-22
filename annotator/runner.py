@@ -25,7 +25,7 @@ from speechflow.utils.init import init_method_from_config
 from tts.forced_alignment.scripts.train import main as run_fa
 
 LOGGER = logging.getLogger("runner")
-ANNOTATOR_TOTAL_GPU_MEM: int = 6
+ANNOTATOR_TOTAL_GPU_MEM: int = 8
 
 
 def parse_args():

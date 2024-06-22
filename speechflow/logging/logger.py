@@ -103,7 +103,6 @@ def create_logger(
     use_console_logging: bool = True,
 ):
     root_logger = logging.getLogger(log_name)
-    root_logger.setLevel(10)
 
     # create logger
     formatter = _get_formatter()

@@ -121,6 +121,7 @@ class AudioFeatures(FeatureExtractor):
         use_style: bool = False,
         use_energy: bool = False,
         use_pitch: bool = False,
+        use_ssl_adjustment: bool = False,
         use_vq: bool = False,
         use_averages: bool = False,
         use_range: bool = False,
@@ -279,7 +280,7 @@ class AudioFeatures(FeatureExtractor):
                 vp_inner_channels=encoder_inner_dim,
                 vp_num_layers=encoder_num_layers,
                 vp_output_dim=1,
-                use_ssl_adjustment=True,
+                use_ssl_adjustment=use_ssl_adjustment,
                 ssl_feat_dim=ssl_feat_dim,
             )
             self.pitch_predictor = FrameLevelPredictorWithDiscriminator(

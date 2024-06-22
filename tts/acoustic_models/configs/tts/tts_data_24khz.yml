@@ -134,13 +134,11 @@ preproc:
         ru: multilingual_text_parser/data/ru/homo_classifier
         en: multilingual_text_parser/data/en/roberta_large
         ml: multilingual_text_parser/data/common/xlm-roberta-large
-      model_name: { default: model, ru: ruRoBerta, en: model, ml: model }
+      model_name: { default: model, ru: ruRoBerta }
       by_phonemes: False
     ssl_features:
       type: SSLProcessor
-      ssl_type:
-        default: Wav2Vec
-        ml: WavLM
+      ssl_type: { default: Wav2Vec, ml: WavLM }
       resize_from: mel
 
 singleton_handlers:

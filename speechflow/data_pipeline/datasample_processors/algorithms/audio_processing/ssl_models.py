@@ -1,4 +1,3 @@
-import json
 import math
 import typing as tp
 import logging
@@ -16,7 +15,7 @@ from transformers.tokenization_utils_base import PaddingStrategy
 from whisper.decoding import DecodingTask
 
 from speechflow.data_pipeline.datasample_processors.data_types import SSLFeatures
-from speechflow.io import AudioChunk, check_path, tp_PATH
+from speechflow.io import AudioChunk, tp_PATH
 from speechflow.utils.fs import get_root_dir
 from speechflow.utils.profiler import Profiler
 
