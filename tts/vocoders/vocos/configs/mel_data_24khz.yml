@@ -159,7 +159,6 @@ collate:
 processor:
   type: DataProcessor
   output_collated_only: true
-  verbose_logging: False
   dump:
     default:
       data_root: *data_root

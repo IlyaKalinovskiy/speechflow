@@ -16,15 +16,12 @@ from speechflow.data_pipeline.core.datasample import (
     ToDict,
     ToTensor,
 )
+from speechflow.data_pipeline.core.exceptions import NoDataSamplesError
 from speechflow.training.utils.pad_utils import pad, pad_2d
 
-__all__ = ["BaseCollate", "BaseCollateOutput", "NoDataSamplesError"]
+__all__ = ["BaseCollate", "BaseCollateOutput"]
 
 LOGGER = logging.getLogger("root")
-
-
-class NoDataSamplesError(Exception):
-    pass
 
 
 @dataclass

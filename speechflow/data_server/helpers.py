@@ -242,7 +242,6 @@ def dataset_iterator(
     n_processes: int = 1,
     device: str = "cpu",
     with_dump: bool = True,
-    verbose_logging: bool = False,
     subset_name: tp.Optional[str] = None,
     server_addr: tp.Optional[str] = None,
 ) -> tp.Iterator[Batch]:
@@ -275,8 +274,6 @@ def dataset_iterator(
         cfg_data["dataset"]["split_ratio"] = {subset_name: [0, 1]}
 
     cfg_data["processor"]["output_collated_only"] = False
-    cfg_data["processor"]["verbose_logging"] = verbose_logging
-
     cfg_data["sampler"] = {"type": "SimpleSampler"}
 
     if not with_dump:

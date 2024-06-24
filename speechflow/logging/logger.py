@@ -1,15 +1,16 @@
-import os
 import json
 import socket
 import typing as tp
 import logging
 
 from multiprocessing import Lock, current_process
+from os import environ as env
 from pathlib import Path
 
 import numpy as np
 
 from speechflow.data_server.patterns import ZMQPatterns
+from speechflow.logging.filters import set_logging_filters
 from speechflow.logging.server import ProcessData, ProfilerData
 
 __all__ = ["create_logger"]
@@ -113,7 +114,7 @@ def create_logger(
     # server logging
     if use_server_logging:
         if not any(type(hd) == ZeroMQFileHandler for hd in root_logger.handlers):
-            logger_server_addr = os.environ.get("LoggingServerAddress")
+            logger_server_addr = env.get("LoggingServerAddress")
             if logger_server_addr and _check_if_port_used(logger_server_addr):
                 root_logger.addHandler(
                     _get_file_handler(
@@ -137,5 +138,10 @@ def create_logger(
             console_handler.setFormatter(formatter)
             console_handler.setLevel(console_level)
             root_logger.addHandler(console_handler)
+
+    if not bool(env.get("VERBOSE", False)):
+        set_logging_filters(root_logger)
+    else:
+        LOGGER.info("SET VERBOSE LOGGING")
 
     return root_logger

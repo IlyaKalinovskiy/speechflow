@@ -33,10 +33,6 @@ class BatchWorker(ProcessWorker):
 
         if info.get("device"):
             env["DEVICE"] = info["device"]
-        if info.get("memory_save", False):
-            env["MEMORY_SAVE"] = "1"
-        if info.get("use_profiler", False):
-            env["DATAPIPE_PROFILING"] = "1"
 
         if "data_pipeline" in info:
             self._data_pipeline = Serialize.load(info["data_pipeline"])

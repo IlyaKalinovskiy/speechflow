@@ -33,7 +33,6 @@ collate:
 processor:
   type: DataProcessor
   output_collated_only: True
-  verbose_logging: True
 
 sampler:
   train:

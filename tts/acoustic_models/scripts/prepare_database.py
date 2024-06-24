@@ -168,7 +168,6 @@ def redefine_segs(
         config_data_path=config_data_path,
         config_data=data_config,
         value_select=vs,
-        verbose_logging=True,
         device=device,
         n_processes=n_processes,
     )

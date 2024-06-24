@@ -25,31 +25,6 @@ __all__ = ["DataProcessor", "DataProcessingError"]
 LOGGER = logging.getLogger("root")
 
 
-class AssertionErrorFilter(logging.Filter):
-    def filter(self, record):
-        return "AssertionError" not in record.getMessage()
-
-
-class TimestampErrorFilter(logging.Filter):
-    def filter(self, record):
-        return "timestamps.py" not in record.getMessage()
-
-
-class TextProcessorErrorFilter(logging.Filter):
-    def filter(self, record):
-        return "ZeroSilTokensError" not in record.getMessage()
-
-
-class LPCProcessorErrorFilter(logging.Filter):
-    def filter(self, record):
-        return "LPCError" not in record.getMessage()
-
-
-class CollatedErrorFilter(logging.Filter):
-    def filter(self, record):
-        return "collate" not in record.getMessage()
-
-
 class TensorUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
         if module == "torch.storage" and name == "_load_from_bytes":
@@ -82,7 +57,6 @@ class DumpProcessor:
         mode: str = "file_path",
         fields: tp.Optional[tp.Union[str, tp.List[str]]] = None,
         functions: tp.Optional[tp.Union[str, tp.List[str]]] = None,
-        verbose_logging: bool = True,
         skip_samples_without_dump: bool = False,
         update_functions: tp.Optional[tp.Union[str, tp.List[str]]] = None,
     ):
@@ -90,10 +64,11 @@ class DumpProcessor:
         :param update_functions: functions that will be updated in the dump, remaining functions will not be
         recalculated.
         """
+        self._verbose_logging = bool(env.get("VERBOSE", False))
+
         self.data_root = data_root
         self.folder_path = folder_path
         self.mode = mode
-        self.verbose_logging = verbose_logging
         self.skip_samples_without_dump = skip_samples_without_dump
 
         (self.folder_path / "files").mkdir(parents=True, exist_ok=True)
@@ -208,7 +183,7 @@ class DumpProcessor:
         return True
 
     def load_samples(self, samples: tp.List[DataSample]) -> tp.List[DataSample]:
-        if not self.verbose_logging:
+        if not self._verbose_logging:
             num_samples = len(samples)
             samples = [
                 s for s in samples if self._get_sample_path(s) not in self.skip_samples
@@ -229,7 +204,7 @@ class DumpProcessor:
         for sample in samples:
             file_path = self._get_filename(sample)
             if not file_path.exists():
-                if self.verbose_logging:
+                if self._verbose_logging:
                     message = f"Dump for {sample.file_path.as_posix()} not found."
                     LOGGER.info(trace(self, message=message))
                 continue
@@ -246,7 +221,7 @@ class DumpProcessor:
 
             dumped_fields = dump_data["fields"]
             if len(dumped_fields) != len(self.fields):
-                if self.verbose_logging:
+                if self._verbose_logging:
                     message = f"Not all fields are calculated for {sample.file_path.as_posix()}!"
                     LOGGER.warning(trace(self, message=message))
 
@@ -282,14 +257,14 @@ class DumpProcessor:
                 if k in self.fields and v is not None
             }
             if len(dump_data) != len(self.fields):
-                if self.verbose_logging:
+                if self._verbose_logging:
                     message = f"Not all fields are calculated for {sample.file_path.as_posix()}!"
                     LOGGER.warning(trace(self, message=message))
 
             all_dump_data = {"fields": dump_data}
             if self.preproc_functions_storage:
                 all_dump_data["functions"] = self.preproc_functions_storage[file_path]
-                if self.verbose_logging:
+                if self._verbose_logging:
                     message = f"dump functions with keys: {list(all_dump_data['functions'].keys())}"
                     LOGGER.info(trace(self, message=message))
 
@@ -331,8 +306,6 @@ class DataProcessor(AbstractDataProcessor):
         collate_fn: tp.Optional[tp.Callable] = None,
         output_collated_only: bool = False,
         dump: tp.Optional[tp.Dict] = None,
-        verbose_logging: bool = True,
-        use_profiler: bool = False,
     ):
         super().__init__()
 
@@ -346,20 +319,11 @@ class DataProcessor(AbstractDataProcessor):
         self._output_collated_only = output_collated_only
 
         if dump:
-            self._dump_proc = init_class_from_config(DumpProcessor, dump)(
-                verbose_logging=verbose_logging
-            )  # type: ignore
+            self._dump_proc = init_class_from_config(DumpProcessor, dump)()
         else:
             self._dump_proc = None  # type: ignore
 
-        self._use_profiler = bool(env.get("DATAPIPE_PROFILING")) | use_profiler
-
-        if not verbose_logging:
-            LOGGER.addFilter(AssertionErrorFilter())
-            LOGGER.addFilter(TimestampErrorFilter())
-            LOGGER.addFilter(TextProcessorErrorFilter())
-            LOGGER.addFilter(LPCProcessorErrorFilter())
-            LOGGER.addFilter(CollatedErrorFilter())
+        self._use_profiler = bool(env.get("DATAPIPE_PROFILING", False))
 
     @staticmethod
     def apply(

@@ -13,7 +13,7 @@ LOGGER = logging.getLogger("root")
 def gpu_profiler(func):
     @wraps(func)
     def decorated_func(*args, **kwargs):
-        if env.get("MODEL_PROFILING"):
+        if bool(env.get("MODEL_PROFILING", False)):
             with Profiler(
                 format=Profiler.Format.ms, auto_logging=False, gpu=True
             ) as prof:

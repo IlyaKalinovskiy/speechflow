@@ -100,7 +100,7 @@ def init_class_from_config(
 def lazy_initialization(func):
     @wraps(func)
     def decorated_func(*args, **kwargs):
-        if env.get("MEMORY_SAVE"):
+        if bool(env.get("MEMORY_SAVE", False)):
             none_attr_before = [k for k, v in args[0].__dict__.items() if v is None]
             args[0].create()
             none_attr_after = [k for k, v in args[0].__dict__.items() if v is None]

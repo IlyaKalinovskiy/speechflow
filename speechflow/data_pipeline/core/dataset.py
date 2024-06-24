@@ -56,7 +56,7 @@ class Dataset:
         self._samples: tp.List[tp.Any] = []
         self._is_use_serialize = use_serialize
         self._readonly_mode: bool = False
-        self._mem_save = env.get("MEMORY_SAVE")
+        self._mem_save = bool(env.get("MEMORY_SAVE", False))
 
         if not data:
             return

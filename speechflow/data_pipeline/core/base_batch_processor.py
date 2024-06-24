@@ -4,6 +4,7 @@ import torch
 
 from speechflow.data_pipeline.core.abstract import AbstractBatchProcessor
 from speechflow.data_pipeline.core.batch import Batch
+from speechflow.data_pipeline.core.exceptions import InvalidDeviceError
 
 __all__ = ["BaseBatchProcessor"]
 
@@ -32,7 +33,7 @@ class BaseBatchProcessor(AbstractBatchProcessor):
         elif isinstance(device, torch.device):
             self.device = device
         else:
-            raise ValueError("Invalid device")
+            raise InvalidDeviceError(f"Invalid device '{device}'")
 
     @property
     def on_cpu(self):

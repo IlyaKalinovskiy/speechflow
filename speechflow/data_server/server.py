@@ -45,8 +45,6 @@ class DataServer(ProcessWorker):
         n_processes: int = 0,
         n_gpus: tp.Union[int, tp.List[int]] = 0,
         server_addr: tp.Optional[str] = None,
-        memory_save: bool = False,
-        use_profiler: bool = False,
     ):
         ProcessWorker.__init__(self)
         self._addr_for_clients = (
@@ -69,9 +67,6 @@ class DataServer(ProcessWorker):
         self._timer = Profiler(auto_logging=False)
 
         self._gpus = self.init_gpus(n_gpus) if isinstance(n_gpus, int) else n_gpus
-
-        self._memory_save = memory_save
-        self._use_profiler = use_profiler
 
     @property
     def address(self) -> str:
@@ -189,9 +184,6 @@ class DataServer(ProcessWorker):
                 response.update(self._info_for_loader)
             else:
                 response.update(self._info_for_worker)
-                response.update(
-                    {"memory_save": self._memory_save, "use_profiler": self._use_profiler}
-                )
                 if self._gpus:
                     idx = response["subscriber_id"] % len(self._gpus)
                     response.update({"device": f"cuda:{self._gpus[idx]}"})
