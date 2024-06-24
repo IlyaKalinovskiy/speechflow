@@ -6,8 +6,12 @@ import torch.nn as nn
 
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import get_lengths_from_mask, masked_fill
-from tts.acoustic_models.modules.component import Component
+from speechflow.training.utils.tensor_utils import (
+    get_lengths_from_mask,
+    get_mask_from_lengths,
+    masked_fill,
+)
+from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.components.style_encoders.style_encoder import (
     StyleEncoderParams,
 )
@@ -67,24 +71,17 @@ class StyleSpeech(Component):
         return self.params.vp_output_dim
 
     @staticmethod
-    def temporal_avg_pool(x, x_mask=None):
-        if x_mask is None:
-            out = torch.mean(x, dim=1)
-        else:
-            len_ = get_lengths_from_mask(x_mask).unsqueeze(1)
-            x = masked_fill(x, x_mask, 0)
-            x = x.sum(dim=1)
-            out = torch.div(x, len_)
+    def temporal_avg_pool(x, x_lengths, x_mask):
+        x = masked_fill(x, x_mask, 0)
+        x = x.sum(dim=1)
+        out = torch.div(x, x_lengths.unsqueeze(1))
         return out
 
-    def encode(self, x, x_mask, **kwargs):
+    def encode(self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs):
         max_len = x.shape[1]
-        if x_mask is not None and max_len != x_mask.shape[1]:
-            x_mask = None
+        x_mask = get_mask_from_lengths(x_lengths)
 
-        slf_attn_mask = (
-            x_mask.unsqueeze(1).expand(-1, max_len, -1) if x_mask is not None else None
-        )
+        slf_attn_mask = x_mask.unsqueeze(1).expand(-1, max_len, -1)
 
         # spectral
         x = self.spectral(x)
@@ -95,15 +92,14 @@ class StyleSpeech(Component):
         x = x.transpose(1, 2)
 
         # self-attention
-        if x_mask is not None:
-            x = masked_fill(x, x_mask, 0)
+        x = masked_fill(x, x_mask, 0)
         x, _ = self.slf_attn(x, mask=slf_attn_mask)
 
         # fc
         x = self.fc(x)
 
         # temoral average pooling
-        w = self.temporal_avg_pool(x, x_mask=x_mask).unsqueeze(1)
+        w = self.temporal_avg_pool(x, x_lengths, x_mask).unsqueeze(1)
 
         # if kwargs is not None and kwargs.get("model_inputs") is not None:
         #    sp_emb = kwargs.get("model_inputs").speaker_emb
@@ -111,8 +107,8 @@ class StyleSpeech(Component):
 
         return w
 
-    def forward_step(self, x, x_mask, **kwargs):
-        style_emb = self.encode(x, x_mask, **kwargs)
+    def forward_step(self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs):
+        style_emb = self.encode(x, x_lengths, model_inputs, **kwargs)
         return style_emb, {}, {}
 
 

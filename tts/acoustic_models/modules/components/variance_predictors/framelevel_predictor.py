@@ -5,9 +5,9 @@ import torch
 from pydantic import Field
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import get_lengths_from_mask
+from speechflow.training.utils.tensor_utils import get_mask_from_lengths
 from tts.acoustic_models.modules.common.blocks import Regression
-from tts.acoustic_models.modules.component import Component
+from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.components.discriminators import SignalDiscriminator
 from tts.acoustic_models.modules.params import VariancePredictorParams
 
@@ -63,27 +63,25 @@ class FrameLevelPredictor(Component):
         return self.params.vp_output_dim
 
     def forward_step(
-        self, x, x_mask, **kwargs
+        self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
     ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
         name = kwargs.get("name")
         target = kwargs.get("target")
 
-        m_inputs = kwargs.get("model_inputs")
-        x_lengths = get_lengths_from_mask(x_mask)
-
-        enc_predict, enc_ctx = self.frame_encoder.process_content(x, x_lengths, m_inputs)
+        enc_predict, enc_ctx = self.frame_encoder.process_content(
+            x, x_lengths, model_inputs
+        )
 
         losses = {}
         content = {
             f"{name}_vp_context": enc_ctx,
-            f"{name}_vp_context_mask": x_mask,
             f"{name}_vp_predict": enc_predict,
         }
 
         if self.training:
             if self.ssl_adjustment is not None:
                 _, ssl_ctx = self.ssl_adjustment.process_content(
-                    m_inputs.ssl_feat, x_lengths, m_inputs
+                    model_inputs.ssl_feat, x_lengths, model_inputs
                 )
                 var_from_ssl = self.ssl_proj(
                     torch.cat([enc_ctx.detach(), ssl_ctx], dim=2)
@@ -120,8 +118,12 @@ class FrameLevelPredictorWithDiscriminator(FrameLevelPredictor, Component):
         super().__init__(params, input_dim)
         self.disc = SignalDiscriminator(in_channels=params.vp_inner_dim)
 
-    def forward_step(self, x, mask, **kwargs):
-        var_predict, var_content, var_losses = super().forward_step(x, mask, **kwargs)
+    def forward_step(
+        self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
+    ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
+        var_predict, var_content, var_losses = super().forward_step(
+            x, x_lengths, **kwargs
+        )
 
         var = kwargs.get("target")
         name = kwargs.get("name")
@@ -131,11 +133,11 @@ class FrameLevelPredictorWithDiscriminator(FrameLevelPredictor, Component):
             var_real = var.unsqueeze(-1)
             var_fake = var_content[f"{name}_vp_predict"]
             context = var_content[f"{name}_vp_context"]
-            context_mask = var_content[f"{name}_vp_context_mask"]
+            mask = get_mask_from_lengths(x_lengths)
 
             disc_losses = self.disc.calculate_loss(
                 context.transpose(1, -1),
-                context_mask.transpose(1, -1),
+                mask.transpose(1, -1),
                 var_real.transpose(1, -1),
                 var_fake.transpose(1, -1),
                 m_inputs.global_step,

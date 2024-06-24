@@ -1,10 +1,11 @@
 import typing as tp
 
+import torch
+
 from torch import nn
 
-from speechflow.training.utils.tensor_utils import get_lengths_from_mask
 from tts.acoustic_models.modules.ada_speech.decoder import AdaDecoder, AdaDecoderParams
-from tts.acoustic_models.modules.component import Component
+from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.data_types import ComponentOutput
 from tts.acoustic_models.modules.params import VariancePredictorParams
 
@@ -46,18 +47,21 @@ class AdaPredictor(Component):
     def output_dim(self):
         return self.params.vp_output_dim
 
-    def forward_step(self, x, x_mask, **kwargs):
+    def forward_step(
+        self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
+    ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
+
         inputs = kwargs.get("model_inputs")
 
         dec_input = ComponentOutput.empty()
         dec_input.content = x
-        dec_input.content_lengths = get_lengths_from_mask(x_mask)
+        dec_input.content_lengths = x_lengths
         dec_input.model_inputs = inputs
         for name in self.params.condition:
             dec_input.additional_content[name] = inputs.additional_inputs[name]
 
         if dec_input.content_lengths is None:
-            dec_input.content_lengths = get_lengths_from_mask(x_mask)
+            dec_input.content_lengths = x_lengths
 
         det_outputs = self.decoder(dec_input)
 

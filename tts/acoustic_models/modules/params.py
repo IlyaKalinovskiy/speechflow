@@ -183,22 +183,21 @@ class VariancePredictorParams(EmbeddingParams):
 class VarianceParams(BaseTorchModelParams):
     predictor_type: str = "VariancePredictor"
     predictor_params: VariancePredictorParams = None  # type: ignore
-    target: str = None
     dim: int = 1
-    aggregate_by_tokens: bool = False
-    log_scale: bool = False
-    input_content: tp.Tuple[int, ...] = (1,)
+    target: str = None
+    input_content: tp.Tuple[int, ...] = (0,)
     input_content_dim: tp.Tuple[int, ...] = None
-    input_content_cat: bool = False
     detach_input: bool = False
     detach_output: bool = True
     use_target: bool = True
     denormalize: bool = False
+    upsample: bool = False
     cat_to_content: tp.Tuple[int, ...] = (0, 1)
     overwrite_content: tp.Tuple[int, ...] = ()
-    content_length_by: str = None
+    as_encoder: bool = False
     as_embedding: bool = False
     interval: tp.Tuple[float, float] = (0.0, 1.0)
+    log_scale: bool = False
     n_bins: int = 256
     emb_dim: int = 128
     begin_iter: int = 0
@@ -219,6 +218,15 @@ class VarianceParams(BaseTorchModelParams):
 
         if self.overwrite_content and len(self.cat_to_content) == 2:
             self.cat_to_content = ()
+
+        if self.as_encoder:
+            self.dim = self.predictor_params.vp_output_dim
+            self.use_target = False
+            self.detach_output = False
+            self.as_embedding = False
+            self.with_loss = False
+        else:
+            self.predictor_params.vp_output_dim = self.dim
 
 
 class VarianceAdaptorParams(VariancePredictorParams):
@@ -266,10 +274,5 @@ class VarianceAdaptorParams(VariancePredictorParams):
                     variance_params[name].predictor_params = VariancePredictorParams(
                         **vp_custom_params
                     )
-                if "aggregate_" in name:
-                    variance_params[name].aggregate_by_tokens = True
-                if "_encoder" in name:
-                    variance_params[name].detach_output = False
-                    variance_params[name].use_target = False
 
         self.va_variance_params = variance_params

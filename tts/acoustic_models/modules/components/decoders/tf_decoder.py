@@ -253,5 +253,5 @@ class TFDecoder(Component):
 
         outputs = DecoderOutput.copy_from(inputs).set_content(spec)
         outputs.gate = gate
-        outputs.decoder_context = decoder_context
+        outputs.hidden_state = decoder_context
         return outputs

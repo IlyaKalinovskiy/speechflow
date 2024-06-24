@@ -118,19 +118,21 @@ ComponentOutput = ComponentInput
 
 @dataclass
 class EncoderOutput(ComponentOutput):
-    encoder_context: Tensor = None
+    hidden_state: Tensor = None
 
 
 @dataclass
 class VarianceAdaptorOutput(ComponentOutput):
-    masks: tp.Dict[str, Tensor] = None
     attention_weights: Tensor = None
     variance_predictions: tp.Dict[str, Tensor] = None  # type: ignore
+
+    def __post_init__(self):
+        self.variance_predictions = {}
 
 
 @dataclass
 class DecoderOutput(ComponentOutput):
-    decoder_context: Tensor = None
+    hidden_state: Tensor = None
     gate: Tensor = None
 
 

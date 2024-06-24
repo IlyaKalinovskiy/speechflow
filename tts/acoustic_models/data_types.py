@@ -115,7 +115,6 @@ class TTSForwardOutput(TrainData):
     spectrogram_lengths: Tensor = None
     after_postnet_spectrogram: Tensor = None
     variance_predictions: tp.Dict[str, Tensor] = None  # type: ignore
-    masks: tp.Dict[str, Tensor] = None
     gate: Tensor = None
     attention_weights: Tensor = None
     additional_content: tp.Dict[str, Tensor] = None  # type: ignore

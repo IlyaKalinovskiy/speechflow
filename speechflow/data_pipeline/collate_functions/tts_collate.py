@@ -158,7 +158,7 @@ class TTSCollate(SpectrogramCollate):
         collated.concatenate = concatenate
         collated.num_words = num_words
         collated.word_lengths = words_lens
-        collated.num_tokens = transcription
+        collated.num_tokens = input_lens
         collated.token_lengths = input_lens
         collated.synt_lengths = syntagmas_lens
         return collated

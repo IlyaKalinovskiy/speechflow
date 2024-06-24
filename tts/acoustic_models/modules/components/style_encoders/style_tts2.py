@@ -8,7 +8,7 @@ from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils import spectral_norm
 
-from tts.acoustic_models.modules.component import Component
+from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.components.style_encoders.style_encoder import (
     StyleEncoderParams,
 )
@@ -50,14 +50,14 @@ class StyleTTS2(Component):
     def output_dim(self):
         return self.params.vp_output_dim
 
-    def encode(self, x, x_mask, **kwargs):
+    def encode(self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs):
         h = self.shared(x.unsqueeze(1))
         h = h.view(h.size(0), -1)
         s = self.unshared(h)
         return s
 
-    def forward_step(self, x, x_mask, **kwargs):
-        style_emb = self.encode(x, x_mask, **kwargs)
+    def forward_step(self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs):
+        style_emb = self.encode(x, x_lengths, model_inputs, **kwargs)
         return style_emb, {}, {}
 
 

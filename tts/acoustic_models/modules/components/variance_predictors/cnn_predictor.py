@@ -4,9 +4,9 @@ import torch
 
 from torch import nn
 
-from speechflow.training.utils.tensor_utils import apply_mask
+from speechflow.training.utils.tensor_utils import apply_mask, get_mask_from_lengths
 from tts.acoustic_models.modules.common.layers import Conv, LearnableSwish
-from tts.acoustic_models.modules.component import Component
+from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.params import VariancePredictorParams
 
 __all__ = ["CNNPredictor", "CNNPredictorParams"]
@@ -77,7 +77,7 @@ class CNNPredictor(Component):
             else self.params.vp_inner_dim
         )
 
-    def encode(self, x, x_mask, **kwargs):
+    def encode(self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs):
         after_first_conv = []
         for conv_layer in self.first_convs:
             after_first_conv.append(conv_layer(x))
@@ -89,33 +89,24 @@ class CNNPredictor(Component):
             after_second_conv += conv_1
 
         output = after_second_conv
+        return apply_mask(output, get_mask_from_lengths(x_lengths))
 
-        if output.shape[1] > 1 and x_mask is not None:
-            output = apply_mask(output, x_mask)
-
-        return output
-
-    def decode(self, encoder_output, mask, **kwargs):
+    def decode(self, encoder_output, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs):
         output = self.predictor(encoder_output)
         output = output.squeeze(-1)
+        return apply_mask(output, get_mask_from_lengths(x_lengths))
 
-        if mask is not None:
-            return apply_mask(output, mask)
-
-        return output
-
-    def forward_step(self, x, x_mask, **kwargs):
+    def forward_step(
+        self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
+    ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
         precompute_name = f"imputer_{kwargs.get('name')}_precompute"
         if precompute_name in kwargs["model_inputs"].additional_inputs:
             return kwargs["model_inputs"].additional_inputs[precompute_name], {}, {}
 
-        if x_mask is None:
-            x_mask = torch.ones(x.shape[0:2]).bool().to(x.device)
-
-        encoder_output = self.encode(x, x_mask, **kwargs)
+        encoder_output = self.encode(x, x_lengths, model_inputs, **kwargs)
 
         if not self.params.as_encoder:
-            out = self.decode(encoder_output, x_mask, **kwargs)
+            out = self.decode(encoder_output, x_lengths, model_inputs, **kwargs)
             return out, {}, {}
         else:
             return encoder_output, {}, {}

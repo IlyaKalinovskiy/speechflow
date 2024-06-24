@@ -5,12 +5,8 @@ import torch
 
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import (
-    apply_mask,
-    get_lengths_from_mask,
-    get_mask_from_lengths,
-)
-from tts.acoustic_models.modules.component import Component
+from speechflow.training.utils.tensor_utils import apply_mask, get_mask_from_lengths
+from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.params import VariancePredictorParams
 from tts.forced_alignment.model.utils import maximum_path
 
@@ -135,25 +131,22 @@ class GradTTSFA(Component):
 
         return attn.detach()
 
-    def forward_step(self, x, x_mask, **kwargs):
-        inputs = kwargs.get("model_inputs")
-        y = self._get_target_feat(inputs)
+    def forward_step(self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs):
+        y = self._get_target_feat(model_inputs)
 
-        x_lengths = get_lengths_from_mask(x_mask)
-        x_enc = self.encoder.encode(x, x_lengths, inputs)
+        x_enc = self.encoder.encode(x, x_lengths, model_inputs)
         if hasattr(self.encoder, "proj"):
             mu_x = self.encoder.proj(x_enc)
         else:
             mu_x = x_enc
 
-        g = self.get_condition(inputs, self.encoder.params.condition)
+        g = self.get_condition(model_inputs, self.encoder.params.condition)
         g = g.unsqueeze(1).expand(-1, x_enc.size(1), -1)
-        logw = self.proj_w(
-            torch.cat([x_enc, g], dim=2).transpose(2, 1), x_mask.unsqueeze(1)
-        )
+        logw = self.proj_w(torch.cat([x_enc, g], dim=2).transpose(2, 1), x_lengths)
 
         if y is not None:
-            y_lengths = inputs.output_lengths
+            x_mask = get_mask_from_lengths(x_lengths)
+            y_lengths = model_inputs.output_lengths
             y_mask = get_mask_from_lengths(y_lengths)
 
             attn_mask = x_mask.unsqueeze(-1) * y_mask.unsqueeze(1)

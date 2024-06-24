@@ -17,7 +17,7 @@ from tts.acoustic_models.modules.common.length_regulators import SoftLengthRegul
 from tts.acoustic_models.modules.common.vits.normalizing_flow import (
     ResidualCouplingBlock as VITS2RCBlock,
 )
-from tts.acoustic_models.modules.component import Component
+from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.data_types import ComponentInput, ComponentOutput
 from tts.acoustic_models.modules.params import VariancePredictorParams
 
@@ -406,7 +406,9 @@ class VITSPredictor(Component):
             "vits_kl_loss_audio": loss_kl_audio,
         }
 
-    def forward_step(self, x, x_mask, **kwargs):
+    def forward_step(
+        self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
+    ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
         content = {}
         losses = {}
 

@@ -8,7 +8,7 @@ from torch.nn import functional as F
 
 from speechflow.training.utils.tensor_utils import get_mask_from_lengths
 from tts.acoustic_models.modules.common import SoftLengthRegulator
-from tts.acoustic_models.modules.component import Component
+from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.components.discriminators import SignalDiscriminator
 from tts.acoustic_models.modules.params import VariancePredictorParams
 
@@ -72,40 +72,38 @@ class TokenLevelPredictor(Component):
         return self.params.vp_output_dim
 
     def forward_step(
-        self, x, x_mask, **kwargs
+        self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
     ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
         name = kwargs.get("name")
-        m_inputs = kwargs.get("model_inputs")
 
         losses = {}
 
-        word_length = m_inputs.additional_inputs.get("word_lengths")
-        word_inv_lengths = m_inputs.additional_inputs.get("word_invert_lengths")
+        word_length = model_inputs.additional_inputs.get("word_lengths")
+        word_inv_lengths = model_inputs.additional_inputs.get("word_invert_lengths")
 
-        max_num_tokens = m_inputs.transcription_lengths.max().item()
-        max_num_words = m_inputs.num_words.max().item()
+        max_num_tokens = model_inputs.transcription_lengths.max().item()
+        max_num_words = model_inputs.num_words.max().item()
 
         x_by_words, _ = self.lr(x.detach(), word_inv_lengths, max_num_words)
         x_by_tokens = x
 
-        wd_mask = get_mask_from_lengths(m_inputs.num_words)
-        tk_mask = get_mask_from_lengths(m_inputs.transcription_lengths)
+        wd_mask = get_mask_from_lengths(model_inputs.num_words)
+        tk_mask = get_mask_from_lengths(model_inputs.transcription_lengths)
 
         if self.params.add_lm_feat:
-            x_by_words = x_by_words + self.lm_proj(m_inputs.lm_feat)
+            x_by_words = x_by_words + self.lm_proj(model_inputs.lm_feat)
 
         wd_predict, wd_ctx = self.word_encoder.process_content(
-            x_by_words, m_inputs.num_words, m_inputs
+            x_by_words, model_inputs.num_words, model_inputs
         )
         wd_enc, _ = self.hard_lr(wd_ctx, word_length, max_num_tokens)
 
         tk_proj = self.token_proj(torch.cat([wd_enc, x_by_tokens], dim=2))
         tk_predict, tk_ctx = self.token_encoder.process_content(
-            tk_proj, m_inputs.transcription_lengths, m_inputs
+            tk_proj, model_inputs.transcription_lengths, model_inputs
         )
 
         context = tk_ctx
-        context_mask = tk_mask
         var_predict = tk_predict.squeeze(-1)
 
         if self.training:
@@ -119,7 +117,6 @@ class TokenLevelPredictor(Component):
             var_predict.squeeze(-1),
             {
                 f"{name}_vp_context": context,
-                f"{name}_vp_context_mask": context_mask,
                 f"{name}_vp_predict": var_predict,
                 f"{name}_vp_target": kwargs.get("target"),
             },
@@ -142,8 +139,12 @@ class TokenLevelPredictorWithDiscriminator(TokenLevelPredictor, Component):
         super().__init__(params, input_dim)
         self.disc = SignalDiscriminator(in_channels=params.vp_inner_dim)
 
-    def forward_step(self, x, mask, **kwargs):
-        var_predict, var_content, var_losses = super().forward_step(x, mask, **kwargs)
+    def forward_step(
+        self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
+    ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
+        var_predict, var_content, var_losses = super().forward_step(
+            x, x_lengths, **kwargs
+        )
 
         var = kwargs.get("target")
         name = kwargs.get("name")
@@ -153,11 +154,11 @@ class TokenLevelPredictorWithDiscriminator(TokenLevelPredictor, Component):
             var_real = var.unsqueeze(-1)
             var_fake = var_content[f"{name}_vp_predict"]
             context = var_content[f"{name}_vp_context"]
-            context_mask = var_content[f"{name}_vp_context_mask"]
+            mask = get_mask_from_lengths(x_lengths)
 
             disc_losses = self.disc.calculate_loss(
                 context.transpose(1, -1),
-                context_mask.transpose(1, -1),
+                mask.transpose(1, -1),
                 var_real.transpose(1, -1),
                 var_fake.transpose(1, -1),
                 m_inputs.global_step,

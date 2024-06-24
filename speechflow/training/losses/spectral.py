@@ -22,6 +22,8 @@ class BaseSpectral(BaseLoss):
         tensor_to_mask: torch.Tensor, mask: tp.Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         if mask is not None:
+            if mask.ndim == 2:
+                mask = mask.unsqueeze(-1)
             tensor_to_mask = tensor_to_mask.masked_select(mask)
         return tensor_to_mask
 

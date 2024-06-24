@@ -59,21 +59,16 @@ class TTSLoss(BaseCriterion):
         batch_idx: int = 0,
         global_step: int = 0,
     ) -> tp.Dict[str, torch.Tensor]:
-        if output.masks is not None:
-            src_mask = output.masks["src"]
-            text_mask = output.masks["text"]
-            output_mask = output.masks["spec"]
-        else:
-            output_mask = get_mask_from_lengths(output.spectrogram_lengths)
-
         output_spec = output.spectrogram
         target_spec = target.spectrogram
-        spec_mask = output_mask.unsqueeze(-1)
+
+        input_mask = get_mask_from_lengths(target.input_lengths)
+        output_mask = get_mask_from_lengths(output.spectrogram_lengths)
 
         total_loss = {}
         for sp_loss in self.spectral_loss:
             total_loss[sp_loss.__class__.__name__] = sp_loss(
-                global_step, output_spec, target_spec, spec_mask
+                global_step, output_spec, target_spec, output_mask
             )
 
         for sp_loss in self.attention_loss:
@@ -107,12 +102,10 @@ class TTSLoss(BaseCriterion):
                     if len(var_pred.shape) > 2:
                         var_pred = var_pred.squeeze(-1)
 
-                    if var_true.shape[-1] == target.spectrogram.shape[1]:
+                    if var_true.shape[-1] == target_spec.shape[1]:
                         var_mask = output_mask
                     else:
-                        var_mask = src_mask
-                    if name == "durations" or "aggregate" in name:
-                        var_mask = text_mask
+                        var_mask = input_mask
 
                     loss_value = loss(
                         global_step,

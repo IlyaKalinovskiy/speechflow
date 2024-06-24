@@ -13,7 +13,10 @@ from torch.nn import functional as F
 
 from speechflow.training.base_model import BaseTorchModelParams
 from speechflow.training.utils.profiler import gpu_profiler
-from speechflow.training.utils.tensor_utils import get_mask_from_lengths
+from speechflow.training.utils.tensor_utils import (
+    get_lengths_from_mask,
+    get_mask_from_lengths,
+)
 from tts.acoustic_models.modules.data_types import (
     MODEL_INPUT_TYPE,
     ComponentInput,
@@ -68,7 +71,11 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
     @abc.abstractmethod
     @tp.overload
     def forward_step(
-        self, x: torch.Tensor, x_mask: torch.BoolTensor, **kwargs
+        self,
+        x: torch.Tensor,
+        x_length: torch.BoolTensor,
+        model_inputs: MODEL_INPUT_TYPE,
+        **kwargs,
     ) -> tp.Tuple[tp.Dict[str, tp.Any], tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
         ...
 
@@ -119,7 +126,7 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
     ):
         inputs = ComponentInput(x, x_lengths, model_inputs=model_inputs)
         outputs = self.forward_step(inputs)
-        return outputs.content, getattr(outputs, "encoder_context")
+        return outputs.content, getattr(outputs, "hidden_state")
 
     def generate_step(self, inputs: ComponentInput, **kwargs) -> ComponentOutput:
         return self.forward_step(inputs)
@@ -238,30 +245,18 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
     @staticmethod
     def get_chunk(
         x,
-        x_mask,
-        x_lengths=None,
+        x_lengths,
         min_len: int = None,
         max_len: int = None,
         pad_val: float = -4.0,
     ):
-        from speechflow.training.utils.tensor_utils import (
-            get_lengths_from_mask,
-            get_mask_from_lengths,
-        )
-
-        if x_mask is None:
-            x_mask = get_mask_from_lengths(x_lengths)
-
-        if x_lengths is not None:
-            lens = x_lengths
-        else:
-            lens = get_lengths_from_mask(x_mask)
+        x_mask = get_mask_from_lengths(x_lengths)
 
         if min_len is None:
-            min_len = lens.min()
+            min_len = x_lengths.min()
 
         if max_len is None:
-            max_len = lens.max()
+            max_len = x_lengths.max()
 
         if x.shape[1] < min_len:
             gt = F.pad(
@@ -269,7 +264,7 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
             ).transpose(2, 1)
             gt_mask = F.pad(x_mask, (0, min_len - x.shape[1]))
         else:
-            chunk_len = min(lens.min(), max_len)
+            chunk_len = min(x_lengths.min(), max_len)
             chunk_len = max(min_len, chunk_len - chunk_len % 16)
             if chunk_len != x.shape[1]:
                 gt = x[:, :chunk_len, :]
@@ -277,35 +272,23 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
             else:
                 gt, gt_mask = x, x_mask
 
-        return gt, gt_mask
+        return gt, get_lengths_from_mask(gt_mask)
 
     def get_random_chunk(
         self,
         x,
-        x_mask,
-        x_lengths=None,
+        x_lengths,
         min_len: int = None,
         max_len: int = None,
         pad_val: float = -4.0,
     ):
-        from speechflow.training.utils.tensor_utils import (
-            get_lengths_from_mask,
-            get_mask_from_lengths,
-        )
-
-        if x_mask is None:
-            x_mask = get_mask_from_lengths(x_lengths)
-
-        if x_lengths is not None:
-            lens = x_lengths
-        else:
-            lens = get_lengths_from_mask(x_mask)
+        x_mask = get_mask_from_lengths(x_lengths)
 
         if min_len is None:
-            min_len = lens.min() // 2
+            min_len = x_lengths.min() // 2
 
         if max_len is None:
-            max_len = lens.max()
+            max_len = x_lengths.max()
 
         if x.shape[1] < min_len:
             gt = F.pad(
@@ -314,14 +297,14 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
             gt_mask = F.pad(x_mask, (0, min_len - x.shape[1]))
         else:
             if self.training:
-                delta = max(0, lens.min() - min_len)
+                delta = max(0, x_lengths.min() - min_len)
                 chunk_len = min(min_len + int(delta * random.random()), max_len)
                 chunk_len = max(min_len, chunk_len - chunk_len % 16)
 
                 gt = []
                 gt_mask = []
                 for idx in range(x.shape[0]):
-                    a = max(0, int((lens[idx] - chunk_len) * random.random()))
+                    a = max(0, int((x_lengths[idx] - chunk_len) * random.random()))
                     b = a + chunk_len
                     gt.append(x[idx, a:b, :])
                     gt_mask.append(x_mask[idx, a:b])
@@ -332,7 +315,7 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
                 gt = x[:, :min_len, :]
                 gt_mask = x_mask[:, :min_len]
 
-        return gt, gt_mask
+        return gt, get_lengths_from_mask(gt_mask)
 
     @staticmethod
     def copy_content(

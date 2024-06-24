@@ -7,8 +7,8 @@ from torch import nn
 from torch.nn import functional as F
 from vector_quantize_pytorch import ResidualFSQ
 
-from speechflow.training.utils.tensor_utils import get_lengths_from_mask
-from tts.acoustic_models.modules.component import Component
+from speechflow.training.utils.tensor_utils import get_mask_from_lengths
+from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.params import VariancePredictorParams
 
 __all__ = ["StyleEncoder", "StyleEncoderParams"]
@@ -21,6 +21,7 @@ class StyleEncoderParams(VariancePredictorParams):
     base_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
     source: str = "spectrogram"
     source_dim: int = 80
+    random_chunk: bool = False
     min_spec_len: int = 256
     max_spec_len: int = 512
     use_gmvae: bool = False
@@ -66,13 +67,13 @@ class StyleEncoder(Component):
     def output_dim(self):
         return self.encoder.output_dim
 
-    def encode(self, x, x_mask, **kwargs):
+    def encode(self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs):
         if x.shape[1] > 1:
-            x, x_mask = self.get_chunk(
-                x, x_mask, None, self.params.min_spec_len, self.params.max_spec_len
+            x, x_lengths = self.get_chunk(
+                x, x_lengths, self.params.min_spec_len, self.params.max_spec_len
             )
 
-        style_emb = self.encoder(x, x_mask, **kwargs)[0]
+        style_emb = self.encoder(x, x_lengths, model_inputs, **kwargs)[0]
 
         if self.params.use_gmvae:
             gmvae_emb, content, losses = self.gmvae(
@@ -97,44 +98,39 @@ class StyleEncoder(Component):
         else:
             return style_emb, {}, {}
 
-    def forward_step(self, x, x_mask, **kwargs):
-        model_inputs = kwargs.get("model_inputs")
-
+    def forward_step(self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs):
         if model_inputs.prosody_reference is not None:
             if "style_emb" in model_inputs.prosody_reference.default.model_feat:
                 style_emb = model_inputs.prosody_reference.default.model_feat["style_emb"]
                 style_emb = torch.from_numpy(style_emb).to(x.device)
-                style_emb = style_emb.expand(x_mask.shape[0], -1).unsqueeze(1)
+                style_emb = style_emb.expand(x_lengths.shape[0], -1).unsqueeze(1)
                 return style_emb, {}, {}
 
-        try:
-            x = self.get_condition(
-                model_inputs, self.params.source, average_by_time=False
-            )
-        except KeyError:
-            pass
+        x = self.get_condition(model_inputs, self.params.source, average_by_time=False)
+        if x.shape[1] == model_inputs.input_lengths.max():
+            x_lengths = model_inputs.input_lengths
+        elif x.shape[1] == model_inputs.output_lengths.max():
+            x_lengths = model_inputs.output_lengths
 
         if self.params.base_encoder_type == "SimpleStyle":
             assert x.shape[1] == 1
         else:
             assert x.shape[1] > 1
 
-        if x.shape[1] > 1:
+        if self.params.random_chunk and x.shape[1] > 1:
             name = f"{self.params.source.replace('linear_', '')}_lengths"
             name = name.replace("prompt.", "")
             if hasattr(model_inputs, name):
-                x_lens = getattr(model_inputs, name)
-            else:
-                x_lens = get_lengths_from_mask(x_mask)
+                x_lengths = getattr(model_inputs, name)
 
-            chunk, chunk_mask = self.get_random_chunk(
-                x, None, x_lens, self.params.min_spec_len, self.params.max_spec_len
+            chunk, chunk_lengths = self.get_random_chunk(
+                x, x_lengths, self.params.min_spec_len, self.params.max_spec_len
             )
         else:
             chunk = x
-            chunk_mask = None
+            chunk_lengths = x_lengths
 
-        return self.encode(chunk, chunk_mask, **kwargs)
+        return self.encode(chunk, chunk_lengths, model_inputs, **kwargs)
 
 
 class GMVAE(nn.Module):

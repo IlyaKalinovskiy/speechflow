@@ -81,6 +81,7 @@ class TTSBatchProcessor(BaseBatchProcessor):
             aggregate_curv_pitch=collated.aggregated.get("curv_pitch"),
             prosody=collated.aggregated.get("pitch_contour"),
             additional_inputs=collated.additional_fields,
+            input_lengths=collated.transcription_lengths,
             output_lengths=collated.spectrogram_lengths,
         )
 

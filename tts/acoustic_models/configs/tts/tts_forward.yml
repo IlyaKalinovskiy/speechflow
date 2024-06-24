@@ -104,7 +104,7 @@ net:
       StyleEncoder_0: 128
 
     va_variances:
-      0: [spectrogram_encoder]
+      0: [biometric_encoder]
       1: [aggregate_energy, aggregate_pitch]
       2: [aggregate_curv_energy, aggregate_curv_pitch]
       3: [durations]
@@ -112,7 +112,7 @@ net:
     va_variance_params:
       biometric_encoder:
         tag: style_emb
-        dim: 192
+        as_encoder: True
         predictor_type: StyleEncoder
         predictor_params:
           vp_output_dim: 128
@@ -124,6 +124,7 @@ net:
             gmvae_n_components: 16
       spectrogram_encoder:
         tag: style_emb
+        as_encoder: True
         predictor_type: StyleEncoder
         predictor_params:
           vp_output_dim: 128
@@ -140,6 +141,7 @@ net:
         input_content: [1]
         cat_to_content: [1]
       aggregate_pitch:
+        as_encoder: True
         predictor_type: TokenLevelPredictor
         log_scale: true
         as_embedding: true
@@ -167,6 +169,7 @@ net:
         input_content: [1]
         cat_to_content: [1]
       durations:
+        input_content: [0]
         predictor_type: TokenLevelDP
         denormalize: false
       energy:

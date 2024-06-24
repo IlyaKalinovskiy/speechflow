@@ -50,6 +50,8 @@ def multi_output(function_to_decorate):
         output: torch.Tensor = args[1]
         target: torch.Tensor = args[2]
         mask: torch.Tensor = args[3]
+        if mask.ndim == 2:
+            mask = mask.unsqueeze(-1)
         if output.ndim != target.ndim:
             target = target.unsqueeze(0).expand(output.shape)
             mask = mask.unsqueeze(0).expand(output.shape)

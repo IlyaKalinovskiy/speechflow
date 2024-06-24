@@ -124,5 +124,5 @@ class RNNEncoder(CNNEncoder):
 
         outputs = EncoderOutput.copy_from(inputs)
         outputs = outputs.set_content(y).apply_mask(x_mask)
-        outputs.encoder_context = x
+        outputs.hidden_state = x
         return outputs
