@@ -168,7 +168,7 @@ class TokenLevelDPWithDiscriminator(TokenLevelDP, Component):
         self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
     ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
         dur_predict, dur_content, dur_losses = super().forward_step(
-            x, x_lengths, **kwargs
+            x, x_lengths, model_inputs, **kwargs
         )
         m_inputs = kwargs.get("model_inputs")
 

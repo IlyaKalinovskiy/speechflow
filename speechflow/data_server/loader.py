@@ -190,7 +190,7 @@ class DataLoader:
                             f"batch size mismatch "
                             f"(expected size {self.batch_size} but received {batch.size})"
                         )
-                        LOGGER.info(trace(self, message=message))
+                        LOGGER.debug(trace(self, message=message))
                     else:
                         if self.pin_memory and batch.collated_samples is not None:
                             batch.collated_samples.pin_memory()
@@ -268,14 +268,14 @@ class DataLoader:
         self._data_client.send(
             {"message": "abort_processing", "subset_name": self.subset_name}
         )
-        LOGGER.info(trace(self, self.subset_name, message="abort_processing"))
+        LOGGER.warning(trace(self, self.subset_name, message="abort_processing"))
 
     def reset(self):
         self._batch_queue.clear()
         self._epoch_complete_event.clear()
         self._data_client.send({"message": "reset", "subset_name": self.subset_name})
         self.prefetch_factor = self.min_prefetch_factor
-        LOGGER.info(trace(self, self.subset_name, message="reset"))
+        LOGGER.warning(trace(self, self.subset_name, message="reset"))
 
     def get_epoch_iterator(self) -> tp.Iterator[Batch]:
         self.reset()

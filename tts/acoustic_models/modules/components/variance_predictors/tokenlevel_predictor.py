@@ -143,7 +143,7 @@ class TokenLevelPredictorWithDiscriminator(TokenLevelPredictor, Component):
         self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
     ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
         var_predict, var_content, var_losses = super().forward_step(
-            x, x_lengths, **kwargs
+            x, x_lengths, model_inputs, **kwargs
         )
 
         var = kwargs.get("target")

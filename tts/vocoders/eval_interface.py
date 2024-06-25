@@ -54,6 +54,7 @@ class VocoderLoader:
             checkpoint = checkpoint["vocoder_ckpt"]
 
         self.data_cfg = checkpoint["data_cfg"]
+        self.data_cfg["processor"].pop("verbose_logging", None)
 
         self.pipe = self._load_data_pipeline(self.data_cfg)
         self.lang_id_map = checkpoint.get("lang_id_map", {})

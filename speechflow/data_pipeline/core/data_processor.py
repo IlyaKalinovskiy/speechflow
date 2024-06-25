@@ -192,7 +192,7 @@ class DumpProcessor:
                 message = (
                     f"{num_samples - len(samples)} samples thrown out as blacklisted!"
                 )
-                log_to_file(trace(self, message=message))
+                LOGGER.debug(trace(self, message=message))
 
         if self.skip_samples_without_dump:
             num_samples = len(samples)
@@ -204,9 +204,8 @@ class DumpProcessor:
         for sample in samples:
             file_path = self._get_filename(sample)
             if not file_path.exists():
-                if self._verbose_logging:
-                    message = f"Dump for {sample.file_path.as_posix()} not found."
-                    LOGGER.info(trace(self, message=message))
+                message = f"Dump for {sample.file_path.as_posix()} not found."
+                LOGGER.debug(trace(self, message=message))
                 continue
 
             try:
@@ -221,9 +220,10 @@ class DumpProcessor:
 
             dumped_fields = dump_data["fields"]
             if len(dumped_fields) != len(self.fields):
-                if self._verbose_logging:
-                    message = f"Not all fields are calculated for {sample.file_path.as_posix()}!"
-                    LOGGER.warning(trace(self, message=message))
+                message = (
+                    f"Not all fields are calculated for {sample.file_path.as_posix()}!"
+                )
+                LOGGER.debug(trace(self, message=message))
 
             sample.update(dumped_fields)
 
@@ -257,16 +257,19 @@ class DumpProcessor:
                 if k in self.fields and v is not None
             }
             if len(dump_data) != len(self.fields):
-                if self._verbose_logging:
-                    message = f"Not all fields are calculated for {sample.file_path.as_posix()}!"
-                    LOGGER.warning(trace(self, message=message))
+                message = (
+                    f"Not all fields are calculated for {sample.file_path.as_posix()}!"
+                )
+                LOGGER.debug(trace(self, message=message))
 
             all_dump_data = {"fields": dump_data}
             if self.preproc_functions_storage:
                 all_dump_data["functions"] = self.preproc_functions_storage[file_path]
-                if self._verbose_logging:
-                    message = f"dump functions with keys: {list(all_dump_data['functions'].keys())}"
-                    LOGGER.info(trace(self, message=message))
+
+                message = (
+                    f"dump functions with keys: {list(all_dump_data['functions'].keys())}"
+                )
+                LOGGER.debug(trace(self, message=message))
 
             file_path.write_bytes(pickle.dumps(all_dump_data))
 
@@ -323,6 +326,7 @@ class DataProcessor(AbstractDataProcessor):
         else:
             self._dump_proc = None  # type: ignore
 
+        self._verbose_logging = bool(env.get("VERBOSE", False))
         self._use_profiler = bool(env.get("DATAPIPE_PROFILING", False))
 
     @staticmethod
@@ -389,7 +393,7 @@ class DataProcessor(AbstractDataProcessor):
 
     def process(self, in_samples: tp.List[DataSample]) -> tp.Union[Batch, None]:
         if len(in_samples) == 0:
-            LOGGER.warning(trace(self, message="Input samples list is empty!"))
+            LOGGER.debug(trace(self, message="Input samples list is empty!"))
 
         try:
             is_last_batch = in_samples[-1] is None
@@ -407,12 +411,8 @@ class DataProcessor(AbstractDataProcessor):
                 ):
                     in_samples = self._dump_proc.load_samples(in_samples)
                     if len(in_samples) == 0:
-                        LOGGER.warning(
-                            trace(
-                                self,
-                                message="Samples list after loading dump is empty!",
-                            )
-                        )
+                        message = "Samples list after loading dump is empty!"
+                        LOGGER.debug(trace(self, message=message))
 
             out_samples = self.do_preprocessing(in_samples, self._preproc_fn)
 

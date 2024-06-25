@@ -8,7 +8,6 @@ from torch.nn import functional as F
 from speechflow.logging import trace
 from speechflow.training.utils.tensor_utils import (
     get_lengths_from_durations,
-    get_mask_from_lengths,
     merge_additional_outputs,
 )
 from tts.acoustic_models.modules.common import VarianceEmbedding
@@ -529,6 +528,9 @@ class HierarchicalVarianceAdaptor(Component):
         model_inputs,
     ):
         def _tensor_upsampling(content_, length_regulator_):
+            if model_inputs.output_lengths is None:
+                model_inputs.output_lengths = get_lengths_from_durations(durations)
+
             return length_regulator_(
                 content_,
                 durations,
@@ -565,7 +567,6 @@ class HierarchicalVarianceAdaptor(Component):
                 for i in var_params[DP_NAME].cat_to_content:
                     content[i], attention_weights = _tensor_upsampling(content[i], lr)
                     content_lengths[i] = model_inputs.output_lengths
-
                 continue
 
             if var_params[name].upsample:

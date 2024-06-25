@@ -55,12 +55,8 @@ class Proxy(ProcessWorker):
 
     def on_start(self):
         self._zmq_proxy = ZMQPatterns.proxy(self._proxy_addr, self._server_addrs)
-        LOGGER.info(
-            trace(
-                self,
-                message=f"Start {self.__class__.__name__} Server {self._proxy_addr}",
-            )
-        )
+        message = f"Start {self.__class__.__name__} Server {self._proxy_addr}"
+        LOGGER.info(trace(self, message=message))
 
     def on_finish(self):
         self._zmq_proxy.close()

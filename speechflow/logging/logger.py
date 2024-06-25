@@ -103,6 +103,10 @@ def create_logger(
     use_file_logging: bool = True,
     use_console_logging: bool = True,
 ):
+    if bool(env.get("VERBOSE", False)):
+        console_level = logging.DEBUG
+        file_level = logging.DEBUG
+
     root_logger = logging.getLogger(log_name)
 
     # create logger
@@ -142,6 +146,6 @@ def create_logger(
     if not bool(env.get("VERBOSE", False)):
         set_logging_filters(root_logger)
     else:
-        LOGGER.info("SET VERBOSE LOGGING")
+        LOGGER.debug("SET VERBOSE LOGGING")
 
     return root_logger

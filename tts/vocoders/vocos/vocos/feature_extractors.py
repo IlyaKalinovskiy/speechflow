@@ -440,7 +440,6 @@ class AudioFeatures(FeatureExtractor):
         losses = {}
 
         x, x_lens = self._get_input_feat(m_inputs)
-        x_mask = get_mask_from_lengths(x_lens)
 
         conditions = self._get_conditions(m_inputs)
 
@@ -471,9 +470,9 @@ class AudioFeatures(FeatureExtractor):
         if self.energy_predictor is not None:
             e_output, e_content, e_losses = self.energy_predictor(
                 x=x,
-                mask=x_mask,
-                target=m_inputs.energy,
+                x_lengths=x_lens,
                 model_inputs=m_inputs,
+                target=m_inputs.energy,
                 name="energy",
             )
             losses.update(e_losses)
@@ -481,9 +480,9 @@ class AudioFeatures(FeatureExtractor):
         if self.pitch_predictor is not None:
             p_output, p_content, p_losses = self.pitch_predictor(
                 x=x,
-                mask=x_mask,
-                target=m_inputs.pitch,
+                x_lengths=x_lens,
                 model_inputs=m_inputs,
+                target=m_inputs.pitch,
                 name="pitch",
             )
             losses.update(p_losses)

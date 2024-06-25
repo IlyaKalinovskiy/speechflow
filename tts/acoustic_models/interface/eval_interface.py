@@ -626,6 +626,7 @@ class TTSEvaluationInterface:
 
         inputs.additional_inputs.update(additional_inputs)
         inputs.prosody_reference = ctx.prosody_reference.copy()
+        inputs.output_lengths = None
         return inputs
 
     @torch.inference_mode()

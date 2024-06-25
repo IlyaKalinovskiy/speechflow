@@ -46,12 +46,8 @@ class BatchWorker(ProcessWorker):
             components = self._data_pipeline[subset_name]
             self._data_processor[subset_name]: DataProcessor = components.data_processor
 
-        LOGGER.info(
-            trace(
-                self,
-                message=f"Start Data Worker-{info['subscriber_id']} {self._server_addr}",
-            )
-        )
+        message = f"Start Data Worker-{info['subscriber_id']} {self._server_addr}"
+        LOGGER.debug(trace(self, message=message))
 
     def on_finish(self):
         self._zmq_worker.close()

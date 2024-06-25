@@ -67,7 +67,7 @@ class SoftLengthRegulator(nn.Module):
 
         with torch.no_grad():
             if max_length is None:
-                max_length = get_lengthgths_from_durations(durations).max()
+                max_length = get_lengths_from_durations(durations).max()
 
             if upsample_x2:
                 durations = durations * 2

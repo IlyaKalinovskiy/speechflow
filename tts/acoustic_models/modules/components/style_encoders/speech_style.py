@@ -79,7 +79,7 @@ class StyleSpeech(Component):
 
     def encode(self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs):
         max_len = x.shape[1]
-        x_mask = get_mask_from_lengths(x_lengths)
+        x_mask = get_mask_from_lengths(x_lengths, max_len)
 
         slf_attn_mask = x_mask.unsqueeze(1).expand(-1, max_len, -1)
 

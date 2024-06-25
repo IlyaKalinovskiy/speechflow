@@ -27,7 +27,7 @@ class DataClient:
         if self._info is None:
             raise RuntimeError("DataServer not responding!")
 
-        LOGGER.info(trace(self, message=f"Start DataClient {self._server_addr}"))
+        LOGGER.debug(trace(self, message=f"Start DataClient {self._server_addr}"))
 
     def __enter__(self):
         return self

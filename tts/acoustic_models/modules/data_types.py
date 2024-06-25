@@ -127,7 +127,8 @@ class VarianceAdaptorOutput(ComponentOutput):
     variance_predictions: tp.Dict[str, Tensor] = None  # type: ignore
 
     def __post_init__(self):
-        self.variance_predictions = {}
+        if self.variance_predictions is None:
+            self.variance_predictions = {}
 
 
 @dataclass
