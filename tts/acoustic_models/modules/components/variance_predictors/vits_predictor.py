@@ -412,25 +412,23 @@ class VITSPredictor(Component):
         content = {}
         losses = {}
 
-        inputs = kwargs.get("model_inputs")
-
-        y = self._get_target_feat(inputs)
+        y = self._get_target_feat(model_inputs)
         if y is not None and self.audio_feat_proj is not None:
             y = self.audio_feat_proj(y)
 
-        durations = self._get_durations(inputs)
+        durations = self._get_durations(model_inputs)
         if not RESYNT and not self.training:
-            self._set_output_lengths(inputs, durations)
+            self._set_output_lengths(model_inputs, durations)
 
-        y_mask = get_mask_from_lengths(inputs.output_lengths)
+        y_mask = get_mask_from_lengths(model_inputs.output_lengths)
 
-        g = self.get_condition(inputs, self.params.flow_condition)
+        g = self.get_condition(model_inputs, self.params.flow_condition)
         if g is not None:
             g = g.transpose(1, -1)
 
-        if "vits_p" not in inputs.additional_inputs:
+        if "vits_p" not in model_inputs.additional_inputs:
             m_and_logs, content_p, losses_p = self._evaluate_content_encoder(
-                x, x_mask, y_mask, durations, inputs
+                x, x_mask, y_mask, durations, model_inputs
             )
             content.update(content_p)
             losses.update(losses_p)
@@ -448,12 +446,12 @@ class VITSPredictor(Component):
                 )
                 losses["vits_dual_loss"] = torch.distributions.kl_divergence(p, q).sum()
         else:
-            z_p, m_p, logs_p = inputs.additional_inputs["vits_p"]
+            z_p, m_p, logs_p = model_inputs.additional_inputs["vits_p"]
 
         if self.training and y is not None:
-            if "vits_q" not in inputs.additional_inputs:
+            if "vits_q" not in model_inputs.additional_inputs:
                 latent_q, content_q, losses_q = self._evaluate_audio_encoder(
-                    y, y_mask, inputs
+                    y, y_mask, model_inputs
                 )
                 content.update(content_q)
                 losses.update(losses_q)
@@ -464,7 +462,7 @@ class VITSPredictor(Component):
 
                 content["vits_q"] = (z_q, m_q, logs_q)
             else:
-                z_q, m_q, logs_q = inputs.additional_inputs["vits_q"]
+                z_q, m_q, logs_q = model_inputs.additional_inputs["vits_q"]
 
             vits_losses = self._evaluate_vits(
                 z_p, m_p, logs_p, z_q, m_q, logs_q, g, y_mask

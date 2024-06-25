@@ -148,7 +148,6 @@ class TokenLevelPredictorWithDiscriminator(TokenLevelPredictor, Component):
 
         var = kwargs.get("target")
         name = kwargs.get("name")
-        m_inputs = kwargs.get("model_inputs")
 
         if self.training:
             var_real = var.unsqueeze(-1)
@@ -161,7 +160,7 @@ class TokenLevelPredictorWithDiscriminator(TokenLevelPredictor, Component):
                 mask.transpose(1, -1),
                 var_real.transpose(1, -1),
                 var_fake.transpose(1, -1),
-                m_inputs.global_step,
+                model_inputs.global_step,
             )
             var_losses.update({f"{name}_{k}": v for k, v in disc_losses.items()})
 

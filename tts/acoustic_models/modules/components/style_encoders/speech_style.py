@@ -101,10 +101,6 @@ class StyleSpeech(Component):
         # temoral average pooling
         w = self.temporal_avg_pool(x, x_lengths, x_mask).unsqueeze(1)
 
-        # if kwargs is not None and kwargs.get("model_inputs") is not None:
-        #    sp_emb = kwargs.get("model_inputs").speaker_emb
-        #    w = w + self.sp_proj(sp_emb).unsqueeze(1)
-
         return w
 
     def forward_step(self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs):

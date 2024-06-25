@@ -431,28 +431,28 @@ class AudioFeatures(FeatureExtractor):
 
     def forward(self, audio: Batch, **kwargs):
         if isinstance(audio, TTSForwardInput):
-            m_inputs = audio
+            model_inputs = audio
         else:
             audio.collated_samples = TTSCollateOutput(**audio.collated_samples.to_dict())
-            m_inputs, _, _ = self.tts_bp(audio)
-            m_inputs.to(self.encoder.device)
+            model_inputs, _, _ = self.tts_bp(audio)
+            model_inputs.to(self.encoder.device)
 
         losses = {}
 
-        x, x_lens = self._get_input_feat(m_inputs)
+        x, x_lens = self._get_input_feat(model_inputs)
 
-        conditions = self._get_conditions(m_inputs)
+        conditions = self._get_conditions(model_inputs)
 
         conditions["style_emb"], style_losses = self._get_style(
-            m_inputs, kwargs.get("global_step")
+            model_inputs, kwargs.get("global_step")
         )
 
-        m_inputs.additional_inputs.update(conditions)
+        model_inputs.additional_inputs.update(conditions)
         losses.update(style_losses)
 
         if self.vq_enc is not None:
             vq_input = ComponentInput(
-                content=x, content_lengths=x_lens, model_inputs=m_inputs
+                content=x, content_lengths=x_lens, model_inputs=model_inputs
             )
             vq_output = self.vq_enc(vq_input)
             x = vq_output.content
@@ -471,8 +471,8 @@ class AudioFeatures(FeatureExtractor):
             e_output, e_content, e_losses = self.energy_predictor(
                 x=x,
                 x_lengths=x_lens,
-                model_inputs=m_inputs,
-                target=m_inputs.energy,
+                model_inputs=model_inputs,
+                target=model_inputs.energy,
                 name="energy",
             )
             losses.update(e_losses)
@@ -481,15 +481,15 @@ class AudioFeatures(FeatureExtractor):
             p_output, p_content, p_losses = self.pitch_predictor(
                 x=x,
                 x_lengths=x_lens,
-                model_inputs=m_inputs,
-                target=m_inputs.pitch,
+                model_inputs=model_inputs,
+                target=model_inputs.pitch,
                 name="pitch",
             )
             losses.update(p_losses)
 
         if self.range_predictor is not None:
-            re = m_inputs.ranges["energy"]
-            rp = m_inputs.ranges["pitch"]
+            re = model_inputs.ranges["energy"]
+            rp = model_inputs.ranges["pitch"]
             target_ranges = torch.stack([re, rp], dim=1)
             feat = torch.cat(
                 [
@@ -501,11 +501,11 @@ class AudioFeatures(FeatureExtractor):
             ranges = F.relu(self.range_predictor(feat)).reshape(-1, 2, 3)
             losses.update({"range_loss": 0.001 * F.mse_loss(ranges, target_ranges)})
 
-            m_inputs.energy = m_inputs.energy * re[:, 2:3] + re[:, 0:1]
-            m_inputs.pitch = m_inputs.pitch * rp[:, 2:3] + rp[:, 0:1]
+            model_inputs.energy = model_inputs.energy * re[:, 2:3] + re[:, 0:1]
+            model_inputs.pitch = model_inputs.pitch * rp[:, 2:3] + rp[:, 0:1]
 
         enc_input = ComponentInput(
-            content=x, content_lengths=x_lens, model_inputs=m_inputs
+            content=x, content_lengths=x_lens, model_inputs=model_inputs
         )
         enc_output = self.encoder(enc_input)
         x = enc_output.content
@@ -520,11 +520,11 @@ class AudioFeatures(FeatureExtractor):
 
         if self.mel_predictor is not None:
             enc_input = ComponentInput(
-                content=x, content_lengths=x_lens, model_inputs=m_inputs
+                content=x, content_lengths=x_lens, model_inputs=model_inputs
             )
             mel_predict = self.mel_predictor(enc_input).content[0]
             losses["auxiliary_mel_loss"] = 0.1 * F.l1_loss(
-                mel_predict, m_inputs.mel_spectrogram
+                mel_predict, model_inputs.mel_spectrogram
             )
 
         chunk = []

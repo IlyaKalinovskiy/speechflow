@@ -298,7 +298,7 @@ class SpeakerIDSetter(metaclass=Singleton):
         if ds.speaker_name not in self.speaker2id:
             if ds.speaker_name not in self.unknown_speakers:
                 self.unknown_speakers.add(ds.speaker_name)
-                LOGGER.warning(trace(self, f"unknown speaker {ds.speaker_name}"))
+                LOGGER.warning(trace(self, f"unknown speaker detected: '{ds.speaker_name}'"))
 
             if self.speaker2id_bio is not None and ds.speaker_name in self.speaker2id_bio:
                 if ds.speaker_name in self.similar_speaker_map:
@@ -330,7 +330,8 @@ class SpeakerIDSetter(metaclass=Singleton):
                     LOGGER.warning(
                         trace(
                             self,
-                            f"found similar speaker {speaker_name} for unknown speaker {ds.speaker_name}!",
+                            f"found similar speaker '{speaker_name}' "
+                            f"for unknown speaker '{ds.speaker_name}'",
                         )
                     )
                     return ds

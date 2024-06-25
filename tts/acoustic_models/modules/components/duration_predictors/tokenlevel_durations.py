@@ -170,11 +170,9 @@ class TokenLevelDPWithDiscriminator(TokenLevelDP, Component):
         dur_predict, dur_content, dur_losses = super().forward_step(
             x, x_lengths, model_inputs, **kwargs
         )
-        m_inputs = kwargs.get("model_inputs")
 
         if self.training:
-            inputs = kwargs.get("model_inputs")
-            dur_real = torch.log1p(inputs.durations).unsqueeze(1)
+            dur_real = torch.log1p(model_inputs.durations).unsqueeze(1)
             dur_fake = torch.log1p(dur_content["dp_predict"]).unsqueeze(1)
             context = dur_content["dp_context"]
             mask = get_mask_from_lengths(x_lengths)
@@ -184,7 +182,7 @@ class TokenLevelDPWithDiscriminator(TokenLevelDP, Component):
                 mask.unsqueeze(1),
                 dur_real,
                 dur_fake,
-                m_inputs.global_step,
+                model_inputs.global_step,
             )
             dur_losses.update({f"dur_{k}": v for k, v in disc_losses.items()})
 

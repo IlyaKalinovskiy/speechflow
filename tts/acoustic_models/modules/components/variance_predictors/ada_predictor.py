@@ -50,15 +50,12 @@ class AdaPredictor(Component):
     def forward_step(
         self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
     ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
-
-        inputs = kwargs.get("model_inputs")
-
         dec_input = ComponentOutput.empty()
         dec_input.content = x
         dec_input.content_lengths = x_lengths
-        dec_input.model_inputs = inputs
+        dec_input.model_inputs = model_inputs
         for name in self.params.condition:
-            dec_input.additional_content[name] = inputs.additional_inputs[name]
+            dec_input.additional_content[name] = model_inputs.additional_inputs[name]
 
         if dec_input.content_lengths is None:
             dec_input.content_lengths = x_lengths
