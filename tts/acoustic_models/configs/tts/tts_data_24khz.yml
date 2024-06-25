@@ -144,7 +144,6 @@ preproc:
 singleton_handlers:
   handlers: [SpeakerIDSetter, StatisticsRange, MeanBioEmbeddings]
   SpeakerIDSetter: {}
-    # for finetune
     # min_duration: { default: 1.0, debug: ~ }
     # resume_from_checkpoint: /path/to/checkpoint
   StatisticsRange:

@@ -37,7 +37,7 @@ class DataClient:
 
     def close(self):
         self._zmq_client.close()
-        LOGGER.info(trace(self, message=f"Finish DataClient {self._server_addr}"))
+        LOGGER.debug(trace(self, message=f"Finish DataClient {self._server_addr}"))
 
     @property
     def uid(self):

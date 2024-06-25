@@ -51,7 +51,7 @@ class BatchWorker(ProcessWorker):
 
     def on_finish(self):
         self._zmq_worker.close()
-        LOGGER.info(trace(self, message=f"Finish Batch Worker {self._server_addr}"))
+        LOGGER.debug(trace(self, message=f"Finish Batch Worker {self._server_addr}"))
 
     def do_work_once(self):
         batch = None

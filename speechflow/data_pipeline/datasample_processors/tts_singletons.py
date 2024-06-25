@@ -134,16 +134,19 @@ class SpeakerIDSetter(metaclass=Singleton):
         return name2id, id2name
 
     @staticmethod
-    def _get_speaker_overall_duration(data: tp.List[TTSDataSample]):
-        audio_duration: tp.Dict[str, tp.Any] = {}
-        for ds in data:
-            duration = ds.audio_chunk.duration
-            if duration:
-                seconds = audio_duration.setdefault(ds.speaker_name, [0])
+    def _get_speaker_overall_duration(data: Dataset):
+        with data.readonly():
+            audio_duration: tp.Dict[str, tp.Any] = {}
+            for ds in data:
+                duration = ds.audio_chunk.duration
+                if duration:
+                    seconds = audio_duration.setdefault(ds.speaker_name, [0])
                 seconds[0] += duration
 
-        for key in list(audio_duration.keys()):
+        LOGGER.info("Dataset durations by speakers:")
+        for key, _ in sorted(audio_duration.items()):
             audio_duration[key] = audio_duration.pop(key)[0] / 3600
+            LOGGER.info(f"\t{key}: {round(audio_duration[key], 3)}h")
 
         return audio_duration
 
@@ -295,7 +298,7 @@ class SpeakerIDSetter(metaclass=Singleton):
         if ds.speaker_name not in self.speaker2id:
             if ds.speaker_name not in self.unknown_speakers:
                 self.unknown_speakers.add(ds.speaker_name)
-                LOGGER.warning(trace(self, f"unknown speaker {ds.speaker_name}!"))
+                LOGGER.warning(trace(self, f"unknown speaker {ds.speaker_name}"))
 
             if self.speaker2id_bio is not None and ds.speaker_name in self.speaker2id_bio:
                 if ds.speaker_name in self.similar_speaker_map:
@@ -492,7 +495,7 @@ class DatasetStatistics(metaclass=Singleton):
         )
         return self.cache_folder / f"DatasetStatistics_{self.hash}{d}.pkl"
 
-    def _add_dataset_stat(self, data: tp.List[TTSDataSample]):
+    def _add_dataset_stat(self, data: Dataset):
         from speechflow.data_pipeline.datasample_processors.tts_processors import (
             add_pauses_from_timestamps,
         )
@@ -526,7 +529,7 @@ class DatasetStatistics(metaclass=Singleton):
             )
             self.max_audio_duration = max(max(v) for v in self.wave_duration.values())
 
-    def _add_phonemes_stat(self, data: tp.List[TTSDataSample]):
+    def _add_phonemes_stat(self, data: Dataset):
         for ds in tqdm(data, "Counting phonemes statistics over dataset"):
             try:
                 ph_by_word = ds.sent.get_phonemes()
@@ -554,7 +557,7 @@ class DatasetStatistics(metaclass=Singleton):
                 else:
                     var[name] = np.asarray(field, dtype=np.float32)  # type: ignore
 
-    def _add_segmentations(self, data: tp.List[TTSDataSample]):
+    def _add_segmentations(self, data: Dataset):
         for ds in tqdm(data, "Loading segmentations"):
             path = Path(ds.file_path)
             assert "TextGrid" in path.suffix
