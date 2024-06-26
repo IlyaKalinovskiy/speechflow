@@ -274,7 +274,7 @@ def main(
     else:
         model_device = torch.device("cpu")
 
-    model_cls = getattr(acoustic_models, cfg_model["net"]["type"])
+    model_cls = getattr(acoustic_models, cfg_model["model"]["type"])
     model = model_cls(checkpoint["params"])
     model.eval()
     model.load_state_dict(checkpoint["state_dict"])

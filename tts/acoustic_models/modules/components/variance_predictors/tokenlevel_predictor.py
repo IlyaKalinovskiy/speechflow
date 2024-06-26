@@ -136,6 +136,9 @@ class TokenLevelPredictorWithDiscriminator(TokenLevelPredictor, Component):
         params: TokenLevelPredictorWithDiscriminatorParams,
         input_dim: tp.Union[int, tp.Tuple[int, ...]],
     ):
+        if params.vp_output_dim != 1:
+            raise ValueError("Feature dimension must be equal to 1")
+
         super().__init__(params, input_dim)
         self.disc = SignalDiscriminator(in_channels=params.vp_inner_dim)
 
@@ -150,10 +153,15 @@ class TokenLevelPredictorWithDiscriminator(TokenLevelPredictor, Component):
         name = kwargs.get("name")
 
         if self.training:
-            var_real = var.unsqueeze(-1)
+            var_real = var
             var_fake = var_content[f"{name}_vp_predict"]
             context = var_content[f"{name}_vp_context"]
-            mask = get_mask_from_lengths(x_lengths)
+            mask = get_mask_from_lengths(x_lengths).unsqueeze(-1)
+
+            if var_real.ndim == 2:
+                var_real = var_real.unsqueeze(-1)
+            if var_fake.ndim == 2:
+                var_fake = var_fake.unsqueeze(-1)
 
             disc_losses = self.disc.calculate_loss(
                 context.transpose(1, -1),

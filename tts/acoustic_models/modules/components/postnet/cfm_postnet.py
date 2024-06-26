@@ -93,7 +93,7 @@ class CFMPostnet(Component):
         outputs = DecoderOutput.copy_from(inputs).set_content(None, content_lengths)
         return outputs
 
-    def generate_step(self, inputs: VarianceAdaptorOutput, **kwargs) -> DecoderOutput:  # type: ignore
+    def inference_step(self, inputs: VarianceAdaptorOutput, **kwargs) -> DecoderOutput:  # type: ignore
         content = self.get_content(inputs)[0]
         content_lengths = self.get_content_lengths(inputs)[0]
 

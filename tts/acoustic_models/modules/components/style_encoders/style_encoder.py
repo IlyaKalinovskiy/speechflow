@@ -109,6 +109,8 @@ class StyleEncoder(Component):
         x = self.get_condition(model_inputs, self.params.source, average_by_time=False)
         if x.shape[1] == model_inputs.input_lengths.max():
             x_lengths = model_inputs.input_lengths
+        elif model_inputs.output_lengths is None:
+            x_lengths = torch.LongTensor([x.shape[1]] * x.shape[0]).to(x.device)
         elif x.shape[1] == model_inputs.output_lengths.max():
             x_lengths = model_inputs.output_lengths
 

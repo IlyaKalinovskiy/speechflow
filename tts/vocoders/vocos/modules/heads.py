@@ -13,8 +13,8 @@ from speechflow.data_pipeline.datasample_processors.biometric_processors import 
     VoiceBiometricProcessor,
 )
 from tts.acoustic_models.modules.common.blocks import Regression
-from tts.vocoders.vocos.vocos.modules import symexp
-from tts.vocoders.vocos.vocos.spectral_ops import IMDCT, ISTFT
+from tts.vocoders.vocos.utils.spectral_ops import IMDCT, ISTFT
+from tts.vocoders.vocos.utils.tensor_utils import symexp
 
 
 class FourierHead(nn.Module):

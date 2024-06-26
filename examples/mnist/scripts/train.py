@@ -36,8 +36,8 @@ def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
     batch_processor = init_class_from_config(batch_processor_cls, model_cfg["batch"])()
 
     # create dnn model
-    model_cls = getattr(mnist, model_cfg["net"]["type"])
-    model = init_class_from_config(model_cls, model_cfg["net"]["params"])()
+    model_cls = getattr(mnist, model_cfg["model"]["type"])
+    model = init_class_from_config(model_cls, model_cfg["model"]["params"])()
 
     # create criterion
     criterion_cls = getattr(mnist, model_cfg["loss"]["type"])
@@ -56,7 +56,7 @@ def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
     )
 
     # create engine
-    net_engine: LightningEngine = LightningEngine(
+    pl_engine: LightningEngine = LightningEngine(
         model=model,
         criterion=criterion,
         batch_processor=batch_processor,
@@ -80,7 +80,7 @@ def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
 
     # lets try to train
     with Profiler("training", format=Profiler.Format.h):
-        trainer.fit(net_engine, dl_train, dl_valid, ckpt_path=ckpt_path)
+        trainer.fit(pl_engine, dl_train, dl_valid, ckpt_path=ckpt_path)
 
     LOGGER.info("Model training completed!")
     return experiment_path.as_posix()

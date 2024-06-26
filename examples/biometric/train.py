@@ -314,7 +314,7 @@ def train(experiment_path: str, loaders: tp.Dict[str, DataLoader]) -> str:
     saver.to_save.update({"speaker_id_map": speaker_id_handler.speaker2id})
 
     # create engine
-    net_engine: LightningEngine = LightningEngine(
+    pl_engine: LightningEngine = LightningEngine(
         model=model,
         criterion=criterion,
         batch_processor=batch_processor,
@@ -347,7 +347,7 @@ def train(experiment_path: str, loaders: tp.Dict[str, DataLoader]) -> str:
 
     # lets try to train
     with Profiler("training", format=Profiler.Format.h):
-        trainer.fit(net_engine, dl_train, dl_valid)
+        trainer.fit(pl_engine, dl_train, dl_valid)
 
     LOGGER.info("Model training completed!")
     return experiment_path

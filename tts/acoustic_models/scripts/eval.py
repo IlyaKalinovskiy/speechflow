@@ -1,4 +1,3 @@
-import pickle
 import typing as tp
 
 from pathlib import Path

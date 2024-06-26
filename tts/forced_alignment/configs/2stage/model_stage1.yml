@@ -38,7 +38,7 @@ optimizer:
 loss:
   type: GlowTTSLoss
 
-net:
+model:
   type: GlowTTS
   params:
     audio_feat: mel

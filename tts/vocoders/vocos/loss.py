@@ -6,7 +6,7 @@ import torchaudio
 from torch import nn
 from torch.nn import functional as F
 
-from tts.vocoders.vocos.vocos.modules import safe_log
+from tts.vocoders.vocos.utils.tensor_utils import safe_log
 
 
 class SpectrogramTransform(nn.Module):

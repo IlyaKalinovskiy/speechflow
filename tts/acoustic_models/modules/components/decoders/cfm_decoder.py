@@ -143,7 +143,7 @@ class CFMDecoder(Component):
 
         return DecoderOutput.copy_from(inputs).set_content(prior, content_lengths)
 
-    def generate_step(self, inputs: VarianceAdaptorOutput, **kwargs) -> DecoderOutput:  # type: ignore
+    def inference_step(self, inputs: VarianceAdaptorOutput, **kwargs) -> DecoderOutput:  # type: ignore
         content = self.get_content(inputs)[0]
         content_lengths = self.get_content_lengths(inputs)[0]
         content_mask = get_mask_from_lengths(content_lengths)

@@ -208,5 +208,5 @@ class AdditionalModules(Component):
 
         return inputs
 
-    def generate_step(self, inputs: ComponentInput, **kwargs) -> ComponentOutput:  # type: ignore
+    def inference_step(self, inputs: ComponentInput, **kwargs) -> ComponentOutput:  # type: ignore
         return inputs

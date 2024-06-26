@@ -30,7 +30,7 @@ class PausesPredictionInterface:
         cfg_data, cfg_model = ExperimentSaver.load_configs_from_checkpoint(checkpoint)
         self.device = torch.device(device)
 
-        model_cls = getattr(pauses_prediction, cfg_model["net"]["type"])
+        model_cls = getattr(pauses_prediction, cfg_model["model"]["type"])
         self.model = model_cls(checkpoint["params"])
         self.model.eval()
 

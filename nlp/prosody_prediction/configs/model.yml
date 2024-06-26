@@ -52,7 +52,7 @@ loss:
   type: ProsodyPredictionLoss
   names: [binary, category]
 
-net:
+model:
   type: ProsodyModel
   params:
     model_name: {

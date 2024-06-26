@@ -37,7 +37,7 @@ optimizer:
 loss:
   type: PausesPredictionLoss
 
-net:
+model:
   type: SimpleModel
   params:
     use_learnable_speaker_emb: True

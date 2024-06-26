@@ -53,7 +53,7 @@ class ProsodyPredictionInterface:
         tokenizer_path = get_module_dir("text_parser") / tokenizer_path
         cfg_data["parser"]["tokenizer_name"] = tokenizer_path.as_posix()
 
-        model_cls = getattr(prosody_prediction, cfg_model["net"]["type"])
+        model_cls = getattr(prosody_prediction, cfg_model["model"]["type"])
         self.model = model_cls(checkpoint["params"])
         self.model.eval()
 

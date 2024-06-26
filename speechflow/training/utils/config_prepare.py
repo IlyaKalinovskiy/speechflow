@@ -214,6 +214,6 @@ def model_config_prepare(
     if "finetuning" in model_cfg:
         ckpt_path = model_cfg["finetuning"].get("checkpoint")
         _, cfg_model_temp = ExperimentSaver.load_configs_from_checkpoint(ckpt_path)
-        model_cfg["net"]["params"].update(cfg_model_temp["net"]["params"])
+        model_cfg["model"]["params"].update(cfg_model_temp["model"]["params"])
 
     return model_cfg

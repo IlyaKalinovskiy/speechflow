@@ -238,7 +238,7 @@ class Aligner:
 
         device = torch.device(device)
 
-        model_cls = getattr(forced_alignment, cfg_model["net"]["type"])
+        model_cls = getattr(forced_alignment, cfg_model["model"]["type"])
         model = model_cls(checkpoint["params"])
         model.eval()
 

@@ -5,11 +5,13 @@ from dataclasses import dataclass
 import torch
 
 from speechflow.data_pipeline.core import TrainData
+from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
 
 __all__ = [
     "VocoderTarget",
     "VocoderForwardInput",
     "VocoderForwardOutput",
+    "VocoderInferenceInput",
     "VocoderInferenceOutput",
 ]
 
@@ -20,35 +22,29 @@ class VocoderTarget(TrainData):
 
 
 @dataclass
-class VocoderForwardInput(TrainData):
-    lang_id: torch.Tensor = None
-    speaker_emb: torch.Tensor = None
-    spectrogram: torch.Tensor = None
-    spectrogram_lengths: torch.Tensor = None
-    linear_spectrogram: torch.Tensor = None
-    linear_spectrogram_lengths: torch.Tensor = None
+class VocoderForwardInput(TTSForwardInput):
     lpc: torch.Tensor = None
     lpc_feat: torch.Tensor = None
-    ssl_feat: torch.Tensor = None
-    ssl_feat_lengths: torch.Tensor = None
-    energy: torch.Tensor = None
-    pitch: torch.Tensor = None
-    additional_inputs: tp.Dict = None
 
 
 @dataclass
 class VocoderForwardOutput(TrainData):
-    pass
-
-
-@dataclass
-class VocoderInferenceOutput(TrainData):
-    # Waveform in shape (B, T)
     waveform: torch.Tensor = None
-    spectrogram: torch.Tensor = None
+    waveform_length: torch.Tensor = None
     additional_content: tp.Dict[str, torch.Tensor] = None
-    # TODO: Information about audio lengths and pad lengths
 
     def __post_init__(self):
         if self.additional_content is None:
             self.additional_content = {}
+
+
+@dataclass
+class VocoderInferenceInput(VocoderForwardInput):
+    @staticmethod
+    def init_from_tts_output(tts_output: TTSForwardOutput) -> "VocoderInferenceInput":
+        pass
+
+
+@dataclass
+class VocoderInferenceOutput(VocoderForwardOutput):
+    pass

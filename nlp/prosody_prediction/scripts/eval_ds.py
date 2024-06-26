@@ -74,7 +74,7 @@ if __name__ == "__main__":
     checkpoint = ExperimentSaver.load_checkpoint(Path(ckpt_path))
     cfg_data, cfg_model = ExperimentSaver.load_configs_from_checkpoint(checkpoint)
 
-    model_cls = getattr(prosody_prediction, cfg_model["net"]["type"])
+    model_cls = getattr(prosody_prediction, cfg_model["model"]["type"])
     model = model_cls(checkpoint["params"])
     model.eval()
 
@@ -96,6 +96,6 @@ if __name__ == "__main__":
             data_loader=dl_valid,
             names=cfg_model["loss"]["names"],
             tokenizer=cfg_data["parser"]["tokenizer_name"],
-            n_classes=cfg_model["net"]["params"]["n_classes"],
+            n_classes=cfg_model["model"]["params"]["n_classes"],
         )
         eval(dl_valid, model, callback, batch_processor)

@@ -39,30 +39,30 @@ def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]):
 
     lang = dl_train.client.find_info("lang")
     text_proc = TextProcessor(lang=lang)
-    model_cfg["net"]["params"].n_symbols = text_proc.alphabet_size
-    model_cfg["net"][
+    model_cfg["model"]["params"].n_symbols = text_proc.alphabet_size
+    model_cfg["model"][
         "params"
     ].n_symbols_per_token = text_proc.num_symbols_per_phoneme_token
 
     hop_len = dl_train.client.find_info("hop_len")
     sr = dl_train.client.find_info("sample_rate")
-    model_cfg["net"]["params"].frames_per_sec = sr / hop_len
+    model_cfg["model"]["params"].frames_per_sec = sr / hop_len
 
     speaker_id_handler = dl_train.client.find_info("SpeakerIDSetter")
     if speaker_id_handler is not None:
-        model_cfg["net"]["params"].n_langs = speaker_id_handler.n_langs
-        model_cfg["net"]["params"].n_speakers = speaker_id_handler.n_speakers
+        model_cfg["model"]["params"].n_langs = speaker_id_handler.n_langs
+        model_cfg["model"]["params"].n_speakers = speaker_id_handler.n_speakers
         lang_id_map = speaker_id_handler.lang2id
         speaker_id_map = speaker_id_handler.speaker2id
     else:
         lang_id_map = None
         speaker_id_map = None
 
-    model_cls = getattr(forced_alignment, model_cfg["net"]["type"])
-    model = init_class_from_config(model_cls, model_cfg["net"]["params"])()
+    model_cls = getattr(forced_alignment, model_cfg["model"]["type"])
+    model = init_class_from_config(model_cls, model_cfg["model"]["params"])()
 
-    if "init_from" in model_cfg["net"]:
-        ckpt_path = Path(model_cfg["net"]["init_from"].get("ckpt_path", ""))
+    if "init_from" in model_cfg["model"]:
+        ckpt_path = Path(model_cfg["model"]["init_from"].get("ckpt_path", ""))
         if not ckpt_path.exists():
             raise FileNotFoundError(f"Checkpoint {ckpt_path.as_posix()} is not found")
 
@@ -70,17 +70,17 @@ def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]):
         ckpt = ExperimentSaver.load_checkpoint(ckpt_path)
         state_dict = {k.replace("model.", ""): v for k, v in ckpt["state_dict"].items()}
 
-        if model_cfg["net"]["params"].n_langs < len(ckpt["lang_id_map"]):
-            model_cfg["net"]["params"].n_langs = len(ckpt["lang_id_map"])
-        if model_cfg["net"]["params"].n_speakers < len(ckpt["speaker_id_map"]):
-            model_cfg["net"]["params"].n_speakers = len(ckpt["speaker_id_map"])
+        if model_cfg["model"]["params"].n_langs < len(ckpt["lang_id_map"]):
+            model_cfg["model"]["params"].n_langs = len(ckpt["lang_id_map"])
+        if model_cfg["model"]["params"].n_speakers < len(ckpt["speaker_id_map"]):
+            model_cfg["model"]["params"].n_speakers = len(ckpt["speaker_id_map"])
 
         try:
-            model = init_class_from_config(model_cls, model_cfg["net"]["params"])()
+            model = init_class_from_config(model_cls, model_cfg["model"]["params"])()
             model.load_state_dict(state_dict, strict=True)
         except Exception as e:
             LOGGER.error(trace("train", e))
-            remove_modules = model_cfg["net"]["init_from"].get(
+            remove_modules = model_cfg["model"]["init_from"].get(
                 "remove_modules",
                 [
                     "embedding",
@@ -91,7 +91,7 @@ def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]):
                     "cond_proj",
                 ],
             )
-            if model_cfg["net"]["params"].n_langs != len(ckpt["lang_id_map"]):
+            if model_cfg["model"]["params"].n_langs != len(ckpt["lang_id_map"]):
                 remove_modules.append("lang_emb")
 
             state_dict = {
@@ -122,7 +122,7 @@ def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]):
     )
     saver.to_save.update({"dataset": dl_train.client.info["dataset"]})
 
-    net_engine: LightningEngine = LightningEngine(
+    pl_engine: LightningEngine = LightningEngine(
         model=model,
         criterion=criterion,
         batch_processor=batch_processor,
@@ -149,7 +149,7 @@ def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]):
     )
 
     with Profiler("training", format=Profiler.Format.h):
-        trainer.fit(net_engine, dl_train, dl_valid, ckpt_path=ckpt_path)
+        trainer.fit(pl_engine, dl_train, dl_valid, ckpt_path=ckpt_path)
 
     LOGGER.info("Model training completed!")
     return experiment_path.as_posix()

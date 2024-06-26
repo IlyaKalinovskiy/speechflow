@@ -119,10 +119,10 @@ class Vocos(nn.Module):
         audio_output = self.head(x)
         return audio_output
 
-    def generate(
+    def inference(
         self, vocoder_input: VocoderForwardInput, **kwargs
     ) -> VocoderInferenceOutput:
-        feat, additional_content = self.feature_extractor.generate(
+        feat, additional_content = self.feature_extractor.inference(
             **vocoder_input.to_dict(),
         )
         waveform, _, _ = self.decode(feat)

@@ -10,17 +10,15 @@ from speechflow.data_pipeline.collate_functions.spectrogram_collate import (
     SpectrogramCollateOutput,
 )
 from speechflow.data_pipeline.core import PipelineComponents
-from speechflow.data_pipeline.datasample_processors import MelProcessor, SignalProcessor
+from speechflow.data_pipeline.datasample_processors import SignalProcessor
 from speechflow.data_pipeline.datasample_processors.data_types import (
     AudioDataSample,
     SpectrogramDataSample,
 )
 from speechflow.io import AudioChunk, Config, check_path, tp_PATH
 from speechflow.training.saver import ExperimentSaver
-from speechflow.training.utils.tensor_utils import get_lengths_from_mask
 from speechflow.utils.dictutils import find_field
-from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
-from tts.vocoders.data_types import VocoderForwardInput, VocoderInferenceOutput
+from tts.vocoders.data_types import VocoderForwardInput, VocoderForwardOutput
 from tts.vocoders.vocos.vocos.pretrained import Vocos
 
 __all__ = ["VocoderEvaluationInterface", "VocoderOptions"]
@@ -133,9 +131,9 @@ class VocoderEvaluationInterface(VocoderLoader):
     @torch.inference_mode()
     def evaluate(
         self, input: VocoderForwardInput, opt: VocoderOptions
-    ) -> VocoderInferenceOutput:
+    ) -> VocoderForwardOutput:
         input.to(self.device)
-        output = self.model.generate(input)
+        output = self.model.inference(input)
         output.spectrogram = input.spectrogram
         return output
 
@@ -150,20 +148,20 @@ class VocoderEvaluationInterface(VocoderLoader):
 
     def synthesize(
         self,
-        tts_in: TTSForwardInput,
-        tts_out: TTSForwardOutput,
+        voc_in: VocoderForwardInput,
+        voc_out: VocoderForwardOutput,
         opt: tp.Optional[VocoderOptions] = None,
-    ) -> tp.Union[VocoderInferenceOutput, tp.List[VocoderInferenceOutput]]:
+    ) -> tp.Union[VocoderForwardOutput, tp.List[VocoderForwardOutput]]:
         if opt is None:
             opt = VocoderOptions()
 
-        voc_in = tts_in
+        voc_in = voc_in
         voc_in.lang_id = voc_in.lang_id * 0 + self.lang_id_map[opt.lang]
         voc_in.speaker_id = voc_in.speaker_id * 0 + self.speaker_id_map[opt.speaker_name]
-        voc_in.mel_spectrogram = tts_out.after_postnet_spectrogram
-        voc_in.spectrogram_lengths = tts_out.spectrogram_lengths
-        voc_in.energy = tts_out.variance_predictions["energy"]
-        voc_in.pitch = tts_out.variance_predictions["pitch"]
+        voc_in.mel_spectrogram = voc_out.after_postnet_spectrogram
+        voc_in.spectrogram_lengths = voc_out.spectrogram_lengths
+        voc_in.energy = voc_out.variance_predictions["energy"]
+        voc_in.pitch = voc_out.variance_predictions["pitch"]
 
         voc_in.to(self.device)
         output = self.model(voc_in)

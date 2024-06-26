@@ -210,9 +210,9 @@ def _update_fa_configs(
         model_cfg["trainer"]["resume_from_checkpoint"] = experiment_path.as_posix()
     if finetune_path:
         assert finetune_path.exists()
-        model_cfg["net"]["init_from"] = {"ckpt_path": finetune_path.as_posix()}
+        model_cfg["model"]["init_from"] = {"ckpt_path": finetune_path.as_posix()}
     if n_gpus == 0:
-        model_cfg["net"]["params"]["speaker_biometric_model"] = "resemblyzer"
+        model_cfg["model"]["params"]["speaker_biometric_model"] = "resemblyzer"
 
     model_config_path = output_dir / "forced_alignment" / lang_dir / model_cfg_name
     model_cfg.to_file(model_config_path)

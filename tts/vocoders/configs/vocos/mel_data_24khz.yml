@@ -1,7 +1,7 @@
 ### Data configuration ###
 
 dirs:
-  data_root: &data_root ../../../examples/simple_datasets/speech/SEGS
+  data_root: &data_root ../../examples/simple_datasets/speech/SEGS
   dump_folder: &dump_folder dump_24KHz_lm_ssl
 
 file_search:
@@ -42,7 +42,8 @@ preproc:
          pitch, enhancement_energy, enhancement_pitch,
          add_pauses_from_timestamps, add_service_tokens, text,
          int_durations, calc_invert_durations, phonemes_by_frames, float_durations,
-         curvature_estimate_by_phoneme, average_by_time, norm_1, aggregate_by_phoneme,
+         # curvature_estimate_by_phoneme, average_by_time, norm_1, aggregate_by_phoneme,
+         ssl_features,
          trim, mu_law]
   pipe_cfg:
     audio_load:
@@ -126,6 +127,10 @@ preproc:
     float_durations:
       type: calc_durations
       as_int: False
+    ssl_features:
+      type: SSLProcessor
+      ssl_type: { default: Wav2Vec, ml: WavLM }
+      resize_from: mel
     trim:
       type: SignalProcessor
       pipe: [trim]
@@ -164,7 +169,7 @@ processor:
       data_root: *data_root
       folder_path: !join [*data_root, *dump_folder]
       fields: [file_path, speaker_name]
-      functions: [VoiceBiometricProcessor, SpeechQualityAssessment, PitchProcessor]
+      functions: [VoiceBiometricProcessor, SpeechQualityAssessment, PitchProcessor, SSLProcessor]
       mode: file_path
       # skip_samples_without_dump: true
     debug: ~

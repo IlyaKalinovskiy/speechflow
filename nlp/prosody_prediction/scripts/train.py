@@ -39,12 +39,12 @@ def train(cfg: dict, data_loaders: tp.Dict[str, DataLoader]) -> str:
     batch_processor_cls = getattr(prosody_prediction, cfg["batch"]["type"])
     batch_processor = init_class_from_config(batch_processor_cls, cfg["batch"])()
 
-    model_cls = getattr(prosody_prediction, cfg["net"]["type"])
-    model = init_class_from_config(model_cls, cfg["net"]["params"])()
+    model_cls = getattr(prosody_prediction, cfg["model"]["type"])
+    model = init_class_from_config(model_cls, cfg["model"]["params"])()
 
     criterion_cls = getattr(prosody_prediction, cfg["loss"]["type"])
     criterion = init_class_from_config(criterion_cls, cfg["loss"])()
-    criterion.set_weights(dl_train, cfg["net"]["params"]["n_classes"])
+    criterion.set_weights(dl_train, cfg["model"]["params"]["n_classes"])
 
     optimizer = init_class_from_config(Optimizer, cfg["optimizer"])(model=model)
 
@@ -57,7 +57,7 @@ def train(cfg: dict, data_loaders: tp.Dict[str, DataLoader]) -> str:
     )
     saver.to_save.update({"dataset": dl_train.client.info["dataset"]})
 
-    net_engine: LightningEngine = LightningEngine(
+    pl_engine: LightningEngine = LightningEngine(
         model=model,
         criterion=criterion,
         batch_processor=batch_processor,
@@ -70,7 +70,7 @@ def train(cfg: dict, data_loaders: tp.Dict[str, DataLoader]) -> str:
             dl_valid,
             names=cfg["loss"]["names"],
             tokenizer=cfg["callbacks"]["ProsodyCallback"]["tokenizer"],
-            n_classes=cfg["net"]["params"]["n_classes"],
+            n_classes=cfg["model"]["params"]["n_classes"],
         ),
         saver.get_checkpoint_callback(cfg=cfg["checkpoint"]),
     ]
@@ -82,7 +82,7 @@ def train(cfg: dict, data_loaders: tp.Dict[str, DataLoader]) -> str:
     )
 
     with Profiler("training", format=Profiler.Format.h):
-        trainer.fit(net_engine, dl_train, dl_valid, ckpt_path=ckpt_path)
+        trainer.fit(pl_engine, dl_train, dl_valid, ckpt_path=ckpt_path)
 
     LOGGER.info("Model training completed!")
     return experiment_path.as_posix()

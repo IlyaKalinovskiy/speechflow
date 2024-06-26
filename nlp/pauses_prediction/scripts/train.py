@@ -40,17 +40,17 @@ def train(cfg: dict, data_loaders: tp.Dict[str, DataLoader]) -> str:
     batch_processor = init_class_from_config(batch_processor_cls, cfg["batch"])()
 
     lang = dl_train.client.find_info("lang")
-    cfg["net"]["params"]["n_symbols"] = TextProcessor(lang=lang).alphabet_size
+    cfg["model"]["params"]["n_symbols"] = TextProcessor(lang=lang).alphabet_size
 
     speaker_id_handler = dl_train.client.find_info("SpeakerIDSetter")
     if speaker_id_handler is not None:
-        cfg["net"]["params"]["n_speakers"] = speaker_id_handler.n_speakers
+        cfg["model"]["params"]["n_speakers"] = speaker_id_handler.n_speakers
         speaker_map = speaker_id_handler.speaker2id
     else:
         speaker_map = None
 
-    model_cls = getattr(pauses_prediction, cfg["net"]["type"])
-    model = init_class_from_config(model_cls, cfg["net"]["params"])()
+    model_cls = getattr(pauses_prediction, cfg["model"]["type"])
+    model = init_class_from_config(model_cls, cfg["model"]["params"])()
 
     criterion_cls = getattr(pauses_prediction, cfg["loss"]["type"])
     criterion = init_class_from_config(criterion_cls, cfg["loss"])()
@@ -67,7 +67,7 @@ def train(cfg: dict, data_loaders: tp.Dict[str, DataLoader]) -> str:
     saver.to_save.update({"speaker_id_map": speaker_map})
     saver.to_save.update({"dataset": dl_train.client.info["dataset"]})
 
-    net_engine: LightningEngine = LightningEngine(
+    pl_engine: LightningEngine = LightningEngine(
         model=model,
         criterion=criterion,
         batch_processor=batch_processor,
@@ -86,7 +86,7 @@ def train(cfg: dict, data_loaders: tp.Dict[str, DataLoader]) -> str:
     )
 
     with Profiler("training", format=Profiler.Format.h):
-        trainer.fit(net_engine, dl_train, dl_valid, ckpt_path=ckpt_path)
+        trainer.fit(pl_engine, dl_train, dl_valid, ckpt_path=ckpt_path)
 
     LOGGER.info("Model training completed!")
     return experiment_path.as_posix()

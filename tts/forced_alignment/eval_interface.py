@@ -33,7 +33,7 @@ class GlowTTSEvaluationInterface:
         cfg_data, cfg_model = ExperimentSaver.load_configs_from_checkpoint(checkpoint)
         self.device = torch.device(device)
 
-        model_cls = getattr(forced_alignment, cfg_model["net"]["type"])
+        model_cls = getattr(forced_alignment, cfg_model["model"]["type"])
         self.model = model_cls(checkpoint["params"])
         self.model.eval()
         self.model.load_state_dict(checkpoint["state_dict"])
@@ -55,8 +55,8 @@ class GlowTTSEvaluationInterface:
         self.pipeline = PipelineComponents(cfg_data, "valid")
 
         ignored_fields = {"word_timestamps", "phoneme_timestamps"}
-        self.is_gst_used = cfg_model["net"]["params"].get("use_gst", False)
-        self.is_bio_embeddings_used = cfg_model["net"]["params"].get(
+        self.is_gst_used = cfg_model["model"]["params"].get("use_gst", False)
+        self.is_bio_embeddings_used = cfg_model["model"]["params"].get(
             "use_biometric_embeddings", False
         )
 
@@ -79,7 +79,7 @@ class GlowTTSEvaluationInterface:
     @torch.inference_mode()
     def evaluate(self, batch: Batch) -> AlignerForwardOutput:
         inputs, _, _ = self.batch_processor(batch)
-        outputs = self.model.generate(inputs)
+        outputs = self.model.inference(inputs)
         return outputs
 
     def synthesize(

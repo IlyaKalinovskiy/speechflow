@@ -15,7 +15,7 @@ def evaluation(ckpt_path: Path, image_path: Path):
     cfg_model["trainer"]["accelerator"] = "cpu"
     cfg_model["trainer"]["devices"] = 1
 
-    model_cls = getattr(mnist, cfg_model["net"]["type"])
+    model_cls = getattr(mnist, cfg_model["model"]["type"])
     mnist_net = model_cls(checkpoint["params"])
     mnist_net.eval()
 

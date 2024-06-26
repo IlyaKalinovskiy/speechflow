@@ -12,22 +12,25 @@ import transformers
 import pytorch_lightning as pl
 
 from speechflow.io.yaml_io import get_yaml_loader
-from tts.vocoders.vocos.vocos.discriminators import (
-    MultiPeriodDiscriminator,
-    MultiResolutionDiscriminator,
-)
-from tts.vocoders.vocos.vocos.feature_extractors import FeatureExtractor
-from tts.vocoders.vocos.vocos.heads import FourierHead
-from tts.vocoders.vocos.vocos.helpers import plot_spectrogram_to_numpy
-from tts.vocoders.vocos.vocos.loss import (
+from tts.vocoders.batch_processor import VocoderBatchProcessor
+from tts.vocoders.vocos.helpers import plot_spectrogram_to_numpy
+from tts.vocoders.vocos.loss import (
     DiscriminatorLoss,
     FeatureMatchingLoss,
     GeneratorLoss,
     MelSpecReconstructionLoss,
     MultiResolutionSTFTLoss,
 )
-from tts.vocoders.vocos.vocos.models import Backbone
-from tts.vocoders.vocos.vocos.modules import safe_log
+from tts.vocoders.vocos.modules.backbone import Backbone
+from tts.vocoders.vocos.modules.discriminators import (
+    MultiPeriodDiscriminator,
+    MultiResolutionDiscriminator,
+)
+from tts.vocoders.vocos.modules.feature_extractors import FeatureExtractor
+from tts.vocoders.vocos.modules.heads import FourierHead
+from tts.vocoders.vocos.utils.tensor_utils import safe_log
+
+__all__ = ["VocosExp"]
 
 
 class VocosExp(pl.LightningModule):
@@ -37,6 +40,7 @@ class VocosExp(pl.LightningModule):
         feature_extractor: FeatureExtractor,
         backbone: Backbone,
         head: FourierHead,
+        batch_processor: VocoderBatchProcessor,
         sample_rate: int,
         initial_learning_rate: float,
         num_warmup_steps: int = 0,
@@ -60,6 +64,7 @@ class VocosExp(pl.LightningModule):
             feature_extractor (FeatureExtractor): An instance of FeatureExtractor to extract features from audio signals.
             backbone (Backbone): An instance of Backbone model.
             head (FourierHead):  An instance of Fourier head to generate spectral coefficients and reconstruct a waveform.
+            batch_processor (VocoderBatchProcessor): An instance of VocoderBatchProcessor for convert batch to model inputs.
             sample_rate (int): Sampling rate of the audio signals.
             initial_learning_rate (float): Initial learning rate for the optimizer.
             num_warmup_steps (int): Number of steps for the warmup phase of learning rate scheduler. Default is 0.
@@ -72,11 +77,17 @@ class VocosExp(pl.LightningModule):
             evaluate_periodicty (bool, optional): If True, periodicity scores are computed for each validation run.
         """
         super().__init__()
+
+        assert pl.__version__ == "1.8.6", RuntimeError(
+            "pytorch_lightning==1.8.6 required"
+        )
+
         self.save_hyperparameters(ignore=["feature_extractor", "backbone", "head"])
 
         self.feature_extractor = feature_extractor
         self.backbone = backbone
         self.head = head
+        self.batch_processor = batch_processor
 
         self.multiperioddisc = MultiPeriodDiscriminator()
         self.multiresddisc = MultiResolutionDiscriminator()
@@ -96,6 +107,7 @@ class VocosExp(pl.LightningModule):
         self.cdpam = None
 
     def on_fit_start(self):
+        self.batch_processor.set_device(self.device)
         if self.with_cdpam:
             self.cdpam = cdpam.CDPAM(dev=self.cdpam_device)
 
@@ -137,17 +149,19 @@ class VocosExp(pl.LightningModule):
             ],
         )
 
-    def forward(self, batch, **kwargs):
-        features, feat_losses = self.feature_extractor(
-            batch, global_step=self.global_step, **kwargs
-        )
+    def forward(self, inputs, **kwargs):
+        features, feat_losses = self.feature_extractor(inputs, **kwargs)
         x = self.backbone(features, **kwargs)
         audio_output, mb_audio_output, head_losses = self.head(x, **kwargs)
         feat_losses.update(head_losses)
         return audio_output, mb_audio_output, feat_losses
 
     def training_step(self, batch, batch_idx, optimizer_idx, **kwargs):
-        audio_input = batch.collated_samples.mu_law_waveform.squeeze(-1)
+        inputs, targets, metadata = self.batch_processor(
+            batch, batch_idx, self.global_step
+        )
+
+        audio_input = inputs.waveform.squeeze(-1)
         kwargs["audio_gt"] = audio_input
         kwargs["ac_latent_gt"] = batch.collated_samples.ac_feat
         kwargs["speaker_emb_gt"] = batch.collated_samples.speaker_emb
@@ -156,7 +170,7 @@ class VocosExp(pl.LightningModule):
         # train discriminator
         if optimizer_idx == 0 and self.train_discriminator:
             with torch.no_grad():
-                audio_hat, _, _ = self(batch, **kwargs)
+                audio_hat, _, _ = self(inputs, **kwargs)
 
             real_score_mp, gen_score_mp, _, _ = self.multiperioddisc(
                 y=audio_input,
@@ -183,7 +197,7 @@ class VocosExp(pl.LightningModule):
 
         # train generator
         if optimizer_idx == 1:
-            audio_hat, _, feat_losses = self(batch, **kwargs)
+            audio_hat, _, feat_losses = self(inputs, **kwargs)
             if self.train_discriminator:
                 _, gen_score_mp, fmap_rs_mp, fmap_gs_mp = self.multiperioddisc(
                     y=audio_input,
@@ -282,12 +296,16 @@ class VocosExp(pl.LightningModule):
                 self.utmos_model = UTMOSScore(device=self.device)
 
     def validation_step(self, batch, batch_idx, **kwargs):
-        audio_input = batch.collated_samples.mu_law_waveform.squeeze(-1)
-        kwargs["audio_gt"] = audio_input
-        kwargs["ac_latent_gt"] = batch.collated_samples.ac_feat
-        kwargs["speaker_emb_gt"] = batch.collated_samples.speaker_emb
+        inputs, targets, metadata = self.batch_processor(
+            batch, batch_idx, self.global_step
+        )
 
-        audio_hat, _, feat_losses = self(batch, **kwargs)
+        audio_input = inputs.waveform.squeeze(-1)
+        kwargs["audio_gt"] = audio_input
+        kwargs["ac_latent_gt"] = inputs.ac_feat
+        kwargs["speaker_emb_gt"] = inputs.speaker_emb
+
+        audio_hat, _, feat_losses = self(inputs, **kwargs)
 
         audio_16_khz = torchaudio.functional.resample(
             audio_input, orig_freq=self.hparams.sample_rate, new_freq=16000
@@ -433,6 +451,10 @@ class VocosExp(pl.LightningModule):
         if speaker_id_handler is not None:
             checkpoint["lang_id_map"] = speaker_id_handler.lang2id
             checkpoint["speaker_id_map"] = speaker_id_handler.speaker2id
+        speaker_id_handler = dl_train.client.find_info("SpeakerIDSetter")
+        if speaker_id_handler is not None:
+            checkpoint["lang_id_map"] = speaker_id_handler.lang2id
+            checkpoint["speaker_id_map"] = speaker_id_handler.speaker2id
 
     def on_after_backward(self) -> None:
         # if not self.trainer._detect_anomaly:  # type: ignore
@@ -452,88 +474,3 @@ class VocosExp(pl.LightningModule):
                 "Detected inf or NaN values in gradients. not updating model parameters."
             )
             self.zero_grad()
-
-
-class VocosEncodecExp(VocosExp):
-    """VocosEncodecExp is a subclass of VocosExp that overrides the parent experiment to
-    function as a conditional GAN.
-
-    It manages an additional `bandwidth_id` attribute, which denotes a learnable
-    embedding corresponding to a specific bandwidth value of EnCodec. During
-    training, a random bandwidth_id is generated for each step, while during
-    validation, a fixed bandwidth_id is used.
-
-    """
-
-    def __init__(
-        self,
-        feature_extractor: FeatureExtractor,
-        backbone: Backbone,
-        head: FourierHead,
-        sample_rate: int,
-        initial_learning_rate: float,
-        num_warmup_steps: int,
-        mel_loss_coeff: float = 45,
-        mrd_loss_coeff: float = 1.0,
-        pretrain_mel_steps: int = 0,
-        decay_mel_coeff: bool = False,
-        evaluate_utmos: bool = False,
-        evaluate_pesq: bool = False,
-        evaluate_periodicty: bool = False,
-        with_cdpam: bool = False,
-    ):
-        super().__init__(
-            feature_extractor,
-            backbone,
-            head,
-            sample_rate,
-            initial_learning_rate,
-            num_warmup_steps,
-            mel_loss_coeff,
-            mrd_loss_coeff,
-            pretrain_mel_steps,
-            decay_mel_coeff,
-            evaluate_utmos,
-            evaluate_pesq,
-            evaluate_periodicty,
-            with_cdpam,
-        )
-        # Override with conditional discriminators
-        self.multiperioddisc = MultiPeriodDiscriminator(
-            num_embeddings=len(self.feature_extractor.bandwidths)
-        )
-        self.multiresddisc = MultiResolutionDiscriminator(
-            num_embeddings=len(self.feature_extractor.bandwidths)
-        )
-
-    def training_step(self, *args):
-        bandwidth_id = torch.randint(
-            low=0,
-            high=len(self.feature_extractor.bandwidths),
-            size=(1,),
-            device=self.device,
-        )
-        output = super().training_step(*args, bandwidth_id=bandwidth_id)
-        return output
-
-    def validation_step(self, *args):
-        bandwidth_id = torch.tensor([0], device=self.device)
-        output = super().validation_step(*args, bandwidth_id=bandwidth_id)
-        return output
-
-    def validation_epoch_end(self, outputs):
-        if self.global_rank == 0:
-            *_, audio_in, _ = outputs[0].values()
-            # Resynthesis with encodec for reference
-            self.feature_extractor.encodec.set_target_bandwidth(
-                self.feature_extractor.bandwidths[0]
-            )
-            encodec_audio = self.feature_extractor.encodec(audio_in[None, None, :])
-            self.logger.experiment.add_audio(
-                "encodec",
-                encodec_audio[0, 0].data.float().cpu().numpy(),
-                self.global_step,
-                self.hparams.sample_rate,
-            )
-
-        super().validation_epoch_end(outputs)

@@ -147,7 +147,7 @@ class TTSEvaluationInterface:
         self.device = torch.device(device)
 
         # init model
-        model_cls = getattr(acoustic_models, cfg_model["net"]["type"])
+        model_cls = getattr(acoustic_models, cfg_model["model"]["type"])
         self.model = model_cls(tts_ckpt["params"])
         self.model.eval()
         self.model.load_state_dict(tts_ckpt["state_dict"], strict=True)
@@ -641,7 +641,7 @@ class TTSEvaluationInterface:
         if opt.forward_pass:
             outputs = self.model(inputs)
         else:
-            outputs = self.model.generate(inputs)
+            outputs = self.model.inference(inputs)
             if outputs.gate is not None and opt.gate_threshold is not None:
                 outputs.output_mask = (
                     (outputs.gate.sigmoid() > opt.gate_threshold).cumsum(1) > 0
@@ -670,5 +670,5 @@ class TTSEvaluationInterface:
         outputs = self.evaluate(inputs, opt)
         return outputs, ctx, opt
 
-    def generate(self, batch_input: TTSForwardInput, **kwargs):
-        return self.model.generate(batch_input, **kwargs)
+    def inference(self, batch_input: TTSForwardInput, **kwargs):
+        return self.model.inference(batch_input, **kwargs)

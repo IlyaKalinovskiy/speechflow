@@ -6,13 +6,10 @@ import torchaudio
 from torch import nn
 from torch.nn import functional as F
 
-from speechflow.data_pipeline.collate_functions import TTSCollateOutput
-from speechflow.data_pipeline.core import Batch
 from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
 from speechflow.training.losses.vae_loss import VAELoss
 from speechflow.training.utils.tensor_utils import get_mask_from_lengths
 from tts.acoustic_models.batch_processor import TTSBatchProcessor
-from tts.acoustic_models.data_types import TTSForwardInput
 from tts.acoustic_models.modules import TTS_ENCODERS
 from tts.acoustic_models.modules.additional_modules import (
     AdditionalModules,
@@ -34,17 +31,18 @@ from tts.acoustic_models.modules.components.variance_predictors import (
     FrameLevelPredictorWithDiscriminatorParams,
 )
 from tts.acoustic_models.modules.data_types import ComponentInput
-from tts.vocoders.vocos.vocos.modules import safe_log
+from tts.vocoders.data_types import VocoderForwardInput
+from tts.vocoders.vocos.utils.tensor_utils import safe_log
 
 
 class FeatureExtractor(nn.Module):
     """Base class for feature extractors."""
 
-    def forward(self, audio: torch.Tensor, **kwargs) -> torch.Tensor:
+    def forward(self, inputs: VocoderForwardInput, **kwargs) -> torch.Tensor:
         """Extract features from the given audio.
 
         Args:
-            audio (Tensor): Input audio waveform.
+            inputs (VocoderForwardInput): Input audio features.
 
         Returns:
             Tensor: Extracted features of shape (B, C, L), where B is the batch size,
@@ -71,10 +69,15 @@ class MelSpectrogramFeatures(FeatureExtractor):
             power=1,
         )
 
-    def forward(self, audio, **kwargs):
+    def forward(self, inputs: VocoderForwardInput, **kwargs):
         if self.padding == "same":
             pad = self.mel_spec.win_length - self.mel_spec.hop_length
-            audio = torch.nn.functional.pad(audio, (pad // 2, pad // 2), mode="reflect")
+            audio = torch.nn.functional.pad(
+                inputs.waveform, (pad // 2, pad // 2), mode="reflect"
+            )
+        else:
+            audio = inputs.waveform
+
         mel = self.mel_spec(audio)
         features = safe_log(mel)
         return features, {}
@@ -90,7 +93,7 @@ class AudioFeatures(FeatureExtractor):
         speaker_emb_dim: int = 256,
         linear_spectrogram_dim: int = 513,
         mel_spectrogram_dim: int = 80,
-        ssl_feat_dim: int = 768,
+        ssl_feat_dim: int = 1024,
         style_emb_dim: int = 192,
         condition_emb_dim: int = 32,
         encoder_type: str = "RNNEncoder",
@@ -360,7 +363,7 @@ class AudioFeatures(FeatureExtractor):
             self.mel_predictor = None
 
     def _get_input_feat(
-        self, inputs: TTSForwardInput
+        self, inputs: VocoderForwardInput
     ) -> tp.Tuple[torch.Tensor, torch.Tensor]:
         if self.input_feat_type == "linear_spec":
             return inputs.linear_spectrogram, inputs.spectrogram_lengths
@@ -369,7 +372,7 @@ class AudioFeatures(FeatureExtractor):
         elif self.input_feat_type == "ssl_feat":
             return inputs.ssl_feat, inputs.ssl_feat_lengths
 
-    def _get_conditions(self, inputs: TTSForwardInput) -> tp.Dict[str, tp.Any]:
+    def _get_conditions(self, inputs: VocoderForwardInput) -> tp.Dict[str, tp.Any]:
         conditions = {}
 
         if self.lang_embs is not None:
@@ -390,7 +393,7 @@ class AudioFeatures(FeatureExtractor):
         return conditions
 
     def _get_style(
-        self, inputs: TTSForwardInput, global_step: int
+        self, inputs: VocoderForwardInput, global_step: int
     ) -> tp.Tuple[torch.Tensor, tp.Dict[str, torch.Tensor]]:
         if self.style_feat_type == "linear_spec":
             source, source_lengths = inputs.linear_spectrogram, inputs.spectrogram_lengths
@@ -415,7 +418,7 @@ class AudioFeatures(FeatureExtractor):
 
         if self.style_enc is not None:
             style_emb, style_content, style_losses = self.style_enc(
-                source, source_mask, model_inputs=inputs
+                source, source_mask, inputs=inputs
             )
 
             if self.style_enc.params.use_gmvae:
@@ -429,30 +432,21 @@ class AudioFeatures(FeatureExtractor):
 
         return style_emb, style_losses
 
-    def forward(self, audio: Batch, **kwargs):
-        if isinstance(audio, TTSForwardInput):
-            model_inputs = audio
-        else:
-            audio.collated_samples = TTSCollateOutput(**audio.collated_samples.to_dict())
-            model_inputs, _, _ = self.tts_bp(audio)
-            model_inputs.to(self.encoder.device)
-
+    def forward(self, inputs: VocoderForwardInput, **kwargs):
         losses = {}
 
-        x, x_lens = self._get_input_feat(model_inputs)
-
-        conditions = self._get_conditions(model_inputs)
-
+        x, x_lens = self._get_input_feat(inputs)
+        conditions = self._get_conditions(inputs)
         conditions["style_emb"], style_losses = self._get_style(
-            model_inputs, kwargs.get("global_step")
+            inputs, inputs.global_step
         )
 
-        model_inputs.additional_inputs.update(conditions)
+        inputs.additional_inputs.update(conditions)
         losses.update(style_losses)
 
         if self.vq_enc is not None:
             vq_input = ComponentInput(
-                content=x, content_lengths=x_lens, model_inputs=model_inputs
+                content=x, content_lengths=x_lens, model_inputs=inputs
             )
             vq_output = self.vq_enc(vq_input)
             x = vq_output.content
@@ -471,8 +465,8 @@ class AudioFeatures(FeatureExtractor):
             e_output, e_content, e_losses = self.energy_predictor(
                 x=x,
                 x_lengths=x_lens,
-                model_inputs=model_inputs,
-                target=model_inputs.energy,
+                model_inputs=inputs,
+                target=inputs.energy,
                 name="energy",
             )
             losses.update(e_losses)
@@ -481,15 +475,15 @@ class AudioFeatures(FeatureExtractor):
             p_output, p_content, p_losses = self.pitch_predictor(
                 x=x,
                 x_lengths=x_lens,
-                model_inputs=model_inputs,
-                target=model_inputs.pitch,
+                model_inputs=inputs,
+                target=inputs.pitch,
                 name="pitch",
             )
             losses.update(p_losses)
 
         if self.range_predictor is not None:
-            re = model_inputs.ranges["energy"]
-            rp = model_inputs.ranges["pitch"]
+            re = inputs.ranges["energy"]
+            rp = inputs.ranges["pitch"]
             target_ranges = torch.stack([re, rp], dim=1)
             feat = torch.cat(
                 [
@@ -501,12 +495,10 @@ class AudioFeatures(FeatureExtractor):
             ranges = F.relu(self.range_predictor(feat)).reshape(-1, 2, 3)
             losses.update({"range_loss": 0.001 * F.mse_loss(ranges, target_ranges)})
 
-            model_inputs.energy = model_inputs.energy * re[:, 2:3] + re[:, 0:1]
-            model_inputs.pitch = model_inputs.pitch * rp[:, 2:3] + rp[:, 0:1]
+            inputs.energy = inputs.energy * re[:, 2:3] + re[:, 0:1]
+            inputs.pitch = inputs.pitch * rp[:, 2:3] + rp[:, 0:1]
 
-        enc_input = ComponentInput(
-            content=x, content_lengths=x_lens, model_inputs=model_inputs
-        )
+        enc_input = ComponentInput(content=x, content_lengths=x_lens, model_inputs=inputs)
         enc_output = self.encoder(enc_input)
         x = enc_output.content
 
@@ -520,17 +512,15 @@ class AudioFeatures(FeatureExtractor):
 
         if self.mel_predictor is not None:
             enc_input = ComponentInput(
-                content=x, content_lengths=x_lens, model_inputs=model_inputs
+                content=x, content_lengths=x_lens, model_inputs=inputs
             )
             mel_predict = self.mel_predictor(enc_input).content[0]
             losses["auxiliary_mel_loss"] = 0.1 * F.l1_loss(
-                mel_predict, model_inputs.mel_spectrogram
+                mel_predict, inputs.mel_spectrogram
             )
 
         chunk = []
-        for i, (a, b) in enumerate(
-            audio.collated_samples.additional_fields["spec_chunk"]
-        ):
+        for i, (a, b) in enumerate(inputs.additional_inputs["spec_chunk"]):
             chunk.append(x[i, a:b, :])
 
         output = torch.stack(chunk)

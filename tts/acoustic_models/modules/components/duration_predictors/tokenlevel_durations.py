@@ -161,7 +161,7 @@ class TokenLevelDPWithDiscriminator(TokenLevelDP, Component):
     ):
         super().__init__(params, input_dim)
         self.disc = SignalDiscriminator(
-            in_channels=params.token_encoder_params["encoder_hidden_dim"]
+            in_channels=self.token_encoder.params.encoder_inner_dim
         )
 
     def forward_step(

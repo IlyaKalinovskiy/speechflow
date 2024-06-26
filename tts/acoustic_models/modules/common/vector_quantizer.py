@@ -170,7 +170,7 @@ class VectorQuantizer(nn.Module):
             additional_losses=losses,
         )
 
-    def generate(self, embeddings) -> VectorQuantizerOutput:
+    def inference(self, embeddings) -> VectorQuantizerOutput:
         device = embeddings.device
 
         # embeddings_mask = embeddings #[mask]
@@ -206,88 +206,6 @@ class VectorQuantizer(nn.Module):
             additional_content={},
             additional_losses={},
         )
-
-    # TODO
-    def generate_imputer(self, x, embeddings, mask, old_mask) -> VectorQuantizerOutput:
-        x = x.transpose(1, 2).contiguous()
-        device = x.device
-
-        # Flatten input
-        flat_input = x.view(-1, self._embedding_dim)
-
-        # Compute distances between encoded audio frames and embedding vectors
-        distances = (
-            torch.sum(flat_input**2, dim=1, keepdim=True)
-            + torch.sum(self._embedding.weight**2, dim=1)
-            - 2 * torch.matmul(flat_input, self._embedding.weight.t())
-        )
-
-        """
-        encoding_indices: Tensor containing the discrete encoding indices, ie
-        which element of the quantized space each input element was mapped to.
-        """
-        encoding_indices = torch.argmin(distances, dim=1).unsqueeze(1)
-        # removed_indices = encoding_indices[mask.view(-1, self._embedding_dim)]
-
-        max_len = embeddings.shape[1]
-        mask = mask[:, :max_len]
-        max_len = encoding_indices.shape[0]
-        old_mask = old_mask[:, :max_len]
-        min_i, max_i = (
-            torch.where(old_mask)[1][0].item(),
-            torch.where(old_mask)[1][-1].item(),
-        )
-        first_encoding = encoding_indices[:min_i, :]
-        second_encoding = encoding_indices[max_i + 1 :, :]
-
-        embeddings_mask = embeddings[mask]
-        flat_input = embeddings_mask.view(-1, self._embedding_dim)
-
-        # Compute distances between encoded audio frames and embedding vectors
-        distances = (
-            torch.sum(flat_input**2, dim=1, keepdim=True)
-            + torch.sum(self._embedding.weight**2, dim=1)
-            - 2 * torch.matmul(flat_input, self._embedding.weight.t())
-        )
-
-        """
-        encoding_indices: Tensor containing the discrete encoding indices, ie
-        which element of the quantized space each input element was mapped to.
-        """
-        indices_new = torch.argmin(distances, dim=1).unsqueeze(1)
-        encoding_indices = torch.cat(
-            [first_encoding, indices_new.reshape(-1, 1), second_encoding]
-        )
-
-        encodings = torch.zeros(
-            encoding_indices.shape[0], self._num_embeddings, dtype=torch.float
-        ).to(device)
-        encodings.scatter_(1, encoding_indices, 1)
-
-        # Quantize and unflatten
-        output_shape = torch.Size([1, encodings.shape[0], 256])
-        quantized = torch.matmul(encodings, self._embedding.weight).view(
-            output_shape
-        )  # TODO input_shape
-
-        return VectorQuantizerOutput(
-            content=quantized.transpose(2, 1).contiguous(),
-            additional_content={},
-            additional_losses={},
-        )
-
-    # TODO
-    def second_stage(
-        self,
-        x,
-        embeddings,
-        mask,
-        old_mask,
-        compute_distances_if_possible: bool = False,
-        record_codebook_stats: bool = False,
-    ) -> VectorQuantizerOutput:
-
-        return
 
     @property
     def embedding(self):

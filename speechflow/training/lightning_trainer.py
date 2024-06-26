@@ -32,6 +32,11 @@ class LightningEngine(pl.LightningModule):
         detect_grad_nan: bool = False,
     ):
         super().__init__()
+
+        assert int(pl.__version__[0]) >= 2, RuntimeError(
+            "pytorch_lightning==2.0.7 or higher required"
+        )
+
         self.model = model
         self.criterion = criterion
         self.batch_processor = batch_processor
@@ -43,10 +48,6 @@ class LightningEngine(pl.LightningModule):
         self.saver.to_save["params_after_init"] = self.model.get_params(after_init=True)
 
         self.validation_losses = []
-
-        assert int(pl.__version__[0]) >= 2, RuntimeError(
-            "pytorch_lightning==2.0.7 or higher required"
-        )
 
     def on_fit_start(self):
         self.batch_processor.set_device(self.device)
@@ -175,6 +176,11 @@ class GANLightningEngine(pl.LightningModule):
         saver: ExperimentSaver,
     ):
         super().__init__()
+
+        assert pl.__version__ == "1.5.9", RuntimeError(
+            "pytorch_lightning==1.5.9 required"
+        )
+
         self.model = generator_model
         self.discriminator_model = discriminator_model
         self.criterion = criterion
@@ -191,8 +197,6 @@ class GANLightningEngine(pl.LightningModule):
             "generator_model": self.model.get_params(after_init=True),
             "discriminator_params": self.discriminator_model.get_params(after_init=True),
         }
-
-        assert pl.__version__ == "1.5.9", RuntimeError("pytorch_lightning 1.5.9 required")
 
     def on_pretrain_routine_start(self):
         self.batch_processor.set_device(self.device)

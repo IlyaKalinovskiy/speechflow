@@ -128,12 +128,12 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
         outputs = self.forward_step(inputs)
         return outputs.content, getattr(outputs, "hidden_state")
 
-    def generate_step(self, inputs: ComponentInput, **kwargs) -> ComponentOutput:
+    def inference_step(self, inputs: ComponentInput, **kwargs) -> ComponentOutput:
         return self.forward_step(inputs)
 
     @gpu_profiler
-    def generate(self, *args, **kwargs) -> ComponentOutput:
-        outputs = self.generate_step(*args, **kwargs)
+    def inference(self, *args, **kwargs) -> ComponentOutput:
+        outputs = self.inference_step(*args, **kwargs)
         outputs.additional_content[self.name] = outputs.content
         return outputs
 

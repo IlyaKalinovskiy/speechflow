@@ -122,37 +122,37 @@ class ParallelTTSModel(BaseTorchModel):
     def device(self) -> torch.device:
         return self.embedding_component.emb_calculator.embedding.weight.device
 
-    def _encode_inputs(self, inputs, generate: bool = False):
+    def _encode_inputs(self, inputs, inference: bool = False):
         """Utility method that reduces code duplication."""
         if inputs.additional_inputs is None:
             inputs.additional_inputs = {}
 
         x = self.embedding_component(inputs)
 
-        if generate:
-            x = self.mode_0.generate(x)
-            x = self.encoder.generate(x)  # type: ignore
+        if inference:
+            x = self.mode_0.inference(x)
+            x = self.encoder.inference(x)  # type: ignore
         else:
             x = self.mode_0(x)
             x = self.encoder(x)  # type: ignore
 
-        if generate:
-            x = self.mode_1.generate(x)
+        if inference:
+            x = self.mode_1.inference(x)
         else:
             x = self.mode_1(x)
 
         return x
 
     def _predict_variances(
-        self, x, generate: bool = False, ignored_variance: tp.Set = None
+        self, x, inference: bool = False, ignored_variance: tp.Set = None
     ):
         """Utility method that reduces code duplication."""
         predictions = {}
         for va in self.va:
             x = (
                 va(x)
-                if not generate
-                else va.generate(x, ignored_variance=ignored_variance)
+                if not inference
+                else va.inference(x, ignored_variance=ignored_variance)
             )
             predictions.update(x.variance_predictions)
             x.model_inputs.additional_inputs.update(x.additional_content)
@@ -190,21 +190,21 @@ class ParallelTTSModel(BaseTorchModel):
         )
         return output
 
-    def generate(self, inputs: TTSForwardInput, **kwargs) -> TTSForwardOutput:
-        x = self._encode_inputs(inputs, generate=True)
+    def inference(self, inputs: TTSForwardInput, **kwargs) -> TTSForwardOutput:
+        x = self._encode_inputs(inputs, inference=True)
 
         va_output, variance_predictions = self._predict_variances(
-            x, generate=True, ignored_variance=kwargs.get("ignored_variance")
+            x, inference=True, ignored_variance=kwargs.get("ignored_variance")
         )
 
-        x = self.mode_2.generate(va_output)
-        x = self.decoder.generate(x)  # type: ignore
+        x = self.mode_2.inference(va_output)
+        x = self.decoder.inference(x)  # type: ignore
 
         decoder_output = x
 
         if self.postnet is not None:
             x = self.mode_3(x)
-            x = self.postnet.generate(x)
+            x = self.postnet.inference(x)
 
         output = TTSForwardOutput(
             spectrogram=x.content,
@@ -223,9 +223,9 @@ class ParallelTTSModel(BaseTorchModel):
     ) -> tp.Tuple[
         tp.Dict[str, torch.Tensor], tp.Dict[str, torch.Tensor], tp.Dict[str, torch.Tensor]
     ]:
-        x = self._encode_inputs(inputs, generate=True)
+        x = self._encode_inputs(inputs, inference=True)
         va_output, variance_predictions = self._predict_variances(
-            x, generate=True, ignored_variance=ignored_variance
+            x, inference=True, ignored_variance=ignored_variance
         )
         return va_output, variance_predictions, x.additional_content
 
@@ -302,16 +302,16 @@ class ParallelTTSModel(BaseTorchModel):
 
     @classmethod
     def update_and_validate_model_params(cls, cfg_model: Config, cfg_data: Config):
-        if "speaker_biometric_model" not in cfg_model["net"]["params"]:
-            cfg_model["net"]["params"].speaker_biometric_model = find_field(
+        if "speaker_biometric_model" not in cfg_model["model"]["params"]:
+            cfg_model["model"]["params"].speaker_biometric_model = find_field(
                 cfg_data["preproc"], "voice_bio.model_type", "resemblyzer"
             )
 
         if (
-            cfg_model["net"]["params"].get("decoder_target", "spectrogram")
+            cfg_model["model"]["params"].get("decoder_target", "spectrogram")
             == "spectrogram"
         ):
-            cfg_model["net"]["params"].decoder_output_dim = find_field(
+            cfg_model["model"]["params"].decoder_output_dim = find_field(
                 cfg_data["preproc"], "linear_to_mel.n_mels"
             )
 
