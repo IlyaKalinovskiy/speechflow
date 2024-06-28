@@ -8,7 +8,12 @@ import numpy.typing as npt
 from multilingual_text_parser.data_types import Sentence
 from torch import Tensor
 
-from speechflow.data_pipeline.core.datasample import DataSample, ToNumpy, ToTensor
+from speechflow.data_pipeline.core.datasample import (
+    DataSample,
+    MovableToDevice,
+    ToNumpy,
+    ToTensor,
+)
 from speechflow.io import AudioChunk, Timestamps
 
 __all__ = [
@@ -33,7 +38,7 @@ class ImageDataSample(DataSample):
 
 
 @dataclass
-class SSLFeatures(ToTensor, ToNumpy):
+class SSLFeatures(ToTensor, ToNumpy, MovableToDevice):
     encode: tp_DATA = None  # type: ignore
     projection: tp_DATA = None  # type: ignore
     attention_mask: tp_DATA = None  # type: ignore
@@ -46,7 +51,7 @@ class SSLFeatures(ToTensor, ToNumpy):
 
 
 @dataclass
-class AudioCodecFeatures(ToTensor, ToNumpy):
+class AudioCodecFeatures(ToTensor, ToNumpy, MovableToDevice):
     encode: tp_DATA = None  # type: ignore
     waveform: tp_DATA = None  # type: ignore
 
@@ -96,6 +101,7 @@ class SpectrogramDataSample(AudioDataSample):
     precomputed_mel: tp_DATA = None  # type: ignore
     averages: tp.Dict[str, tp_DATA] = None  # type: ignore
     ranges: tp.Dict[str, tp_DATA] = None  # type: ignore
+    gate: tp_DATA = None  # type: ignore
 
     def __len__(self):
         if self.magnitude is not None:
@@ -133,7 +139,6 @@ class TTSDataSample(SpectrogramDataSample, TextDataSample, ProsodySSMLDataSample
     durations: tp_DATA = None  # type: ignore
     invert_durations: tp_DATA = None  # type: ignore
     transcription_by_frames: tp_DATA = None
-    gate: tp_DATA = None  # type: ignore
     aggregated: tp.Dict[str, tp_DATA] = None  # type: ignore
     concatenate: tp_DATA = None  # type: ignore
     pauses_durations: torch.Tensor = None  # type: ignore

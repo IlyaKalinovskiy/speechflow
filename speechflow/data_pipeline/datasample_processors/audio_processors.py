@@ -1,4 +1,5 @@
 import uuid
+import pickle
 import random
 import typing as tp
 import logging
@@ -342,6 +343,7 @@ class SSLProcessor(BaseAudioProcessor):
         ssl_type: str,
         ssl_params: Config = Config.empty(),
         resize_from: tp.Optional[str] = None,
+        use_precompute: bool = True,
         device: str = "cpu",
     ):
         super().__init__(device=device)
@@ -349,6 +351,7 @@ class SSLProcessor(BaseAudioProcessor):
         self._ssl_params = ssl_params
         self._resize_from = resize_from
         self._ssl_model = None
+        self._use_precompute = use_precompute
 
     def init(self):
         super().init()
@@ -366,7 +369,15 @@ class SSLProcessor(BaseAudioProcessor):
         ds = super().process(ds)
         assert self._ssl_model is not None
 
-        ds.ssl_feat = self._ssl_model(ds.audio_chunk)
+        if self._use_precompute:
+            precompute_path = ds.audio_chunk.file_path.with_suffix(".ssl_feat")
+            if precompute_path.exists():
+                ds.ssl_feat = pickle.loads(precompute_path.read_bytes())
+            else:
+                ds.ssl_feat = self._ssl_model(ds.audio_chunk)
+                precompute_path.write_bytes(pickle.dumps(ds.ssl_feat.cpu()))
+        else:
+            ds.ssl_feat = self._ssl_model(ds.audio_chunk)
 
         if self._resize_from:
             attr = getattr(ds, self._resize_from)

@@ -217,8 +217,8 @@ class DACHead(FourierHead):
 
         losses = {}
         if (
-            self.with_dac_loss
-            and self.training
+            self.training
+            and self.with_dac_loss
             and (self.current_iter + 1) % self.dac_loss_every_iter == 0
             and self.current_iter < self.dac_loss_max_iter
         ):
@@ -238,8 +238,8 @@ class DACHead(FourierHead):
             losses["dac_loss"] = F.mse_loss(z_hat, ac_latent_gt * 0.1)
 
         if (
-            self.with_sm_loss
-            and self.training
+            self.training
+            and self.with_sm_loss
             and (self.current_iter + 1) % self.sm_loss_every_iter == 0
             and self.current_iter < self.sm_loss_max_iter
         ):

@@ -40,9 +40,7 @@ class VocoderForwardOutput(TrainData):
 
 @dataclass
 class VocoderInferenceInput(VocoderForwardInput):
-    @staticmethod
-    def init_from_tts_output(tts_output: TTSForwardOutput) -> "VocoderInferenceInput":
-        pass
+    pass
 
 
 @dataclass

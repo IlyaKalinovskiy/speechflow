@@ -418,7 +418,7 @@ class AudioFeatures(FeatureExtractor):
 
         if self.style_enc is not None:
             style_emb, style_content, style_losses = self.style_enc(
-                source, source_mask, inputs=inputs
+                source, source_mask, model_inputs=inputs
             )
 
             if self.style_enc.params.use_gmvae:
@@ -470,6 +470,8 @@ class AudioFeatures(FeatureExtractor):
                 name="energy",
             )
             losses.update(e_losses)
+            if not self.training:
+                inputs.energy = e_output
 
         if self.pitch_predictor is not None:
             p_output, p_content, p_losses = self.pitch_predictor(
@@ -480,6 +482,8 @@ class AudioFeatures(FeatureExtractor):
                 name="pitch",
             )
             losses.update(p_losses)
+            if not self.training:
+                inputs.pitch = p_output
 
         if self.range_predictor is not None:
             re = inputs.ranges["energy"]
@@ -502,7 +506,7 @@ class AudioFeatures(FeatureExtractor):
         enc_output = self.encoder(enc_input)
         x = enc_output.content
 
-        if self.addm is not None:
+        if self.training and self.addm is not None:
             vq_output.additional_content.update(conditions)
             vq_output.additional_losses = {}
             addm_out = self.addm(vq_output)
@@ -510,7 +514,7 @@ class AudioFeatures(FeatureExtractor):
                 {k: v for k, v in addm_out.additional_losses.items() if "constant" in k}
             )
 
-        if self.mel_predictor is not None:
+        if self.training and self.mel_predictor is not None:
             enc_input = ComponentInput(
                 content=x, content_lengths=x_lens, model_inputs=inputs
             )
@@ -519,9 +523,13 @@ class AudioFeatures(FeatureExtractor):
                 mel_predict, inputs.mel_spectrogram
             )
 
-        chunk = []
-        for i, (a, b) in enumerate(inputs.additional_inputs["spec_chunk"]):
-            chunk.append(x[i, a:b, :])
+        if "spec_chunk" in inputs.additional_inputs:
+            chunk = []
+            for i, (a, b) in enumerate(inputs.additional_inputs["spec_chunk"]):
+                chunk.append(x[i, a:b, :])
 
-        output = torch.stack(chunk)
+            output = torch.stack(chunk)
+        else:
+            output = x
+
         return output.transpose(1, -1), losses

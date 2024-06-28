@@ -2,9 +2,12 @@ import typing as tp
 
 from copy import deepcopy
 from dataclasses import dataclass
+from os import environ as env
 from pathlib import Path
 
 import torch
+
+from tqdm import tqdm
 
 from speechflow.data_pipeline.collate_functions.spectrogram_collate import (
     SpectrogramCollateOutput,
@@ -18,16 +21,20 @@ from speechflow.data_pipeline.datasample_processors.data_types import (
 from speechflow.io import AudioChunk, Config, check_path, tp_PATH
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.dictutils import find_field
-from tts.vocoders.data_types import VocoderForwardInput, VocoderForwardOutput
-from tts.vocoders.vocos.vocos.pretrained import Vocos
+from tts.vocoders.data_types import (
+    VocoderForwardInput,
+    VocoderForwardOutput,
+    VocoderInferenceInput,
+    VocoderInferenceOutput,
+)
+from tts.vocoders.vocos.pretrained import Vocos
 
 __all__ = ["VocoderEvaluationInterface", "VocoderOptions"]
 
 
 @dataclass
 class VocoderOptions:
-    lang: tp.Optional[str] = None
-    speaker_name: tp.Optional[str] = None
+    pass
 
     def copy(self) -> "VocoderOptions":
         return deepcopy(self)
@@ -41,6 +48,8 @@ class VocoderLoader:
         device: str = "cpu",
         ckpt_preload: tp.Optional[dict] = None,
     ):
+        env["DEVICE"] = device
+
         self.ckpt_path = ckpt_path
 
         if ckpt_preload is None:
@@ -53,8 +62,12 @@ class VocoderLoader:
 
         self.data_cfg = checkpoint["data_cfg"]
         self.data_cfg["processor"].pop("verbose_logging", None)
+        self.data_cfg["collate"]["type"] = "SpectrogramCollate"
 
         self.pipe = self._load_data_pipeline(self.data_cfg)
+        self.pipe_for_reference = self.pipe.with_ignored_handlers(
+            ignored_data_handlers={"SSLProcessor"}
+        )
         self.lang_id_map = checkpoint.get("lang_id_map", {})
         self.speaker_id_map = checkpoint.get("speaker_id_map", {})
 
@@ -95,18 +108,14 @@ class VocoderLoader:
             if "discriminators" not in k and "loss" not in k
         }
         model.load_state_dict(state_dict)
-
-        setattr(model.feature_extractor, "lang_id_map", checkpoint.get("lang_id_map"))
-        setattr(
-            model.feature_extractor, "speaker_id_map", checkpoint.get("speaker_id_map")
-        )
         return model
 
 
 class VocoderEvaluationInterface(VocoderLoader):
+    @check_path(assert_file_exists=True)
     def __init__(
         self,
-        ckpt_path: tp.Union[str, Path],
+        ckpt_path: tp_PATH,
         device: str = "cpu",
         ckpt_preload: tp.Optional[dict] = None,
     ):
@@ -130,11 +139,10 @@ class VocoderEvaluationInterface(VocoderLoader):
 
     @torch.inference_mode()
     def evaluate(
-        self, input: VocoderForwardInput, opt: VocoderOptions
-    ) -> VocoderForwardOutput:
-        input.to(self.device)
-        output = self.model.inference(input)
-        output.spectrogram = input.spectrogram
+        self, inputs: VocoderInferenceInput, opt: VocoderOptions
+    ) -> VocoderInferenceOutput:
+        inputs.to(self.device)
+        output = self.model.inference(inputs)
         return output
 
     @staticmethod
@@ -167,45 +175,59 @@ class VocoderEvaluationInterface(VocoderLoader):
         output = self.model(voc_in)
         return output
 
+    @check_path(assert_file_exists=True)
     def resynthesize(
         self,
-        wav_path: Path,
-        ref_wav_path: tp.Optional[Path] = None,
+        wav_path: tp_PATH,
+        ref_wav_path: tp.Optional[tp_PATH] = None,
         lang: tp.Optional[str] = None,
+        speaker_name: tp.Optional[str] = None,
         opt: tp.Optional[VocoderOptions] = None,
     ) -> VocoderInferenceOutput:
         if opt is None:
             opt = VocoderOptions()
 
-        audio_chunk = AudioChunk(file_path=wav_path).load(sr=self.sample_rate)
+        audio_chunk = (
+            AudioChunk(file_path=wav_path).load(sr=self.sample_rate).volume(1.25)
+        )
         ds = SpectrogramDataSample(audio_chunk=audio_chunk)
-        ds = self.pipe.preprocessing_datasample([ds])[0]
         batch = self.pipe.datasample_to_batch([ds])
         collated: SpectrogramCollateOutput = batch.collated_samples  # type: ignore
 
         if ref_wav_path is not None:
             ref_audio_chunk = AudioChunk(file_path=ref_wav_path).load(sr=self.sample_rate)
             ref_ds = SpectrogramDataSample(audio_chunk=ref_audio_chunk)
-            ref_ds = self.pipe.preprocessing_datasample([ref_ds])[0]
-            ref_batch = self.pipe.datasample_to_batch([ref_ds])
+            ref_batch = self.pipe_for_reference.datasample_to_batch([ref_ds])
             ref_collated: SpectrogramCollateOutput = ref_batch.collated_samples  # type: ignore
             collated.speaker_emb = ref_collated.speaker_emb
+            collated.averages = ref_collated.averages
+            collated.speech_quality_emb = ref_collated.speech_quality_emb
             collated.additional_fields = ref_collated.additional_fields
 
         if self.model.__class__.__name__ == "Vocos":
-            _input = VocoderForwardInput(
-                spectrogram=collated.mel_spectrogram,
+            collated.averages["energy"] = collated.averages["energy"] * 0 + 25
+            collated.averages["pitch"] = collated.averages["pitch"] * 0 + 115
+            collated.speech_quality_emb = collated.speech_quality_emb * 0 + 5
+
+            _input = VocoderInferenceInput(
+                mel_spectrogram=collated.mel_spectrogram,
                 spectrogram_lengths=collated.spectrogram_lengths,
                 ssl_feat=collated.ssl_feat,
                 ssl_feat_lengths=collated.ssl_feat_lengths,
                 speaker_emb=collated.speaker_emb,
-                energy=collated.energy,
-                pitch=collated.pitch,
+                # energy=collated.energy,
+                # pitch=collated.pitch,
+                speech_quality_emb=collated.speech_quality_emb,
+                averages=collated.averages,
                 additional_inputs=collated.additional_fields,
+                input_lengths=collated.spectrogram_lengths,
+                output_lengths=collated.spectrogram_lengths,
             )
 
             if lang is not None:
                 _input.lang_id = torch.LongTensor([self.lang_id_map[lang]])
+            if speaker_name is not None:
+                _input.speaker_id = torch.LongTensor([self.speaker_id_map[speaker_name]])
 
             _output = self.evaluate(_input, opt)
         else:
@@ -220,15 +242,39 @@ class VocoderEvaluationInterface(VocoderLoader):
 
 
 if __name__ == "__main__":
-    from speechflow.utils.fs import get_root_dir
+    if 1:
+        from speechflow.utils.fs import get_root_dir
 
-    test_file_path = get_root_dir() / "tests/data/test_audio.wav"
+        test_file_path = get_root_dir() / "tests/data/test_audio.wav"
 
-    voc = VocoderEvaluationInterface(
-        ckpt_path="P:\\cfm\\5\\mel_vocos_checkpoint_epoch=79_step=400000_val_loss=4.9470.ckpt"
-    )
+        voc = VocoderEvaluationInterface(
+            ckpt_path="mel_vocos_checkpoint_epoch=79_step=400000_val_loss=4.9470.ckpt"
+        )
 
-    outputs = voc.resynthesize(test_file_path, lang="RU")
+        outputs = voc.resynthesize(test_file_path, lang="RU")
 
-    waveform = outputs.waveform[0].cpu().squeeze(0).numpy()
-    AudioChunk(data=waveform, sr=voc.sample_rate).save("resynt.wav", overwrite=True)
+        waveform = outputs.waveform[0].cpu().squeeze(0).numpy()
+        AudioChunk(data=waveform, sr=voc.sample_rate).save("resynt.wav", overwrite=True)
+    else:
+        voc_path = "vocos_checkpoint_epoch=6_step=1439522_val_loss=9.8176.pt"
+        test_files = "eng_spontan_2mic/wav_16k"
+        result_path = "eng_spontan_2mic/result"
+        ref_file = "4922.wav"
+
+        voc = VocoderEvaluationInterface(voc_path, device="cuda:0")
+        Path(result_path).mkdir(parents=True, exist_ok=True)
+
+        file_list = list(Path(test_files).glob("*.wav"))
+        for wav_file in tqdm(file_list):
+            result_file_name = Path(result_path) / wav_file.name
+            if result_file_name.exists():
+                continue
+
+            try:
+                outputs = voc.resynthesize(wav_file, ref_file, lang="EN")
+                waveform = outputs.waveform[0].cpu().squeeze(0).numpy()
+                AudioChunk(data=waveform, sr=voc.sample_rate).save(
+                    result_file_name, overwrite=True
+                )
+            except Exception as e:
+                print(e)

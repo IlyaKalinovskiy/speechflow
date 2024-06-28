@@ -1220,14 +1220,17 @@ def average_by_time(
 
         values = values[values > min_val]
 
-        if use_quantile:
-            val_min = np.quantile(values, quantile)
-            val_max = np.quantile(values, 1 - quantile)
-            val_clip = np.clip(values, val_min, val_max)
-        else:
-            val_clip = reject_outliers(values)
+        if len(values) > 0:
+            if use_quantile:
+                val_min = np.quantile(values, quantile)
+                val_max = np.quantile(values, 1 - quantile)
+                val_clip = np.clip(values, val_min, val_max)
+            else:
+                val_clip = reject_outliers(values)
 
-        ds.averages[attr] = np.mean(val_clip)
+            ds.averages[attr] = np.mean(val_clip)
+        else:
+            ds.averages[attr] = 0.0
 
     return ds
 

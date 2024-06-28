@@ -104,8 +104,11 @@ class MovableToDevice:
         self.device = device
         return self
 
+    def cpu(self):
+        return self.to(torch.device("cpu"))
+
     def cuda(self):
-        self.to(torch.device(f"cuda:{torch.cuda.current_device()}"))
+        return self.to(torch.device(f"cuda:{torch.cuda.current_device()}"))
 
 
 @dataclass
