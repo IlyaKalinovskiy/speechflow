@@ -45,7 +45,7 @@ class TokenLevelDP(Component):
             _enc_params.encoder_num_blocks = params.vp_num_blocks
             _enc_params.encoder_num_layers = params.vp_num_layers
             _enc_params.encoder_inner_dim = params.vp_inner_dim
-            _enc_params.encoder_output_dim = 2
+            _enc_params.encoder_output_dim = 1
             return _enc_cls(_enc_params, input_dim)
 
         enc_cls, enc_params_cls = TTS_ENCODERS[params.word_encoder_type]
@@ -81,7 +81,6 @@ class TokenLevelDP(Component):
         t_target = kwargs.get("target")
         losses = {}
 
-        w_target = model_inputs.additional_inputs.get("word_durations")
         w_lengths = model_inputs.additional_inputs.get("word_lengths")
         w_inv_dura = model_inputs.additional_inputs.get("word_invert_lengths")
 
@@ -93,52 +92,30 @@ class TokenLevelDP(Component):
         w_predict, w_ctx = self.token_encoder.process_content(
             x_by_words, model_inputs.num_words, model_inputs
         )
-        w_predict = F.relu(w_predict)
-
-        w_dura = torch.expm1(w_predict[..., 1]).unsqueeze(-1)
-        if self.training:
-            w_dura = w_target.unsqueeze(-1)
 
         w_ctx, _ = self.hard_lr(w_ctx, w_lengths, x.shape[1])
-        w_dura, _ = self.hard_lr(w_dura, w_lengths, x.shape[1])
 
         x_by_tokens = self.token_proj(torch.cat([x, w_ctx], dim=2))
         t_predict, t_ctx = self.token_encoder.process_content(
             x_by_tokens, model_inputs.token_lengths, model_inputs
         )
-        t_predict = F.relu(t_predict)
-
-        t_dura = torch.expm1(t_predict[..., 0])
-        # t_dura = p_proj[..., 1] * w_dura.squeeze(-1)
+        t_dura = F.relu(t_predict).squeeze(-1)
 
         if self.training:
-            w_predict = apply_mask(
-                w_predict, get_mask_from_lengths(model_inputs.num_words)
-            )
-            t_predict = apply_mask(t_predict, get_mask_from_lengths(x_length))
+            t_dura = apply_mask(t_dura, get_mask_from_lengths(x_length))
 
             if self.params.add_noise:
-                w_target = (w_target + 0.1 * torch.randn_like(w_target)).clip(min=0.1)
-                t_target = (t_target + 0.1 * torch.randn_like(t_target)).clip(min=0.1)
+                t_target = (t_target + 0.01 * torch.randn_like(t_target)).clip(min=0.1)
 
             if model_inputs.global_step % self.params.every_iter == 0:
-                losses["dur_loss_by_words"] = F.l1_loss(w_predict[..., 0], w_target)
-                losses["dur_log_loss_by_words"] = F.l1_loss(
-                    w_predict[..., 1], torch.log1p(w_target)
-                )
-                losses["dur_log_loss_by_tokens"] = F.l1_loss(
-                    t_predict[..., 0], torch.log1p(t_target)
-                )
-                losses["dur_rel_loss_by_tokens"] = F.l1_loss(
-                    t_predict[..., 1], t_target / w_dura.squeeze(-1).clip(min=0.01)
-                )
+                losses["dp_loss_by_tokens"] = F.mse_loss(t_dura, t_target)
 
             durations = t_target
         else:
             durations = t_dura
 
         return (
-            durations.squeeze(-1),
+            durations,
             {
                 "dp_context": t_ctx,
                 "dp_predict": t_dura,
@@ -172,8 +149,8 @@ class TokenLevelDPWithDiscriminator(TokenLevelDP, Component):
         )
 
         if self.training:
-            dur_real = torch.log1p(model_inputs.durations).unsqueeze(1)
-            dur_fake = torch.log1p(dur_content["dp_predict"]).unsqueeze(1)
+            dur_real = model_inputs.durations.unsqueeze(1)
+            dur_fake = dur_content["dp_predict"].unsqueeze(1)
             context = dur_content["dp_context"]
             mask = get_mask_from_lengths(x_lengths)
 
@@ -184,6 +161,6 @@ class TokenLevelDPWithDiscriminator(TokenLevelDP, Component):
                 dur_fake,
                 model_inputs.global_step,
             )
-            dur_losses.update({f"dur_{k}": v for k, v in disc_losses.items()})
+            dur_losses.update({f"dp_{k}": v for k, v in disc_losses.items()})
 
         return dur_predict, dur_content, dur_losses

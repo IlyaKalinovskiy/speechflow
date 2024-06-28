@@ -42,7 +42,7 @@ preproc:
          pitch, enhancement_energy, enhancement_pitch,
          add_pauses_from_timestamps, add_service_tokens, text,
          int_durations, calc_invert_durations, phonemes_by_frames, float_durations,
-         curvature_estimate_by_phoneme, average_by_time, norm_1, aggregate_by_phoneme,
+         curvature_estimate_by_phoneme, average_by_time, norm_1, aggregate_by_phoneme, norm_2,
          lm, ssl_features]
   pipe_cfg:
     audio_load:

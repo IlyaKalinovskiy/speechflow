@@ -170,7 +170,10 @@ model:
       durations:
         input_content: [0]
         predictor_type: TokenLevelDPWithDiscriminator
-        denormalize: false
+        predictor_params:
+          vp_params:
+            add_noise: true
+        denormalize: true
       energy:
         predictor_type: FrameLevelPredictorWithDiscriminator
         denormalize: true

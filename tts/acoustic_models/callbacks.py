@@ -131,9 +131,8 @@ class TTSTrainingVisualizer(Callback):
             )
 
         if "durations_postprocessed" in outputs.additional_content:
-            dura = dict()
-            dura["target_dura"] = targets.durations
-            dura["predict_dura"] = outputs.additional_content["durations_postprocessed"]
+            dura = {"target_dura": targets.durations,
+                    "predict_dura": outputs.additional_content["durations_postprocessed"]}
             if "fa_durations" in outputs.additional_content:
                 dura["fa_dura"] = outputs.additional_content["fa_durations"]
 
