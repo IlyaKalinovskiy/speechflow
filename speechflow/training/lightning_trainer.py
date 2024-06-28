@@ -161,7 +161,6 @@ class LightningEngine(pl.LightningModule):
 
     def on_save_checkpoint(self, checkpoint):
         checkpoint.update(self.saver.to_save)
-        self.saver.chmod()
 
 
 class GANLightningEngine(pl.LightningModule):

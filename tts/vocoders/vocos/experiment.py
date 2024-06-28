@@ -1,9 +1,7 @@
 import math
 
-from pathlib import Path
 from typing import Tuple
 
-import yaml
 import cdpam
 import numpy as np
 import torch
@@ -11,7 +9,7 @@ import torchaudio
 import transformers
 import pytorch_lightning as pl
 
-from speechflow.io.yaml_io import get_yaml_loader
+from speechflow.training.saver import ExperimentSaver
 from tts.vocoders.batch_processor import VocoderBatchProcessor
 from tts.vocoders.vocos.helpers import plot_spectrogram_to_numpy
 from tts.vocoders.vocos.loss import (
@@ -41,6 +39,7 @@ class VocosExp(pl.LightningModule):
         backbone: Backbone,
         head: FourierHead,
         batch_processor: VocoderBatchProcessor,
+        saver: ExperimentSaver,
         sample_rate: int,
         initial_learning_rate: float,
         num_warmup_steps: int = 0,
@@ -82,12 +81,15 @@ class VocosExp(pl.LightningModule):
             "pytorch_lightning==1.8.6 required"
         )
 
-        self.save_hyperparameters(ignore=["feature_extractor", "backbone", "head"])
+        self.save_hyperparameters(
+            ignore=["feature_extractor", "backbone", "head", "batch_processor", "saver"]
+        )
 
         self.feature_extractor = feature_extractor
         self.backbone = backbone
         self.head = head
         self.batch_processor = batch_processor
+        self.saver = saver
 
         self.multiperioddisc = MultiPeriodDiscriminator()
         self.multiresddisc = MultiResolutionDiscriminator()
@@ -432,29 +434,8 @@ class VocosExp(pl.LightningModule):
                 self.global_step + 1
             )
 
-    def on_save_checkpoint(self, checkpoint) -> None:
-        config_path = Path(self.logger.log_dir) / "config.yaml"
-        config = yaml.load(
-            config_path.read_text(encoding="utf-8"), Loader=get_yaml_loader()
-        )
-        config.update(self.trainer.datamodule.hparams)  # type: ignore
-        checkpoint["config"] = config
-
-        data_cfg_path = Path(config["data"]["init_args"]["config"]["cfg_path"])
-        data_cfg = yaml.load(
-            data_cfg_path.read_text(encoding="utf-8"), Loader=get_yaml_loader()
-        )
-        checkpoint["data_cfg"] = data_cfg
-
-        dl_train = self.trainer.train_dataloader.sampler
-        speaker_id_handler = dl_train.client.find_info("SpeakerIDSetter")
-        if speaker_id_handler is not None:
-            checkpoint["lang_id_map"] = speaker_id_handler.lang2id
-            checkpoint["speaker_id_map"] = speaker_id_handler.speaker2id
-        speaker_id_handler = dl_train.client.find_info("SpeakerIDSetter")
-        if speaker_id_handler is not None:
-            checkpoint["lang_id_map"] = speaker_id_handler.lang2id
-            checkpoint["speaker_id_map"] = speaker_id_handler.speaker2id
+    def on_save_checkpoint(self, checkpoint):
+        checkpoint.update(self.saver.to_save)
 
     def on_after_backward(self) -> None:
         # if not self.trainer._detect_anomaly:  # type: ignore

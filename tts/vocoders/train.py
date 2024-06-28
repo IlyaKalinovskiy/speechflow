@@ -107,7 +107,7 @@ def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
 
         pl_engine = init_class_from_config(
             pl_engine_cls, model_cfg["experiment"].init_args
-        )(feat, backbone, head, batch_processor)
+        )(feat, backbone, head, batch_processor, saver)
     else:
         raise NotImplementedError
 

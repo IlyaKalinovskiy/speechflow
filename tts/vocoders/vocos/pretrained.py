@@ -8,10 +8,10 @@ import torch
 from huggingface_hub import hf_hub_download
 from torch import nn
 
-from tts.vocoders.data_types import VocoderForwardInput, VocoderInferenceOutput
-from tts.vocoders.vocos.vocos.feature_extractors import FeatureExtractor
-from tts.vocoders.vocos.vocos.heads import FourierHead
-from tts.vocoders.vocos.vocos.models import Backbone
+from tts.vocoders.data_types import VocoderInferenceInput, VocoderInferenceOutput
+from tts.vocoders.vocos.modules.backbone import Backbone
+from tts.vocoders.vocos.modules.feature_extractors import FeatureExtractor
+from tts.vocoders.vocos.modules.heads import FourierHead
 
 
 def instantiate_class(args: Union[Any, Tuple[Any, ...]], init: Dict[str, Any]) -> Any:
@@ -120,12 +120,10 @@ class Vocos(nn.Module):
         return audio_output
 
     def inference(
-        self, vocoder_input: VocoderForwardInput, **kwargs
+        self, inputs: VocoderInferenceInput, **kwargs
     ) -> VocoderInferenceOutput:
-        feat, additional_content = self.feature_extractor.inference(
-            **vocoder_input.to_dict(),
-        )
-        waveform, _, _ = self.decode(feat)
+        feat, additional_content = self.feature_extractor(inputs, **kwargs)
+        waveform, _, _ = self.decode(feat, **kwargs)
         return VocoderInferenceOutput(
             waveform=waveform, additional_content=additional_content
         )
