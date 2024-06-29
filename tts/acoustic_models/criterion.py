@@ -99,6 +99,11 @@ class TTSLoss(BaseCriterion):
                     else:
                         var_pred = getattr(output, name)
 
+                    if var_pred is None:
+                        raise RuntimeError(
+                            f"logits for {loss.__class__.__name__} not found"
+                        )
+
                     if len(var_pred.shape) > 2:
                         var_pred = var_pred.squeeze(-1)
 

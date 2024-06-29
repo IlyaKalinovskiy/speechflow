@@ -39,8 +39,8 @@ optimizer:
     type: Adam
     weight_decay: 1.e-6
   lr_scheduler:
-    type: WarmupInvRsqrtLR
-    lr_max: 0.001
+    type: ConstLR
+    lr_max: 1.e-4
 
 loss:
   type: TTSLoss
@@ -50,8 +50,6 @@ loss:
   DiffSpectral:
     loss_fn: l1
     scale: 0.2
-  Gate:
-    loss_fn: BCEl
   VAELoss:
     scale: 0.00002
     every_iter: 1
@@ -82,6 +80,7 @@ model:
     encoder_type: ForwardEncoder
     encoder_inner_dim: 512
     encoder_params:
+      tag: encoder
       base_encoder_type: RNNEncoder
       base_encoder_params:
         cat_ling_feat: True
@@ -103,15 +102,15 @@ model:
       tag: decoder
       base_decoder_type: RNNEncoder
       base_decoder_params:
-        condition: [speaker]
-        condition_dim: 64
+        condition: [speaker_emb, style_emb]
+        condition_dim: 192
 
     postnet_type: CFMPostnet
     postnet_inner_dim: 256
     postnet_params:
       tag: postnet
-      condition: [speaker, style_emb]
-      condition_dim: 192
+      condition: [speaker_emb]
+      condition_dim: 64
 
       attention_head_dim: 128
       n_blocks: 1
@@ -123,13 +122,13 @@ model:
       StyleEncoder_0: 128
 
     va_variances:
-      0: [spectrogram_encoder]
+      0: [spectrogram_style_encoder]
       1: [aggregate_energy, aggregate_pitch]
       2: [aggregate_curv_energy, aggregate_curv_pitch]
       3: [durations]
       4: [energy, pitch]
     va_variance_params:
-      biometric_encoder:
+      biometric_style_encoder:
         tag: style_emb
         as_encoder: True
         predictor_type: StyleEncoder
@@ -141,7 +140,7 @@ model:
             source_dim: 192
             use_gmvae: true
             gmvae_n_components: 16
-      spectrogram_encoder:
+      spectrogram_style_encoder:
         tag: style_emb
         as_encoder: True
         predictor_type: StyleEncoder
@@ -189,12 +188,15 @@ model:
       durations:
         input_content: [0]
         predictor_type: TokenLevelDPWithDiscriminator
-        denormalize: false
+        predictor_params:
+          vp_params:
+            add_noise: true
+        denormalize: true
       energy:
         predictor_type: FrameLevelPredictorWithDiscriminator
-        denormalize: true
+        denormalize: false
         as_embedding: true
-        interval: [0, 150]
+        interval: [0, 1.5]
         n_bins: 256
         emb_dim: 128
         input_content: [1]
@@ -204,10 +206,10 @@ model:
         predictor_params:
           vp_params:
             use_ssl_adjustment: true
-        denormalize: true
+        denormalize: false
         log_scale: true
         as_embedding: true
-        interval: [0, 880]
+        interval: [0, 1.5]
         n_bins: 256
         emb_dim: 128
         input_content: [1]

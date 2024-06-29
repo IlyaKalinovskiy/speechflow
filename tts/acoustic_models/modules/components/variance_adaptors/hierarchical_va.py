@@ -397,12 +397,6 @@ class HierarchicalVarianceAdaptor(Component):
         if modifier is not None and prediction.shape[1] == modifier.shape[1]:
             prediction *= modifier.unsqueeze(-1) if prediction.ndim > 2 else modifier
 
-        if (
-            not isinstance(predictor, Component)
-            and variance_params.predictor_params.tag != "default"
-        ):
-            additional_content[variance_params.predictor_params.tag] = prediction[:, 0, :]
-
         return prediction, additional_content, additional_losses
 
     def _process_variance(
@@ -467,15 +461,18 @@ class HierarchicalVarianceAdaptor(Component):
             variance_embeddings[name] = embeddings
             variance_content[name].update({f"{name}_postprocessed": variance})
 
+            tag = self.va_variance_params[name].tag
+            if tag != "default":
+                variance_content[name].update({f"{tag}": embeddings})
+
             if (
                 self.training
                 and self.va_variance_params[name].with_loss
                 and name in variance_losses
             ):
-                loss = getattr(F, self.va_variance_params[name].loss_type)(
-                    prediction, targets.get(name).detach()
-                )
-                variance_losses[name].update({f"{name}_l1": loss})
+                loss_type = self.va_variance_params[name].loss_type
+                loss = getattr(F, loss_type)(prediction, targets.get(name).detach())
+                variance_losses[name].update({f"{name}_{loss_type}": loss})
 
         return (
             variance_embeddings,

@@ -65,7 +65,7 @@ class CFMPostnet(Component):
     def forward_step(self, inputs: VarianceAdaptorOutput) -> DecoderOutput:  # type: ignore
         content = self.get_content(inputs)[0]
         content_lengths = self.get_content_lengths(inputs)[0]
-        y = inputs.model_inputs.spectrogram
+        y = getattr(inputs.model_inputs, self.params.target)
         y_mask = get_mask_from_lengths(content_lengths)
 
         pad = 16 - content.shape[1] % 16
