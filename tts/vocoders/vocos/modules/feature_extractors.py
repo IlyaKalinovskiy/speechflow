@@ -128,8 +128,9 @@ class AudioFeatures(FeatureExtractor):
         use_vq: bool = False,
         use_averages: bool = False,
         use_range: bool = False,
+        use_auxiliary_classification_loss: bool = False,
+        use_auxiliary_mel_loss: bool = False,
         use_inverse_grad: bool = False,
-        use_auxiliary_loss: bool = False,
     ):
         super().__init__()
 
@@ -325,7 +326,7 @@ class AudioFeatures(FeatureExtractor):
 
         # ----- init additional modules -----
 
-        if use_inverse_grad:
+        if use_auxiliary_classification_loss:
             text_proc = TextProcessor(lang="MULTILANG")
             addm_params = AdditionalModulesParams()
             addm_params.n_symbols = text_proc.alphabet_size
@@ -337,11 +338,13 @@ class AudioFeatures(FeatureExtractor):
                 addm_params.addm_apply_token_classifier = {
                     "token_context_0": self.vq_enc.output_dim
                 }
+
+            if use_vq and use_inverse_grad:
                 addm_params.addm_apply_inverse_speaker_emb = {
                     "vq_encoder": self.vq_enc.output_dim
                 }
 
-            if use_style:
+            if use_style and use_inverse_grad:
                 addm_params.addm_apply_inverse_speaker_classifier[
                     "style_emb"
                 ] = self.style_enc.output_dim
@@ -350,7 +353,7 @@ class AudioFeatures(FeatureExtractor):
         else:
             self.addm = None
 
-        if use_auxiliary_loss:
+        if use_auxiliary_mel_loss:
             enc_cls, enc_params_cls = TTS_ENCODERS[encoder_type]
             enc_params = enc_params_cls(
                 encoder_num_blocks=encoder_num_blocks,
@@ -519,7 +522,7 @@ class AudioFeatures(FeatureExtractor):
                 content=x, content_lengths=x_lens, model_inputs=inputs
             )
             mel_predict = self.mel_predictor(enc_input).content[0]
-            losses["auxiliary_mel_loss"] = 0.1 * F.l1_loss(
+            losses["auxiliary_mel_loss"] = 0.1 * F.mse_loss(
                 mel_predict, inputs.mel_spectrogram
             )
 

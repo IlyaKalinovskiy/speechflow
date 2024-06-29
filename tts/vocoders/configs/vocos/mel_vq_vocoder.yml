@@ -1,6 +1,6 @@
 ### Model configuration ###
 
-experiment_name: mel_vocos
+experiment_name: mel_vq_vocos
 
 dirs:
   logging: vocoder_experiments
@@ -62,9 +62,19 @@ model:
       output_dim: 256
       speaker_emb_dim: 256
       encoder_num_layers: 2
+      vq_num_quantizers: 4
+      energy_interval: [0, 1.5]
+      pitch_interval: [0, 1.5]
       use_lang_emb: true
       use_speaker_emb: true
       use_speech_quality_emb: true
+      use_energy: true
+      use_pitch: true
+      use_ssl_adjustment: true
+      use_vq: true
+      use_averages: true
+      use_auxiliary_classification_loss: true
+      use_auxiliary_mel_loss: true
 
   backbone:
     class_name: VocosResNetBackbone

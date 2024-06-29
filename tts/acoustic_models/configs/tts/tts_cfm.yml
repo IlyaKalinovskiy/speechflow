@@ -11,7 +11,7 @@ batch:
   type: TTSBatchProcessor
 
 data_loaders:
-  batch_size: { default: 48, debug: 4 }
+  batch_size: { default: 24, debug: 4 }
   min_batch_size: 4
   min_prefetch_factor: { default: 50, debug: 1 }
   max_prefetch_factor: { default: 150, debug: 1 }
@@ -78,7 +78,7 @@ model:
       1: [average_emb, speech_quality_emb]
 
     encoder_type: ForwardEncoder
-    encoder_inner_dim: 512
+    encoder_inner_dim: 1024
     encoder_params:
       tag: encoder
       base_encoder_type: RNNEncoder
@@ -106,7 +106,7 @@ model:
         condition_dim: 192
 
     postnet_type: CFMPostnet
-    postnet_inner_dim: 256
+    postnet_inner_dim: 384
     postnet_params:
       tag: postnet
       condition: [speaker_emb]
