@@ -84,14 +84,14 @@ model:
     encoder_params:
       base_encoder_type: RNNEncoder
       base_encoder_params:
-        cat_ling_feat: True
-        cat_lm_feat: True
+        cat_ling_feat: true
+        cat_lm_feat: false
         condition: [speaker_emb]
         condition_dim: 64
       base_adaptor_encoder_type: RNNEncoder
       base_adaptor_encoder_params:
-        cat_ling_feat: True
-        cat_lm_feat: True
+        cat_ling_feat: true
+        cat_lm_feat: false
         condition: [speaker_emb]
         condition_dim: 64
 
@@ -112,7 +112,7 @@ model:
     va_variance_params:
       biometric_style_encoder:
         tag: style_emb
-        as_encoder: True
+        as_encoder: true
         predictor_type: StyleEncoder
         predictor_params:
           vp_output_dim: 128
@@ -124,7 +124,7 @@ model:
             gmvae_n_components: 16
       spectrogram_style_encoder:
         tag: style_emb
-        as_encoder: True
+        as_encoder: true
         predictor_type: StyleEncoder
         predictor_params:
           vp_output_dim: 128

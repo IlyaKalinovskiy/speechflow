@@ -57,11 +57,9 @@ class VocoderLoader:
         else:
             checkpoint = ckpt_preload
 
-        if "vocoder_ckpt" in checkpoint:
-            checkpoint = checkpoint["vocoder_ckpt"]
-
-        self.data_cfg = checkpoint["data_cfg"]
-        self.data_cfg["processor"].pop("verbose_logging", None)
+        self.data_cfg, model_cfg = ExperimentSaver.load_configs_from_checkpoint(
+            checkpoint
+        )
         self.data_cfg["collate"]["type"] = "SpectrogramCollate"
 
         self.pipe = self._load_data_pipeline(self.data_cfg)
@@ -71,9 +69,16 @@ class VocoderLoader:
         self.lang_id_map = checkpoint.get("lang_id_map", {})
         self.speaker_id_map = checkpoint.get("speaker_id_map", {})
 
+        model_cfg["model"]["feature_extractor"]["init_args"].n_langs = len(
+            self.lang_id_map
+        )
+        model_cfg["model"]["feature_extractor"]["init_args"].n_speakers = len(
+            self.speaker_id_map
+        )
+
         # Load model
         if self._check_vocos_signature(checkpoint):
-            self.model = self._load_vocos_model(checkpoint)
+            self.model = self._load_vocos_model(model_cfg, checkpoint)
         else:
             raise NotImplementedError
 
@@ -82,10 +87,10 @@ class VocoderLoader:
 
     @staticmethod
     def _check_vocos_signature(checkpoint: tp.Dict) -> bool:
-        return "vocos" in str(checkpoint["config"])
+        return "Vocos" in checkpoint["files"]["model.yml"]
 
     @staticmethod
-    def _load_data_pipeline(data_cfg: tp.Dict) -> PipelineComponents:
+    def _load_data_pipeline(data_cfg: Config) -> PipelineComponents:
         data_cfg["processor"].pop("dump", None)
         data_cfg["singleton_handlers"]["handlers"] = []
         pipe = PipelineComponents(Config(data_cfg).trim("ml"), data_subset_name="test")
@@ -96,9 +101,8 @@ class VocoderLoader:
         )
 
     @staticmethod
-    def _load_vocos_model(checkpoint: tp.Dict) -> Vocos:
-        model_cfg = checkpoint["config"]
-        model = Vocos.from_hparams("", config=model_cfg["model"]["init_args"])
+    def _load_vocos_model(model_cfg: Config, checkpoint: tp.Dict[str, tp.Any]) -> Vocos:
+        model = Vocos.init_from_config(model_cfg["model"])
         model.eval()
 
         state_dict: tp.Dict[str, tp.Any] = checkpoint["state_dict"]
@@ -126,7 +130,7 @@ class VocoderEvaluationInterface(VocoderLoader):
         self.preemphasis_coef = self.find_preemphasis_coef(self.data_cfg)
 
     @staticmethod
-    def find_preemphasis_coef(data_cfg: tp.Dict):
+    def find_preemphasis_coef(data_cfg: Config):
         beta = None
         for item in data_cfg["preproc"]["pipe_cfg"].values():
             if isinstance(item, dict) and item.get("type", None) == "SignalProcessor":

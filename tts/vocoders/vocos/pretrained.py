@@ -1,20 +1,20 @@
-from __future__ import annotations
-
-from typing import Any, Dict, Optional, Tuple, Union
+import typing as tp
 
 import yaml
 import torch
 
-from huggingface_hub import hf_hub_download
 from torch import nn
 
+from speechflow.io import Config
 from tts.vocoders.data_types import VocoderInferenceInput, VocoderInferenceOutput
 from tts.vocoders.vocos.modules.backbone import Backbone
 from tts.vocoders.vocos.modules.feature_extractors import FeatureExtractor
 from tts.vocoders.vocos.modules.heads import FourierHead
 
 
-def instantiate_class(args: Union[Any, Tuple[Any, ...]], init: Dict[str, Any]) -> Any:
+def instantiate_class(
+    args: tp.Union[tp.Any, tp.Tuple[tp.Any, ...]], init: tp.Dict[str, tp.Any]
+) -> tp.Any:
     """Instantiates a class with the given args and init.
 
     Args:
@@ -28,7 +28,10 @@ def instantiate_class(args: Union[Any, Tuple[Any, ...]], init: Dict[str, Any]) -
     kwargs = init.get("init_args", {})
     if not isinstance(args, tuple):
         args = (args,)
-    class_module, class_name = init["class_path"].rsplit(".", 1)
+
+    class_path = f"tts.vocoders.vocos.{init.get('class_name', {})}"
+    class_module, class_name = class_path.rsplit(".", 1)
+
     module = __import__(class_module, fromlist=[class_name])
     args_class = getattr(module, class_name)
     return args_class(*args, **kwargs)
@@ -55,36 +58,15 @@ class Vocos(nn.Module):
         self.head = head
 
     @classmethod
-    def from_hparams(cls, config_path: str, config: Dict = None) -> Vocos:
-        """Class method to create a new Vocos model instance from hyperparameters stored
-        in a yaml configuration file."""
-        if config_path:
-            with open(config_path) as f:
-                config = yaml.safe_load(f)
-        feature_extractor = instantiate_class(args=(), init=config["feature_extractor"])
-        backbone = instantiate_class(args=(), init=config["backbone"])
-        head = instantiate_class(args=(), init=config["head"])
+    def init_from_config(cls, cfg: Config) -> "Vocos":
+        feature_extractor = instantiate_class(args=(), init=cfg["feature_extractor"])
+        backbone = instantiate_class(args=(), init=cfg["backbone"])
+        head = instantiate_class(args=(), init=cfg["head"])
         model = cls(feature_extractor=feature_extractor, backbone=backbone, head=head)
         return model
 
-    @classmethod
-    def from_pretrained(cls, repo_id: str, revision: Optional[str] = None) -> Vocos:
-        """Class method to create a new Vocos model instance from a pre-trained model
-        stored in the Hugging Face model hub."""
-        config_path = hf_hub_download(
-            repo_id=repo_id, filename="config.yaml", revision=revision
-        )
-        model_path = hf_hub_download(
-            repo_id=repo_id, filename="pytorch_model.bin", revision=revision
-        )
-        model = cls.from_hparams(config_path)
-        state_dict = torch.load(model_path, map_location="cpu")
-        model.load_state_dict(state_dict)
-        model.eval()
-        return model
-
     @torch.inference_mode()
-    def forward(self, audio_input: torch.Tensor, **kwargs: Any) -> torch.Tensor:
+    def forward(self, audio_input: torch.Tensor, **kwargs: tp.Any) -> torch.Tensor:
         """Method to run a copy-synthesis from audio waveform. The feature extractor first
         processes the audio input, which is then passed through the backbone and the head
         to reconstruct the audio output.
@@ -103,7 +85,7 @@ class Vocos(nn.Module):
         return audio_output
 
     @torch.inference_mode()
-    def decode(self, features_input: torch.Tensor, **kwargs: Any) -> torch.Tensor:
+    def decode(self, features_input: torch.Tensor, **kwargs: tp.Any) -> torch.Tensor:
         """Method to decode audio waveform from already calculated features. The features
         input is passed through the backbone and the head to reconstruct the audio output.
 
