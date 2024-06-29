@@ -42,7 +42,7 @@ class TTSBatchProcessor(BaseBatchProcessor):
             "word_durations",
             "word_invert_durations",
         ]:
-            if name in collated.aggregated:
+            if collated.aggregated and name in collated.aggregated:
                 collated.additional_fields[name] = collated.aggregated.get(name)
 
         _input: TTSForwardInput = init_class_from_config(

@@ -38,11 +38,11 @@ parser:
 
 preproc:
   pipe: [audio_load, voice_bio_speechbrain, store_bio_emb, voice_bio_wespeaker, mean_bio_embedding,
-         speech_quality, spectrogram, melscale, add_gate_value,
+         speech_quality, spectrogram, melscale,
          pitch, enhancement_energy, enhancement_pitch,
          add_pauses_from_timestamps, add_service_tokens, text,
          int_durations, calc_invert_durations, phonemes_by_frames, float_durations,
-         average_by_time, norm_1, aggregate_by_phoneme,
+         average_by_time, norm_1,
          ssl_features,
          trim, mu_law]
   pipe_cfg:
@@ -103,22 +103,13 @@ preproc:
     text:
       type: TextProcessor
       lang: { default: MULTILANG, ru: RU, en: EN, ml: MULTILANG }
+    average_by_time:
+      attributes: [durations, energy, pitch, rate]
+      use_quantile: true
     norm_1:
       type: normalize
       attributes: [energy, pitch]
       normalize_by: speaker
-    aggregate_by_phoneme:
-      attributes: [energy, pitch, mel]
-      agg: mean
-    curvature_estimate_by_phoneme:
-      attributes: [energy, pitch]
-    norm_2:
-      type: normalize
-      attributes: [durations]
-      normalize_by: speaker
-    average_by_time:
-      attributes: [durations, energy, pitch, rate]
-      use_quantile: true
     int_durations:
       type: calc_durations
       as_int: true

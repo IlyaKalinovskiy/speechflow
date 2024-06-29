@@ -343,7 +343,7 @@ class SSLProcessor(BaseAudioProcessor):
         ssl_type: str,
         ssl_params: Config = Config.empty(),
         resize_from: tp.Optional[str] = None,
-        use_precompute: bool = True,
+        use_precompute: bool = False,
         device: str = "cpu",
     ):
         super().__init__(device=device)

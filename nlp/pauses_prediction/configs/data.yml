@@ -24,7 +24,7 @@ dataset:
 
 parser:
   type: TTSDSParser
-  pipe: [wave_strip, split_by_phrases, check_phoneme_length]
+  pipe: [audio_strip, split_by_phrases, check_phoneme_length]
   split_by_phrases:
     max_duration: 20
   check_phoneme_length:

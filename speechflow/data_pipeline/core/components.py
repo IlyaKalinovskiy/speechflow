@@ -585,7 +585,7 @@ class DataPipeline:
         }
 
         try:
-            LOGGER.info(trace(self, message="Pickling DataPipeline"))
+            LOGGER.debug(trace(self, message="Pickling DataPipeline"))
 
             temp = {}
             for name in self.subsets:
@@ -597,7 +597,7 @@ class DataPipeline:
             for name in self.subsets:
                 self[name].sampler = temp[name]
         except (TypeError, pickle.PickleError) as e:
-            LOGGER.warning(
+            LOGGER.debug(
                 trace(self, e, "Current pipelines configuration not support pickle!")
             )
 

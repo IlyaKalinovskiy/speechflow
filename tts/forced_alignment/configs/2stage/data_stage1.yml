@@ -20,9 +20,9 @@ dataset:
 
 parser:
   type: TTSDSParser
-  pipe: [wave_strip, split_by_phrases]
+  pipe: [audio_strip, split_by_phrases]
   pipe_cfg:
-    wave_strip:
+    audio_strip:
       pad: 0.25
     split_by_phrases:
       max_duration: 10
