@@ -23,6 +23,7 @@ REFERENECE_TYPE = tp.Union[
 
 @dataclass
 class ProsodyReference:
+    lang: tp.Optional[str] = None
     speaker_name: tp.Optional[str] = None
     speaker_id: tp.Optional[int] = None
 
@@ -32,28 +33,29 @@ class ProsodyReference:
     speaker_audio_path: tp.Optional[tp.Union[str, Path]] = None
     speaker_audio_chunk: tp.Optional[AudioChunk] = None
     speaker_spectrogram: tp.Optional[npt.NDArray] = None
-    speaker_ssl_embeddings: tp.Optional[npt.NDArray] = None
+    speaker_ssl_feat: tp.Optional[npt.NDArray] = None
 
     style_emb: tp.Optional[npt.NDArray] = None
     style_emb_index: tp.Optional[tp.Union[int, tp.Tuple[str, int]]] = None
+    style_emb_mean: tp.Optional[npt.NDArray] = None
     style_audio_path: tp.Optional[tp.Union[str, Path]] = None
     style_audio_chunk: tp.Optional[AudioChunk] = None
     style_spectrogram: tp.Optional[npt.NDArray] = None
-    style_ssl_embeddings: tp.Optional[npt.NDArray] = None
+    style_ssl_feat: tp.Optional[npt.NDArray] = None
 
-    model_feat: tp.Optional[tp.Dict[str, torch.Tensor]] = None
+    model_feats: tp.Optional[tp.Dict[str, torch.Tensor]] = None
     meta: tp.Optional[tp.Dict] = None
 
     def __post_init__(self):
-        if self.model_feat is None:
-            self.model_feat = {}
+        if self.model_feats is None:
+            self.model_feats = {}
         if self.meta is None:
             self.meta = {}
 
     def __eq__(self, other: "ProsodyReference"):
         return (
             self.speaker_name == other.speaker_name
-            and self.model_feat == other.model_feat
+            and self.model_feats == other.model_feats
         )
 
     def speaker_reference_is_empty(self):
@@ -150,7 +152,7 @@ class ProsodyReference:
                 self.speaker_emb_mean = mean_bio_embeddings[self.speaker_name]
 
     def set_bio_embedding(
-        self, bio_proc: callable, bio_embeddings: tp.Optional[tp.Dict] = None
+        self, biometric_pipe: callable, bio_embeddings: tp.Optional[tp.Dict] = None
     ):
         for ref_type in ["speaker", "style"]:
             attr_name = f"{ref_type}_emb_index"
@@ -176,8 +178,15 @@ class ProsodyReference:
             if getattr(self, attr_name) is not None:
                 audio_chunk = getattr(self, attr_name)
                 ds = AudioDataSample(audio_chunk=audio_chunk)
-                bio_emb = bio_proc.process(ds).speaker_emb
-                setattr(self, f"{ref_type}_bio_emb", bio_emb)
+                ds = biometric_pipe.preprocessing_datasample([ds])[0]
+                if not ds.additional_fields:
+                    setattr(self, f"{ref_type}_bio_emb", ds.speaker_emb)
+                else:
+                    setattr(
+                        self,
+                        f"{ref_type}_bio_emb",
+                        list(ds.additional_fields.values())[0],
+                    )
                 continue
 
     def set_spectrogram_reference(self, spectrogram_pipe: callable):
@@ -188,39 +197,27 @@ class ProsodyReference:
                 ds = AudioDataSample(audio_chunk=audio_chunk)
                 ref_ds = spectrogram_pipe.preprocessing_datasample([ds.copy()])[0]
                 setattr(self, f"{ref_type}_spectrogram", ref_ds.mel)
+                setattr(self, f"{ref_type}_ssl_feat", ref_ds.ssl_feat)
                 continue
 
-    def set_ssl_embeddings(self, ssl_proc: callable):
-        for ref_type in ["speaker", "style"]:
-            attr_name = f"{ref_type}_audio_chunk"
-            if getattr(self, attr_name) is not None:
-                audio_chunk = getattr(self, attr_name)
-                mel = getattr(self, f"{ref_type}_spectrogram")
-                ds = SpectrogramDataSample(audio_chunk=audio_chunk, mel=mel)
-                ref_ds = ssl_proc.process(ds.copy())
-                setattr(self, f"{ref_type}_ssl_embeddings", ref_ds.ssl_feat.encode)
-                continue
-
-    def set_feat_from_model(self, model: callable):
-        try:
-            self.model_feat.update(
-                model.get_speaker_embedding(
-                    self.speaker_id, self.speaker_emb, self.speaker_emb_mean
-                )
+    def set_feats_from_model(self, model: callable):
+        self.model_feats.update(
+            model.get_speaker_embedding(
+                self.speaker_id, self.speaker_emb, self.speaker_emb_mean
             )
-        except Exception as e:
-            print(e)
+        )
 
-        self.model_feat.update(
+        self.model_feats.update(
             model.get_style_embedding(
                 self.speaker_emb,
                 self.speaker_spectrogram,
-                self.speaker_ssl_embeddings,
+                self.speaker_ssl_feat,
             )
         )
-        self.model_feat = {
+
+        self.model_feats = {
             k: v.detach().cpu().numpy() if isinstance(v, torch.Tensor) else v
-            for k, v in self.model_feat.items()
+            for k, v in self.model_feats.items()
         }
 
     def copy_speaker_name(self, item: "ProsodyReference"):
@@ -234,7 +231,7 @@ class ProsodyReference:
         self.speaker_audio_path = item.speaker_audio_path
         self.speaker_audio_chunk = item.speaker_audio_chunk
         self.speaker_spectrogram = item.speaker_spectrogram
-        self.speaker_ssl_embeddings = item.speaker_ssl_embeddings
+        self.speaker_ssl_feat = item.speaker_ssl_feat
 
     def copy_style_reference(self, item: "ProsodyReference"):
         self.style_emb_index = item.style_emb_index
@@ -242,7 +239,7 @@ class ProsodyReference:
         self.style_audio_path = item.style_audio_path
         self.style_audio_chunk = item.style_audio_chunk
         self.style_spectrogram = item.style_spectrogram
-        self.style_ssl_embeddings = item.style_ssl_embeddings
+        self.style_ssl_feat = item.style_ssl_feat
 
     def sampling_reference(
         self,
@@ -253,12 +250,16 @@ class ProsodyReference:
         self._sampling_reference("style", all_speakers, bio_embeddings)
 
     def swap_reference(self, _from: str, _to: str):
-        setattr(self, f"{_to}_emb", getattr(self, f"{_from}_bio_emb"))
-        setattr(self, f"{_to}_emb_index", getattr(self, f"{_from}_emb_index"))
-        setattr(self, f"{_to}_audio_path", getattr(self, f"{_from}_audio_path"))
-        setattr(self, f"{_to}_audio_chunk", getattr(self, f"{_from}_audio_chunk"))
-        setattr(self, f"{_to}_spectrogram", getattr(self, f"{_from}_spectrogram"))
-        setattr(self, f"{_to}_ssl_embeddings", getattr(self, f"{_from}_ssl_embeddings"))
+        if getattr(self, f"{_to}_emb") is None:
+            setattr(self, f"{_to}_emb", getattr(self, f"{_from}_emb"))
+        if getattr(self, f"{_to}_emb_index") is None:
+            setattr(self, f"{_to}_emb_index", getattr(self, f"{_from}_emb_index"))
+        if getattr(self, f"{_to}_emb_mean") is None:
+            setattr(self, f"{_to}_emb_mean", getattr(self, f"{_from}_emb_mean"))
+        if getattr(self, f"{_to}_spectrogram") is None:
+            setattr(self, f"{_to}_spectrogram", getattr(self, f"{_from}_spectrogram"))
+        if getattr(self, f"{_to}_ssl_feat") is None:
+            setattr(self, f"{_to}_ssl_feat", getattr(self, f"{_from}_ssl_feat"))
 
     def filling(self):
         assert self.speaker_name is not None
@@ -273,13 +274,31 @@ class ProsodyReference:
         if self.speaker_spectrogram is None and self.style_spectrogram is not None:
             self.speaker_spectrogram = self.style_spectrogram
 
-        if self.style_ssl_embeddings is None and self.speaker_ssl_embeddings is not None:
-            self.style_ssl_embeddings = self.speaker_ssl_embeddings
-        if self.speaker_ssl_embeddings is None and self.style_ssl_embeddings is not None:
-            self.speaker_ssl_embeddings = self.style_ssl_embeddings
+        if self.style_ssl_feat is None and self.speaker_ssl_feat is not None:
+            self.style_ssl_feat = self.speaker_ssl_feat
+        if self.speaker_ssl_feat is None and self.style_ssl_feat is not None:
+            self.speaker_ssl_feat = self.style_ssl_feat
 
     def copy(self) -> "ProsodyReference":
         return deepcopy(self)
+
+    def get_model_feat(self, name: str, shape=None, device=None) -> torch.Tensor:
+        feat = self.model_feats[name]
+        if not isinstance(feat, torch.Tensor):
+            feat = torch.from_numpy(feat)
+
+        if shape is not None:
+            if len(shape) == 3:
+                if feat.ndim == 2:
+                    feat = feat.unsqueeze(1)
+                feat = feat.expand(shape[0], shape[1], -1)
+            else:
+                feat = feat.expand(shape[0], -1)
+
+        if device is not None:
+            feat = feat.to(device)
+
+        return feat
 
 
 class RefSpan:
@@ -325,6 +344,7 @@ class ComplexProsodyReference:
 
     @staticmethod
     def create(
+        lang: str,
         speaker_name: tp.Union[str, tp.Dict[str, str]],
         speaker_reference: tp.Optional[
             tp.Union[REFERENECE_TYPE, tp.Dict[str, REFERENECE_TYPE]]
@@ -340,6 +360,7 @@ class ComplexProsodyReference:
                 raise RuntimeError("You must set the name of the base speaker.")
 
         prosody_ref = ComplexProsodyReference()
+        prosody_ref.refs["default"].lang = lang
         prosody_ref.refs["default"].speaker_name = speaker_name["default"]
 
         for key, sp in speaker_name.items():
@@ -390,9 +411,6 @@ class ComplexProsodyReference:
         if default_ref.is_empty():
             raise RuntimeError("You must set the default speaker or style reference.")
 
-        if default_ref.speaker_reference_is_empty():
-            default_ref.swap_reference("style", "speaker")
-
         if default_ref.style_reference_is_empty():
             default_ref.swap_reference("speaker", "style")
 
@@ -413,23 +431,19 @@ class ComplexProsodyReference:
         for key in self.refs.keys():
             self.refs[key].set_speaker_id(speaker_id_map, mean_bio_embeddings)
 
-    def set_bio_embedding(self, bio_proc: callable, bio_embeddings: tp.Dict):
+    def set_bio_embedding(self, biometric_pipe: callable, bio_embeddings: tp.Dict):
         for key in self.refs.keys():
-            self.refs[key].set_bio_embedding(bio_proc, bio_embeddings)
+            self.refs[key].set_bio_embedding(biometric_pipe, bio_embeddings)
 
     def set_spectrogram_reference(self, spectrogram_pipe: callable):
         for key in self.refs.keys():
             self.refs[key].set_spectrogram_reference(spectrogram_pipe)
 
-    def set_ssl_embeddings(self, ssl_proc: callable):
-        for key in self.refs.keys():
-            self.refs[key].set_ssl_embeddings(ssl_proc)
-
     @torch.no_grad()
-    def set_feat_from_model(self, model: callable):
+    def set_feats_from_model(self, model: callable):
         for key in self.refs.keys():
             try:
-                self.refs[key].set_feat_from_model(model)
+                self.refs[key].set_feats_from_model(model)
             except Exception as e:
                 print(e)
 
@@ -438,9 +452,8 @@ class ComplexProsodyReference:
         speaker_id_map: tp.Dict,
         bio_embeddings: tp.Optional[tp.Dict[str, tp.Any]] = None,
         mean_bio_embeddings: tp.Optional[tp.Dict[str, tp.Any]] = None,
-        bio_proc: tp.Optional[callable] = None,
-        spectrogram_pipe: tp.Optional[callable] = None,
-        # ssl_proc: tp.Optional[callable] = None,
+        biometric_pipe: tp.Optional[callable] = None,
+        audio_pipe: tp.Optional[callable] = None,
         seed: int = 0,
     ):
         if not self.is_initialize:
@@ -451,9 +464,8 @@ class ComplexProsodyReference:
 
             self.preprocessing(list(speaker_id_map.keys()), bio_embeddings)
             self.set_speaker_id(speaker_id_map, mean_bio_embeddings)
-            self.set_bio_embedding(bio_proc, bio_embeddings)
-            self.set_spectrogram_reference(spectrogram_pipe)
-            # self.set_ssl_embeddings(ssl_proc)
+            self.set_bio_embedding(biometric_pipe, bio_embeddings)
+            self.set_spectrogram_reference(audio_pipe)
             self.postprocessing()
 
             self.is_initialize = True

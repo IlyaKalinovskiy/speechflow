@@ -6,9 +6,10 @@ import importlib
 from pathlib import Path
 
 __all__ = [
-    "find_files",
     "get_root_dir",
     "get_module_dir",
+    "find_files",
+    "find_files_by_folders",
 ]
 
 
@@ -51,5 +52,23 @@ def find_files(
             for fn in fs
             if fn.endswith(extensions)
         ]
+
+    return file_list
+
+
+def find_files_by_folders(
+    dir_path: str,
+    extensions=common_file_extensions,
+    ext_lower=False,
+) -> tp.List[tp.List[str]]:
+
+    file_list = []
+    for r, ds, fs in os.walk(dir_path):
+        if ext_lower:
+            files = [os.path.join(r, fn) for fn in fs if fn.lower().endswith(extensions)]
+        else:
+            files = [os.path.join(r, fn) for fn in fs if fn.endswith(extensions)]
+        if len(files) > 0:
+            file_list.append(files)
 
     return file_list

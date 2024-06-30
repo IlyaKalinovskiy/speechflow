@@ -8,8 +8,8 @@ from multilingual_text_parser import Token
 from annotator.asr_services import OpenAIASR
 from annotator.audiobook_spliter import AudiobookSpliter
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
+from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
 from speechflow.data_pipeline.datasample_processors.tts_processors import (
-    TextProcessor,
     add_pauses_from_text,
 )
 

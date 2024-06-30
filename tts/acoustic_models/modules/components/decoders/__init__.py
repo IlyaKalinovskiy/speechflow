@@ -1,3 +1,3 @@
 from .cfm_decoder import CFMDecoder, CFMDecoderParams
-from .tf_decoder import TFDecoder, TFDecoderParams
+from .taco_decoder import TacoDecoder, TacoDecoderParams
 from .wrapper_decoder import WrapperDecoder, WrapperDecoderParams

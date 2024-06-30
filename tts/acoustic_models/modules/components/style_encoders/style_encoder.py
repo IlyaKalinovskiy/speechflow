@@ -7,7 +7,6 @@ from torch import nn
 from torch.nn import functional as F
 from vector_quantize_pytorch import ResidualFSQ
 
-from speechflow.training.utils.tensor_utils import get_mask_from_lengths
 from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.params import VariancePredictorParams
 
@@ -73,7 +72,7 @@ class StyleEncoder(Component):
                 x, x_lengths, self.params.min_spec_len, self.params.max_spec_len
             )
 
-        style_emb = self.encoder(x, x_lengths, model_inputs, **kwargs)[0]
+        style_emb, _, _ = self.encoder(x, x_lengths, model_inputs, **kwargs)
 
         if self.params.use_gmvae:
             gmvae_emb, content, losses = self.gmvae(
@@ -100,10 +99,10 @@ class StyleEncoder(Component):
 
     def forward_step(self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs):
         if model_inputs.prosody_reference is not None:
-            if "style_emb" in model_inputs.prosody_reference.default.model_feat:
-                style_emb = model_inputs.prosody_reference.default.model_feat["style_emb"]
-                # style_emb = torch.from_numpy(style_emb).to(x.device)
-                # style_emb = style_emb.expand(x_lengths.shape[0], -1).unsqueeze(1)
+            if "style_emb" in model_inputs.prosody_reference.default.model_feats:
+                style_emb = model_inputs.prosody_reference.default.get_model_feat(
+                    "style_emb", x.shape, x.device
+                )
                 return style_emb, {}, {}
 
         x = self.get_condition(model_inputs, self.params.source, average_by_time=False)

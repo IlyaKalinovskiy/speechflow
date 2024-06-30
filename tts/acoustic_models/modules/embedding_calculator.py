@@ -168,7 +168,7 @@ class EmbeddingCalculator(BaseTorchModel):
 
         biometric_embedding = inputs.speaker_emb
 
-        if hasattr(self, "speaker_emb_proj"):
+        if biometric_embedding is not None and hasattr(self, "speaker_emb_proj"):
             biometric_embedding = self.speaker_emb_proj(biometric_embedding).squeeze(1)
 
         return biometric_embedding

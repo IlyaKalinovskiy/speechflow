@@ -131,8 +131,10 @@ class TTSTrainingVisualizer(Callback):
             )
 
         if "durations_postprocessed" in outputs.additional_content:
-            dura = {"target_dura": targets.durations,
-                    "predict_dura": outputs.additional_content["durations_postprocessed"]}
+            dura = {
+                "target_dura": targets.durations,
+                "predict_dura": outputs.additional_content["durations_postprocessed"],
+            }
             if "fa_durations" in outputs.additional_content:
                 dura["fa_dura"] = outputs.additional_content["fa_durations"]
 
@@ -141,7 +143,7 @@ class TTSTrainingVisualizer(Callback):
                 dura[k] = dura[k][:T]
 
             spec = targets.spectrogram[random_idx].T.detach().cpu().numpy()
-            self._log_spectrogram(pl_module, trainer, spec[:, :T], f"Durations", dura)
+            self._log_spectrogram(pl_module, trainer, spec[:, :T], "Durations", dura)
 
         if "fa_attn" in outputs.additional_content:
             fa_attn = outputs.additional_content["fa_attn"]
@@ -194,6 +196,7 @@ class TTSAudioSynthesizer(Callback):
         text_path: Optional[tp.Union[str, Path]] = None,
         num_samples: int = 3,
     ):
+        from tts.acoustic_models.interface.eval_interface import TTSEvaluationInterface
         from tts.vocoders.eval_interface import VocoderEvaluationInterface
 
         vocoder_path = Path(vocoder_path)
@@ -209,9 +212,11 @@ class TTSAudioSynthesizer(Callback):
             self.text_for_synthesis = Path(text_path).read_text(encoding="utf-8")
 
         self.num_samples = num_samples
-        self.sr = self.vocoder.output_sample_rate
+        self.sr = self.vocoder.sample_rate
 
     def on_save_checkpoint(self, pl_module: pl.LightningModule, *args):
+        from tts.acoustic_models.interface.eval_interface import TTSEvaluationInterface
+
         all_checkpoints = glob.glob(
             os.path.join(pl_module.default_root_dir, "_checkpoints/epoch*.ckpt")
         )
@@ -235,7 +240,6 @@ class TTSAudioSynthesizer(Callback):
                         self.text_for_synthesis,
                         self.tts.lang,
                         speaker_name=speaker_name,
-                        speaker_emb_index=-1,
                     )
                 )
             except Exception as e:

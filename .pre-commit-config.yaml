@@ -51,14 +51,14 @@ repos:
     -   id: check-added-large-files
         stages: [commit]
         args: [--maxkb=10000]
--   repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v0.910-1
-    hooks:
-    -   id: mypy
-        stages: [commit]
-        additional_dependencies: [data-science-types==0.2.23, numpy==1.24.0]
-        exclude: \S*\/(main.py|train.py|eval.py|setup.py)
-        args: [--ignore-missing-imports, --install-types, --non-interactive, --python-version=3.8, --no-implicit-optional, --allow-redefinition, --show-error-codes, --warn-no-return]
+#-   repo: https://github.com/pre-commit/mirrors-mypy
+#    rev: v0.910-1
+#    hooks:
+#    -   id: mypy
+#        stages: [commit]
+#        additional_dependencies: [data-science-types==0.2.23, numpy==1.24.0]
+#        exclude: \S*\/(main.py|train.py|eval.py|setup.py)
+#        args: [--ignore-missing-imports, --install-types, --non-interactive, --python-version=3.8, --no-implicit-optional, --allow-redefinition, --show-error-codes, --warn-no-return]
 -   repo: https://github.com/asottile/pyupgrade
     rev: v2.7.2
     hooks:

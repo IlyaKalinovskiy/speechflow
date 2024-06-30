@@ -1,4 +1,4 @@
-from typing import Optional
+import typing as tp
 
 import torch
 
@@ -93,7 +93,7 @@ class IMDCTSymExpHead(FourierHead):
         dim: int,
         mdct_frame_len: int,
         padding: str = "same",
-        sample_rate: Optional[int] = None,
+        sample_rate: tp.Optional[int] = None,
         clip_audio: bool = False,
     ):
         super().__init__()
@@ -191,7 +191,7 @@ class DACHead(FourierHead):
         with_sm_loss: bool = False,
         sm_loss_every_iter: int = 1,
         sm_loss_max_iter: int = 1_000_000_000,
-        speaker_biometric_model: str = "speechbrain",
+        speaker_biometric_model: tp.Literal["speechbrain", "wespeaker"] = "speechbrain",
     ):
         super().__init__()
         self.with_dac_loss = with_dac_loss

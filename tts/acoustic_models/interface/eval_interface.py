@@ -20,9 +20,6 @@ import speechflow
 from nlp.prosody_prediction.eval_interface import ProsodyPredictionInterface
 from speechflow.data_pipeline.core.components import PipelineComponents
 from speechflow.data_pipeline.datasample_processors import add_pauses_from_text
-from speechflow.data_pipeline.datasample_processors.biometric_processors import (
-    VoiceBiometricProcessor,
-)
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
 from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
 from speechflow.io import check_path, tp_PATH
@@ -69,6 +66,7 @@ class TTSContext:
 
     @staticmethod
     def create(
+        lang: str,
         speaker_name: tp.Union[str, tp.Dict[str, str]],
         speaker_reference: tp.Optional[
             tp.Union[REFERENECE_TYPE, tp.Dict[str, REFERENECE_TYPE]]
@@ -79,6 +77,7 @@ class TTSContext:
         seed: int = 0,
     ) -> "TTSContext":
         prosody_reference = ComplexProsodyReference.create(
+            lang,
             speaker_name,
             speaker_reference,
             style_reference,
@@ -217,11 +216,6 @@ class TTSEvaluationInterface:
             self._dump_to_file(handler["statistics_file"], self.stat_ranges.statistics)
 
         self.mean_bio_embs = self.info["singleton_handlers"].get("MeanBioEmbeddings")
-        # TODO: remove
-        self.mean_bio_embs.mean_bio_embeddings = {
-            s: np.asarray([emb], dtype=np.float32)
-            for s, emb in self.mean_bio_embs.mean_bio_embeddings.items()
-        }
 
         if self.mean_bio_embs is not None:
             embs = self.mean_bio_embs.mean_bio_embeddings
@@ -258,40 +252,35 @@ class TTSEvaluationInterface:
         ignored_fields = {
             "word_timestamps",
             "phoneme_timestamps",
-            "speaker_emb",
+            "speaker_emb_mean",
         }
-        pipeline = self.pipeline.with_ignored_fields(ignored_data_fields=ignored_fields)
+        pipeline = self.pipeline.with_ignored_fields(
+            ignored_metadata_fields={"sega"}, ignored_data_fields=ignored_fields
+        )
 
         self.text_pipe = pipeline.with_ignored_fields(
-            ignored_metadata_fields={"sega"},
             ignored_data_fields={"audio_chunk"},
         ).with_ignored_handlers(
             ignored_data_handlers={
                 "add_pauses_from_text",
             }
         )
-        self.spectrogram_pipe = pipeline.with_ignored_fields(
-            ignored_metadata_fields={"sega"},
+        self.biometric_pipe = pipeline.with_ignored_fields(
             ignored_data_fields={
-                "pitch",
                 "sent",
+                "pitch",
                 "gate",
             },
-        ).with_ignored_handlers(
-            ignored_data_handlers={
-                "average_by_time",
-                "mean_bio_embedding",
-                "VoiceBiometricProcessor",
-            }
         )
-
-        if "voice_bio_wespeaker" in data_cfg["preproc"]["pipe"]:
-            self.bio_proc = init_class_from_config(
-                VoiceBiometricProcessor,
-                data_cfg["preproc"]["pipe_cfg"].voice_bio_wespeaker,
-            )()
-        else:
-            self.bio_proc = None
+        self.audio_pipe = self.biometric_pipe.with_ignored_handlers(
+            ignored_data_handlers={"VoiceBiometricProcessor"}
+        )
+        self.biometric_pipe.data_preprocessing = [
+            item
+            for item in self.biometric_pipe.data_preprocessing
+            if item not in self.audio_pipe.data_preprocessing
+            or "store_field" in str(item)
+        ]
 
         self.add_pauses_from_text = init_method_from_config(
             add_pauses_from_text, data_cfg["preproc"]["pipe_cfg"]["add_pauses_from_text"]
@@ -438,7 +427,7 @@ class TTSEvaluationInterface:
         self,
         text: str,
         lang: str,
-        opt: tp.Optional[TTSOptions] = None,
+        opt: TTSOptions = TTSOptions(),
     ) -> Doc:
         if self.lang_id_map and lang not in self.lang_id_map:
             raise ValueError(f"Language {lang} not support in current TTS model!")
@@ -447,15 +436,14 @@ class TTSEvaluationInterface:
             LOGGER.info(f"Initial TextParser for {lang} language")
             self.text_parser[lang] = TextParser(lang, device=str(self.device))
 
-        if opt is None:
-            opt = TTSOptions()
-
         doc = self.text_parser[lang].process(Doc(text))
 
         doc = self.predict_pauses(doc, opt.begin_pause, opt.end_pause)
         return doc
 
-    def predict_prosody_by_text(self, doc: Doc, ctx: TTSContext, opt: TTSOptions) -> Doc:
+    def predict_prosody_by_text(
+        self, doc: Doc, ctx: TTSContext, opt: TTSOptions = TTSOptions()
+    ) -> Doc:
         if self.prosody_interface is not None:
             doc = self.prosody_interface.predict(
                 doc,
@@ -467,32 +455,24 @@ class TTSEvaluationInterface:
 
     def prepare_embeddings(
         self,
-        lang: str,
         ctx: TTSContext,
-        opt: TTSOptions,
+        opt: TTSOptions = TTSOptions(),
     ) -> TTSContext:
-        lang_id = self.lang_id_map.get(lang, 0)
         ctx.prosody_reference.initialize(
             self.speaker_id_map,
             self.bio_embs,
             self.mean_bio_embs.mean_bio_embeddings,
-            self.bio_proc,
-            self.spectrogram_pipe,
+            self.biometric_pipe,
+            self.audio_pipe,
             seed=ctx.seed,
         )
 
         set_all_seed(ctx.seed)
 
-        ctx.prosody_reference.set_feat_from_model(self.model)
-
-        if ctx.prosody_reference.default.style_audio_path is not None:
-            ds = TTSDataSample(
-                audio_chunk=ctx.prosody_reference.default.style_audio_chunk
-            )
-            ref_ds = self.spectrogram_pipe.preprocessing_datasample([ds.copy()])[0]
+        ctx.prosody_reference.set_feats_from_model(self.model)
 
         ds = TTSDataSample(
-            lang_id=lang_id,
+            lang_id=self.lang_id_map.get(ctx.prosody_reference.default.lang, 0),
             mel=ctx.prosody_reference.default.style_spectrogram,
             speaker_name=ctx.prosody_reference.default.speaker_name,
             speaker_emb=ctx.prosody_reference.default.speaker_emb,
@@ -521,7 +501,7 @@ class TTSEvaluationInterface:
                     [f0_min, f0_max, f0_max - f0_min], dtype=np.float32
                 )
 
-        batch = self.spectrogram_pipe.to_batch([ds])
+        batch = self.audio_pipe.to_batch([ds])
         model_inputs, _, _ = self.batch_processor(batch)
 
         with torch.no_grad():
@@ -591,7 +571,7 @@ class TTSEvaluationInterface:
         self,
         sents: tp.List[Sentence],
         ctx: TTSContext,
-        opt: TTSOptions,
+        opt: TTSOptions = TTSOptions(),
     ) -> TTSForwardInputWithSSML:
         samples = []
         for sent in sents:
@@ -634,7 +614,7 @@ class TTSEvaluationInterface:
         self,
         inputs: TTSForwardInputWithSSML,
         ctx: TTSContext,
-        opt: TTSOptions,
+        opt: TTSOptions = TTSOptions(),
     ) -> TTSForwardOutput:
         set_all_seed(ctx.seed)
 
@@ -655,20 +635,15 @@ class TTSEvaluationInterface:
         text: str,
         lang: str,
         speaker_name: str,
-        ctx: tp.Optional[TTSContext] = None,
-        opt: tp.Optional[TTSOptions] = None,
-    ) -> tp.Tuple[TTSForwardOutput, TTSContext, TTSOptions]:
-        if ctx is None:
-            ctx = TTSContext.create(speaker_name)
-        if opt is None:
-            opt = TTSOptions()
-
+    ) -> TTSForwardOutput:
+        ctx = TTSContext.create(speaker_name)
+        opt = TTSOptions()
         text_by_sentence = self.prepare_text(text, lang, opt)
         text_by_sentence = self.predict_prosody_by_text(text_by_sentence, ctx, opt)
         ctx = self.prepare_embeddings(lang, ctx, opt)
         inputs = self.prepare_batch(self.split_sentences(text_by_sentence)[0], ctx, opt)
-        outputs = self.evaluate(inputs, opt)
-        return outputs, ctx, opt
+        outputs = self.evaluate(inputs, ctx, opt)
+        return outputs
 
     def inference(self, batch_input: TTSForwardInput, **kwargs):
         return self.model.inference(batch_input, **kwargs)

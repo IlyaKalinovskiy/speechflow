@@ -9,7 +9,7 @@ from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.data_types import DecoderOutput, VarianceAdaptorOutput
 from tts.acoustic_models.modules.params import DecoderParams
 
-__all__ = ["TFDecoder", "TFDecoderParams"]
+__all__ = ["TacoDecoder", "TacoDecoderParams"]
 
 
 def get_lstm_cell(lstm_layer: torch.nn.LSTM) -> torch.nn.LSTMCell:
@@ -148,15 +148,15 @@ class DecoderStep(nn.Module):
             return self.multi_step(frame, memory_emb, input_states)
 
 
-class TFDecoderParams(DecoderParams):
+class TacoDecoderParams(DecoderParams):
     prenet_dim: int = 256
     rnn_dim: int = 512
 
 
-class TFDecoder(Component):
-    params: TFDecoderParams
+class TacoDecoder(Component):
+    params: TacoDecoderParams
 
-    def __init__(self, params: TFDecoderParams, input_dim):
+    def __init__(self, params: TacoDecoderParams, input_dim):
         super().__init__(params, input_dim)
 
         self.dec_step = DecoderStep(
@@ -173,13 +173,6 @@ class TFDecoder(Component):
     def forward_step(self, inputs: VarianceAdaptorOutput) -> DecoderOutput:  # type: ignore
         x = self.get_content(inputs)[0]
         target_feat = getattr(inputs.model_inputs, self.params.target_feat)
-
-        imputer_masks = (
-            inputs.model_inputs.imputer_masks
-            if inputs.model_inputs.imputer_masks is not None
-            else {}
-        )
-        spec_mask = imputer_masks.get("spectrogram")
 
         memory = x.permute(1, 0, 2)
         if target_feat is not None:

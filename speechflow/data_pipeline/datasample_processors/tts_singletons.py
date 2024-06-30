@@ -298,7 +298,9 @@ class SpeakerIDSetter(metaclass=Singleton):
         if ds.speaker_name not in self.speaker2id:
             if ds.speaker_name not in self.unknown_speakers:
                 self.unknown_speakers.add(ds.speaker_name)
-                LOGGER.warning(trace(self, f"unknown speaker detected: '{ds.speaker_name}'"))
+                LOGGER.warning(
+                    trace(self, f"unknown speaker detected: '{ds.speaker_name}'")
+                )
 
             if self.speaker2id_bio is not None and ds.speaker_name in self.speaker2id_bio:
                 if ds.speaker_name in self.similar_speaker_map:
@@ -408,11 +410,11 @@ class MeanBioEmbeddings(metaclass=Singleton):
         **kwargs,
     ):
         if isinstance(mean_embeddings_file, tp.MutableMapping):  # evaluation hack
-            self.mean_bio_embeddings: tp.Dict[str, tp.Any] = mean_embeddings_file  # type: ignore
+            self.data: tp.Dict[str, tp.Any] = mean_embeddings_file  # type: ignore
         else:
             self.mean_embeddings_file = Path(mean_embeddings_file)
             if self.mean_embeddings_file.is_file():
-                self.mean_bio_embeddings: tp.Dict[str, tp.Any] = json.loads(
+                self.data: tp.Dict[str, tp.Any] = json.loads(
                     self.mean_embeddings_file.read_text(encoding="utf-8")
                 )  # type: ignore
             else:
@@ -420,24 +422,23 @@ class MeanBioEmbeddings(metaclass=Singleton):
                     "mean_bio_embeddings.json not found! First do execute dump.py"
                 )
 
-        self.mean_bio_embeddings = {
-            s: np.asarray([emb], dtype=np.float32)
-            for s, emb in self.mean_bio_embeddings.items()
+        self.data = {
+            s: np.asarray([emb], dtype=np.float32) for s, emb in self.data.items()
         }
 
     def __call__(self, data: Dataset) -> Dataset:
         return data
 
     def get_speakers(self) -> tp.List[str]:
-        return list(self.mean_bio_embeddings.keys())
+        return list(self.data.keys())
 
     def get_embedding(self, speaker_name: str) -> npt.NDArray:
-        return self.mean_bio_embeddings[speaker_name][0]
+        return self.data[speaker_name][0]
 
     @staticmethod
     def aggregate(a: "MeanBioEmbeddings", b: "MeanBioEmbeddings") -> "MeanBioEmbeddings":
         c = deepcopy(a)
-        c.mean_bio_embeddings.update(b.mean_bio_embeddings)
+        c.data.update(b.data)
         return c
 
 

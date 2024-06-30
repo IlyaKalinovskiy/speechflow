@@ -420,9 +420,7 @@ class TextProcessor(BaseDSProcessor):
             return self.unk
 
         if s not in self._symbol_to_id:
-            LOGGER.warning(
-                trace(self, message=f"symbol [{s}] not in alphabet!")
-            )
+            LOGGER.warning(trace(self, message=f"symbol [{s}] not in alphabet!"))
             s_rep = s.split(":", 1)[0]
             if s_rep in self.rel_tokens:
                 LOGGER.warning(

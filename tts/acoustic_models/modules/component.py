@@ -198,8 +198,8 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
             if modifiers and "no_detach" in modifiers[0]:
                 detach = False
 
-            if ref is not None and name in ref.model_feat:
-                feat = torch.from_numpy(ref.model_feat[name]).to(inputs.device)
+            if ref is not None and name in ref.model_feats:
+                feat = ref.get_model_feat(name, device=inputs.device)
             elif hasattr(inputs, "embeddings") and name in inputs.embeddings:
                 feat = inputs.embeddings[name]
             elif (

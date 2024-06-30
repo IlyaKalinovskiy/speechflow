@@ -3,11 +3,10 @@ import typing as tp
 from copy import deepcopy
 from dataclasses import dataclass
 from os import environ as env
-from pathlib import Path
 
+import numpy as np
 import torch
-
-from tqdm import tqdm
+import numpy.typing as npt
 
 from speechflow.data_pipeline.collate_functions.spectrogram_collate import (
     SpectrogramCollateOutput,
@@ -21,12 +20,8 @@ from speechflow.data_pipeline.datasample_processors.data_types import (
 from speechflow.io import AudioChunk, Config, check_path, tp_PATH
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.dictutils import find_field
-from tts.vocoders.data_types import (
-    VocoderForwardInput,
-    VocoderForwardOutput,
-    VocoderInferenceInput,
-    VocoderInferenceOutput,
-)
+from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
+from tts.vocoders.data_types import VocoderForwardInput, VocoderForwardOutput
 from tts.vocoders.vocos.pretrained import Vocos
 
 __all__ = ["VocoderEvaluationInterface", "VocoderOptions"]
@@ -143,41 +138,46 @@ class VocoderEvaluationInterface(VocoderLoader):
 
     @torch.inference_mode()
     def evaluate(
-        self, inputs: VocoderInferenceInput, opt: VocoderOptions
-    ) -> VocoderInferenceOutput:
+        self, inputs: VocoderForwardInput, opt: VocoderOptions
+    ) -> VocoderForwardOutput:
         inputs.to(self.device)
-        output = self.model.inference(inputs)
-        return output
+        outputs = self.model.inference(inputs)
+        outputs.waveform_length = inputs.spectrogram_lengths * self.hop_size
+
+        waveforms = []
+        for idx in range(outputs.waveform_length.shape[0]):
+            waveform = outputs.waveform[idx].cpu().numpy()
+            waveforms.append(waveform[: outputs.waveform_length[idx]])
+
+        waveforms = np.concatenate(waveforms)
+
+        if self.preemphasis_coef is not None:
+            waveforms = self.inv_preemphasis(waveforms, self.preemphasis_coef)
+
+        outputs.audio_chunk = AudioChunk(data=waveforms, sr=self.sample_rate)
+        return outputs
 
     @staticmethod
-    def inv_preemphasis(wave: torch.Tensor, beta: float = 0.97) -> torch.Tensor:
-        audio_chunk = AudioChunk(data=wave.cpu().numpy(), sr=1)
+    def inv_preemphasis(waveform: npt.NDArray, beta: float = 0.97) -> npt.NDArray:
+        audio_chunk = AudioChunk(data=waveform, sr=1)
         inv_wave = SignalProcessor.inv_preemphasis(
             AudioDataSample(audio_chunk=audio_chunk), beta=beta
         ).audio_chunk.waveform
-        inv_wave = torch.from_numpy(inv_wave)
         return inv_wave
 
     def synthesize(
         self,
-        voc_in: VocoderForwardInput,
-        voc_out: VocoderForwardOutput,
-        opt: tp.Optional[VocoderOptions] = None,
-    ) -> tp.Union[VocoderForwardOutput, tp.List[VocoderForwardOutput]]:
-        if opt is None:
-            opt = VocoderOptions()
-
-        voc_in = voc_in
-        voc_in.lang_id = voc_in.lang_id * 0 + self.lang_id_map[opt.lang]
-        voc_in.speaker_id = voc_in.speaker_id * 0 + self.speaker_id_map[opt.speaker_name]
-        voc_in.mel_spectrogram = voc_out.after_postnet_spectrogram
-        voc_in.spectrogram_lengths = voc_out.spectrogram_lengths
-        voc_in.energy = voc_out.variance_predictions["energy"]
-        voc_in.pitch = voc_out.variance_predictions["pitch"]
-
+        tts_input: TTSForwardInput,
+        tts_output: TTSForwardOutput,
+        lang: tp.Optional[str] = None,
+        speaker_name: tp.Optional[str] = None,
+        opt: VocoderOptions = VocoderOptions(),
+    ) -> VocoderForwardOutput:
+        voc_in = VocoderForwardInput.init_from_tts(tts_input, tts_output)
+        voc_in.lang_id = torch.LongTensor([self.lang_id_map.get(lang, 0)])
+        voc_in.speaker_id = torch.LongTensor([self.speaker_id_map.get(speaker_name, 0)])
         voc_in.to(self.device)
-        output = self.model(voc_in)
-        return output
+        return self.evaluate(voc_in, opt)
 
     @check_path(assert_file_exists=True)
     def resynthesize(
@@ -186,11 +186,8 @@ class VocoderEvaluationInterface(VocoderLoader):
         ref_wav_path: tp.Optional[tp_PATH] = None,
         lang: tp.Optional[str] = None,
         speaker_name: tp.Optional[str] = None,
-        opt: tp.Optional[VocoderOptions] = None,
-    ) -> VocoderInferenceOutput:
-        if opt is None:
-            opt = VocoderOptions()
-
+        opt: VocoderOptions = VocoderOptions(),
+    ) -> VocoderForwardOutput:
         audio_chunk = (
             AudioChunk(file_path=wav_path).load(sr=self.sample_rate).volume(1.25)
         )
@@ -204,6 +201,7 @@ class VocoderEvaluationInterface(VocoderLoader):
             ref_batch = self.pipe_for_reference.datasample_to_batch([ref_ds])
             ref_collated: SpectrogramCollateOutput = ref_batch.collated_samples  # type: ignore
             collated.speaker_emb = ref_collated.speaker_emb
+            collated.speaker_emb_mean = ref_collated.speaker_emb_mean
             collated.averages = ref_collated.averages
             collated.speech_quality_emb = ref_collated.speech_quality_emb
             collated.additional_fields = ref_collated.additional_fields
@@ -213,12 +211,13 @@ class VocoderEvaluationInterface(VocoderLoader):
             collated.averages["pitch"] = collated.averages["pitch"] * 0 + 115
             collated.speech_quality_emb = collated.speech_quality_emb * 0 + 5
 
-            _input = VocoderInferenceInput(
+            _input = VocoderForwardInput(
                 mel_spectrogram=collated.mel_spectrogram,
                 spectrogram_lengths=collated.spectrogram_lengths,
                 ssl_feat=collated.ssl_feat,
                 ssl_feat_lengths=collated.ssl_feat_lengths,
                 speaker_emb=collated.speaker_emb,
+                speaker_emb_mean=collated.speaker_emb,
                 # energy=collated.energy,
                 # pitch=collated.pitch,
                 speech_quality_emb=collated.speech_quality_emb,
@@ -237,11 +236,6 @@ class VocoderEvaluationInterface(VocoderLoader):
         else:
             raise NotImplementedError
 
-        if self.preemphasis_coef is not None:
-            _output.waveform = self.inv_preemphasis(
-                _output.waveform, self.preemphasis_coef
-            )
-
         return _output
 
 
@@ -255,11 +249,13 @@ if __name__ == "__main__":
             ckpt_path="mel_vocos_checkpoint_epoch=79_step=400000_val_loss=4.9470.ckpt"
         )
 
-        outputs = voc.resynthesize(test_file_path, lang="RU")
-
-        waveform = outputs.waveform[0].cpu().squeeze(0).numpy()
-        AudioChunk(data=waveform, sr=voc.sample_rate).save("resynt.wav", overwrite=True)
+        voc_out = voc.resynthesize(test_file_path, lang="RU")
+        voc_out.audio_chunk.save("resynt.wav", overwrite=True)
     else:
+        from pathlib import Path
+
+        from tqdm import tqdm
+
         voc_path = "vocos_checkpoint_epoch=6_step=1439522_val_loss=9.8176.pt"
         test_files = "eng_spontan_2mic/wav_16k"
         result_path = "eng_spontan_2mic/result"
@@ -275,10 +271,7 @@ if __name__ == "__main__":
                 continue
 
             try:
-                outputs = voc.resynthesize(wav_file, ref_file, lang="EN")
-                waveform = outputs.waveform[0].cpu().squeeze(0).numpy()
-                AudioChunk(data=waveform, sr=voc.sample_rate).save(
-                    result_file_name, overwrite=True
-                )
+                voc_out = voc.resynthesize(wav_file, ref_file, lang="EN")
+                voc_out.audio_chunk.save(result_file_name, overwrite=True)
             except Exception as e:
                 print(e)

@@ -1,12 +1,11 @@
 import typing as tp
 
-import yaml
 import torch
 
 from torch import nn
 
 from speechflow.io import Config
-from tts.vocoders.data_types import VocoderInferenceInput, VocoderInferenceOutput
+from tts.vocoders.data_types import VocoderForwardInput, VocoderForwardOutput
 from tts.vocoders.vocos.modules.backbone import Backbone
 from tts.vocoders.vocos.modules.feature_extractors import FeatureExtractor
 from tts.vocoders.vocos.modules.heads import FourierHead
@@ -101,11 +100,10 @@ class Vocos(nn.Module):
         audio_output = self.head(x)
         return audio_output
 
-    def inference(
-        self, inputs: VocoderInferenceInput, **kwargs
-    ) -> VocoderInferenceOutput:
+    @torch.no_grad()
+    def inference(self, inputs: VocoderForwardInput, **kwargs) -> VocoderForwardOutput:
         feat, additional_content = self.feature_extractor(inputs, **kwargs)
         waveform, _, _ = self.decode(feat, **kwargs)
-        return VocoderInferenceOutput(
+        return VocoderForwardOutput(
             waveform=waveform, additional_content=additional_content
         )

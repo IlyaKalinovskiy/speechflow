@@ -229,7 +229,7 @@ class ParallelTTSModel(BaseTorchModel):
         )
         return va_output, variance_predictions, x.additional_content
 
-    def get_speaker_emb(
+    def get_speaker_embedding(
         self, speaker_id: int, bio_emb: npt.NDArray, mean_bio_emb: npt.NDArray
     ):
         if self.params.use_learnable_speaker_emb and speaker_id is not None:
@@ -237,49 +237,33 @@ class ParallelTTSModel(BaseTorchModel):
             emb = self.embedding_component.emb_calculator.speaker_emb(sp_id)
         elif self.params.use_dnn_speaker_emb and bio_emb is not None:
             sp_emb = torch.from_numpy(bio_emb).to(self.device)
-            emb = self.embedding_component.emb_calculator.speaker_emb_proj(
-                sp_emb.unsqueeze(0)
-            )
+            emb = self.embedding_component.emb_calculator.speaker_emb_proj(sp_emb)
         elif self.params.use_mean_dnn_speaker_emb and mean_bio_emb is not None:
             sp_emb = torch.from_numpy(mean_bio_emb).to(self.device)
-            emb = self.embedding_component.emb_calculator.speaker_emb_proj(
-                sp_emb
-            ).unsqueeze(0)
+            emb = self.embedding_component.emb_calculator.speaker_emb_proj(sp_emb)
         else:
             raise NotImplementedError
 
-        return {"speaker": emb.cpu().numpy()}
+        return {"speaker": emb}
 
     def get_style_embedding(
         self,
         bio_embedding: torch.Tensor,
         spectrogram: torch.Tensor,
-        ssl_embeddings: torch.Tensor,
+        ssl_feat: torch.Tensor,
     ):
         def get_sample(_sampler, feat_type, input_feat):
             input_feat = torch.from_numpy(input_feat).to(self.device)
-            if input_feat.ndim == 1:
-                input_feat = input_feat.unsqueeze(0).unsqueeze(0)
             if input_feat.ndim == 2:
                 input_feat = input_feat.unsqueeze(0)
             if "ssl" in feat_type:
                 input_feat = self.embedding_component.emb_calculator.ssl_proj(input_feat)
 
             lens = torch.LongTensor([input_feat.shape[1]]).to(input_feat.device)
-            try:
-                emb = _sampler.encode(input_feat, get_mask_from_lengths(lens))
-            except:
-                emb = _sampler.sample_latent(input_feat, input_feat, None, None, None)
-
-            if isinstance(emb, tuple):
-                emb = emb[0]
-            if emb.ndim == 3:
-                emb = emb.squeeze(1)
-            return emb
+            emb, _, _ = _sampler.encode(input_feat, lens, None)
+            return emb.squeeze(1)
 
         for k, module in self._modules["va"]._modules.items():
-            if "speaker_emb_encoder" in module.va_variances:
-                break
             if any("style" in name for name in module.va_variances):
                 break
         else:
@@ -287,14 +271,10 @@ class ParallelTTSModel(BaseTorchModel):
 
         if module is not None:
             sampler = list(module._modules["predictors"].values())[0]
-            if sampler.__class__.__name__ == "GMVariationalAutoencoder":
-                return {"style_emb": get_sample(sampler, "bio_embedding", bio_embedding)}
-            elif "spec" in list(module.predictors.values())[0].params.source:
-                return {"style_emb": get_sample(sampler, "spectrogram", spectrogram)}
-            elif "ssl" in list(module.predictors.values())[0].params.source:
-                return {
-                    "style_emb": get_sample(sampler, "ssl_embeddings", ssl_embeddings)
-                }
+            if "ssl" in list(module.predictors.values())[0].params.source:
+                return {"style_emb": get_sample(sampler, "ssl_feat", ssl_feat)}
+            elif "bio" in list(module.predictors.values())[0].params.source:
+                return {"style_emb": get_sample(sampler, "bio", bio_embedding)}
             else:
                 return {"style_emb": get_sample(sampler, "spectrogram", spectrogram)}
 
