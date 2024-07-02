@@ -54,4 +54,6 @@ class WrapperDecoder(Component):
 
     def forward_step(self, inputs: VarianceAdaptorOutput) -> DecoderOutput:  # type: ignore
         outputs: ComponentOutput = self.decoder(inputs)
+        if isinstance(outputs.content_lengths, list):
+            outputs.content_lengths = outputs.content_lengths[0]
         return DecoderOutput.copy_from(outputs)

@@ -89,7 +89,7 @@ class TokenLevelDP(Component):
         if self.params.add_lm_feat:
             x_by_words = x_by_words + self.lm_proj(model_inputs.lm_feat)
 
-        w_predict, w_ctx = self.token_encoder.process_content(
+        w_predict, w_ctx = self.word_encoder.process_content(
             x_by_words, model_inputs.num_words, model_inputs
         )
 

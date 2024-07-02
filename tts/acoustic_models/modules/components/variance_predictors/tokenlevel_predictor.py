@@ -87,20 +87,17 @@ class TokenLevelPredictor(Component):
         x_by_words, _ = self.lr(x.detach(), word_inv_lengths, max_num_words)
         x_by_tokens = x
 
-        wd_mask = get_mask_from_lengths(model_inputs.num_words)
-        tk_mask = get_mask_from_lengths(model_inputs.transcription_lengths)
-
         if self.params.add_lm_feat:
             x_by_words = x_by_words + self.lm_proj(model_inputs.lm_feat)
 
         wd_predict, wd_ctx = self.word_encoder.process_content(
             x_by_words, model_inputs.num_words, model_inputs
         )
-        wd_enc, _ = self.hard_lr(wd_ctx, word_length, max_num_tokens)
+        wd_ctx, _ = self.hard_lr(wd_ctx, word_length, max_num_tokens)
 
-        tk_proj = self.token_proj(torch.cat([wd_enc, x_by_tokens], dim=2))
+        tk_proj = self.token_proj(torch.cat([x_by_tokens, wd_ctx], dim=2))
         tk_predict, tk_ctx = self.token_encoder.process_content(
-            tk_proj, model_inputs.transcription_lengths, model_inputs
+            tk_proj, model_inputs.input_lengths, model_inputs
         )
 
         context = tk_ctx

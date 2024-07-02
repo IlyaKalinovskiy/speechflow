@@ -205,7 +205,7 @@ model:
         predictor_type: FrameLevelPredictorWithDiscriminator
         predictor_params:
           vp_params:
-            use_ssl_adjustment: true
+            use_ssl_adjustment: false
         denormalize: false
         log_scale: true
         as_embedding: true
