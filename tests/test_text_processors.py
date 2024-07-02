@@ -16,18 +16,18 @@ from speechflow.utils.profiler import Profiler
 BOOK_NAME = {
     "RU": ["Tolstoy_War_and_Peace_ru.txt"],
     "EN": ["Tolstoy_War_and_Peace_en.txt", "Three_Men_in_a_Boat_en.txt"],
-    "PT-BR": ["The_Alchemist_Portuguese_ptbr.txt"],
-    "ES": ["Don_Quijote_de_la_Mancha_es.txt"],
     "DE": ["remarque_im_westen_nichts_neues_de.txt"],
+    "ES": ["Don_Quijote_de_la_Mancha_es.txt"],
     "IT": ["Tolstoy_War_and_Peace_it.txt"],
     "FR-FR": ["Le-Comte-de-Monte-Cristo_fr.txt"],
     "PT": ["O-evangelho-segundo-Jesus-Cristo_pt.txt"],
+    "PT-BR": ["The_Alchemist_Portuguese_ptbr.txt"],
     "KK": ["Kochevniki_kk.txt"],
 }
 
 
 @pytest.mark.parametrize(
-    "lang", ["RU", "EN", "PT-BR", "ES", "DE", "IT", "FR-FR", "PT", "KK"]
+    "lang", ["RU", "EN", "DE", "ES", "IT", "FR-FR", "PT", "PT-BR", "KK"]
 )
 @pytest.mark.parametrize("chunk_size_min, chunk_size_max", [(1, 10000)])
 def test_parse_book(
