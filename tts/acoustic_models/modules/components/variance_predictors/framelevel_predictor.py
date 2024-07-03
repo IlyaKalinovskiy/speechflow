@@ -20,7 +20,7 @@ __all__ = [
 
 
 class FrameLevelPredictorParams(VariancePredictorParams):
-    frame_encoder_type: str = "RNNEncoder"
+    frame_encoder_type: str = "VarianceEncoder"
     frame_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
     use_ssl_adjustment: bool = False
 
@@ -97,7 +97,7 @@ class FrameLevelPredictor(Component):
                 if var_by_frames.ndim == 2:
                     var_by_frames = var_by_frames.unsqueeze(-1)
 
-                losses[f"{name}_loss_by_frames"] = F.mse_loss(enc_predict, var_by_frames)
+                losses[f"{name}_loss_by_frames"] = F.l1_loss(enc_predict, var_by_frames)
                 content[f"{name}_vp_target"] = var_by_frames
 
         return enc_predict.squeeze(-1), content, losses

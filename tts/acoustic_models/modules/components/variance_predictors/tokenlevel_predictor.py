@@ -21,9 +21,9 @@ __all__ = [
 
 
 class TokenLevelPredictorParams(VariancePredictorParams):
-    word_encoder_type: str = "RNNEncoder"
+    word_encoder_type: str = "VarianceEncoder"
     word_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
-    token_encoder_type: str = "RNNEncoder"
+    token_encoder_type: str = "VarianceEncoder"
     token_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
     add_lm_feat: bool = False
 
@@ -48,24 +48,26 @@ class TokenLevelPredictor(Component):
             _enc_params.encoder_output_dim = params.vp_output_dim
             return _enc_cls(_enc_params, input_dim)
 
-        enc_cls, enc_params_cls = TTS_ENCODERS[params.word_encoder_type]
-        self.word_encoder = _init_encoder(
-            enc_cls, enc_params_cls, params.word_encoder_params
-        )
-
         enc_cls, enc_params_cls = TTS_ENCODERS[params.token_encoder_type]
-        self.token_proj = nn.Linear(
-            params.vp_inner_dim + input_dim, input_dim, bias=False
-        )
         self.token_encoder = _init_encoder(
             enc_cls, enc_params_cls, params.token_encoder_params
         )
+        self.lr = SoftLengthRegulator()
 
         if params.add_lm_feat:
             self.lm_proj = nn.Linear(params.lm_feat_dim, input_dim, bias=False)
+            self.token_proj = nn.Linear(
+                input_dim + params.vp_inner_dim, input_dim, bias=False
+            )
 
-        self.lr = SoftLengthRegulator()
-        self.hard_lr = SoftLengthRegulator(hard=True)
+            enc_cls, enc_params_cls = TTS_ENCODERS[params.word_encoder_type]
+            self.word_encoder = _init_encoder(
+                enc_cls, enc_params_cls, params.word_encoder_params
+            )
+
+            self.hard_lr = SoftLengthRegulator(hard=True)
+        else:
+            self.token_proj = nn.Identity()
 
     @property
     def output_dim(self):
@@ -84,18 +86,18 @@ class TokenLevelPredictor(Component):
         max_num_tokens = model_inputs.transcription_lengths.max().item()
         max_num_words = model_inputs.num_words.max().item()
 
-        x_by_words, _ = self.lr(x.detach(), word_inv_lengths, max_num_words)
-        x_by_tokens = x
-
         if self.params.add_lm_feat:
+            x_by_words, _ = self.lr(x.detach(), word_inv_lengths, max_num_words)
             x_by_words = x_by_words + self.lm_proj(model_inputs.lm_feat)
+            wd_predict, wd_ctx = self.word_encoder.process_content(
+                x_by_words, model_inputs.num_words, model_inputs
+            )
+            wd_ctx, _ = self.hard_lr(wd_ctx, word_length, max_num_tokens)
+            x_by_tokens = torch.cat([x, wd_ctx], dim=2)
+        else:
+            x_by_tokens = x
 
-        wd_predict, wd_ctx = self.word_encoder.process_content(
-            x_by_words, model_inputs.num_words, model_inputs
-        )
-        wd_ctx, _ = self.hard_lr(wd_ctx, word_length, max_num_tokens)
-
-        tk_proj = self.token_proj(torch.cat([x_by_tokens, wd_ctx], dim=2))
+        tk_proj = self.token_proj(x_by_tokens)
         tk_predict, tk_ctx = self.token_encoder.process_content(
             tk_proj, model_inputs.input_lengths, model_inputs
         )
@@ -108,7 +110,7 @@ class TokenLevelPredictor(Component):
             if target_by_tokens.ndim == 2:
                 target_by_tokens = target_by_tokens.unsqueeze(-1)
 
-            losses[f"{name}_loss_by_tokens"] = F.mse_loss(tk_predict, target_by_tokens)
+            losses[f"{name}_loss_by_tokens"] = F.l1_loss(tk_predict, target_by_tokens)
 
         return (
             var_predict.squeeze(-1),

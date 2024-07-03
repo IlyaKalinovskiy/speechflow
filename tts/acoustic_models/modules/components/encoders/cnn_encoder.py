@@ -59,4 +59,4 @@ class CNNEncoder(LinguisticCondition):
 
         y = super().add_ling_features(x, inputs)
 
-        return EncoderOutput.copy_from(inputs).set_content(y).apply_mask(x_mask)
+        return EncoderOutput.copy_from(inputs).set_content(y)

@@ -119,7 +119,6 @@ def update_config(cfg: Config, n_processes: int, n_gpus: int) -> Config:
     cfg["collate"]["type"] = cfg["collate"]["type"].replace("WithPrompt", "")
     cfg["data_server"]["n_processes"] = n_processes
     cfg["data_server"]["n_gpus"] = n_gpus
-    cfg["data_server"]["memory_save"] = False
 
     if "dump" in cfg["processor"]:
         cfg["processor"]["dump"]["skip_samples_without_dump"] = False

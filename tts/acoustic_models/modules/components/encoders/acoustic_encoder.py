@@ -53,7 +53,7 @@ class AcousticEncoder(Component):
         x = self.prenet(x)
         y = self.convs(x.transpose(1, -1)).transpose(1, -1)
 
-        return EncoderOutput.copy_from(inputs).set_content(y).apply_mask(x_mask)
+        return EncoderOutput.copy_from(inputs).set_content(y)
 
 
 class PreNet(nn.Module):

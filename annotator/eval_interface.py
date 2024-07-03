@@ -20,9 +20,7 @@ class AnnotatorEvaluationInterface:
         self,
         ckpt_stage1: tp.Union[str, Path],
         ckpt_stage2: tp.Union[str, Path],
-        device: str,
-        ckpt_stage1_preload: tp.Optional[dict] = None,
-        ckpt_stage2_preload: tp.Optional[dict] = None,
+        device: str = "cpu",
         use_reverse_mode: bool = False,
     ):
         self.use_reverse_mode = use_reverse_mode
@@ -31,13 +29,11 @@ class AnnotatorEvaluationInterface:
             ckpt_path=ckpt_stage1,
             stage=AlignStage.stage1,
             device=device,
-            ckpt_preload=ckpt_stage1_preload,
         )
         self.aligner_stage2 = Aligner(
             ckpt_path=ckpt_stage2,
             stage=AlignStage.stage2,
             device=device,
-            ckpt_preload=ckpt_stage2_preload,
         )
 
         if self.use_reverse_mode:
@@ -45,17 +41,15 @@ class AnnotatorEvaluationInterface:
                 ckpt_path=ckpt_stage1,
                 stage=AlignStage.stage1,
                 device=device,
-                ckpt_preload=ckpt_stage1_preload,
                 reverse_mode=True,
-                model_preload=self.aligner_stage1.model,
+                preload=self.aligner_stage1.model,
             )
             self.aligner_stage2_reverse = Aligner(
                 ckpt_path=ckpt_stage2,
                 stage=AlignStage.stage2,
                 device=device,
-                ckpt_preload=ckpt_stage2_preload,
                 reverse_mode=True,
-                model_preload=self.aligner_stage2.model,
+                preload=self.aligner_stage2.model,
             )
 
         self.text_parser = {}

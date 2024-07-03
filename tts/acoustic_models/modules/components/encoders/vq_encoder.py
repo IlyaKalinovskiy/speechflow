@@ -144,7 +144,7 @@ class VQEncoder(Component):
         inputs.additional_content[f"vq_codes"] = indices
         inputs.additional_content[f"vq_z"] = z
 
-        return EncoderOutput.copy_from(inputs).set_content(z).apply_mask(x_mask)
+        return EncoderOutput.copy_from(inputs).set_content(z)
 
 
 class VQEncoderWithTokenContextParams(VQEncoderParams):

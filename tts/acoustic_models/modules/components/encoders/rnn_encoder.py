@@ -33,7 +33,7 @@ class RNNEncoder(CNNEncoder):
         in_dim = super().output_dim
 
         if not params.condition:
-            self.lstm = nn.LSTM(
+            self.rnn = nn.LSTM(
                 in_dim,
                 params.encoder_inner_dim // (params.bidirectional + 1),
                 num_layers=params.encoder_num_layers,
@@ -42,14 +42,14 @@ class RNNEncoder(CNNEncoder):
                 dropout=params.p_dropout,
             )
         elif params.condition_type == "cat":
-            self.lstms = nn.ModuleList()
+            self.rnns = nn.ModuleList()
             for i in range(params.encoder_num_layers):
                 if i == 0:
                     in_dim = in_dim + params.condition_dim
                 else:
                     in_dim = params.encoder_inner_dim + params.condition_dim
 
-                self.lstms.append(
+                self.rnns.append(
                     nn.LSTM(
                         in_dim,
                         params.encoder_inner_dim // (params.bidirectional + 1),
@@ -62,10 +62,10 @@ class RNNEncoder(CNNEncoder):
         elif params.condition_type == "adanorm":
             in_dim += params.condition_dim
 
-            self.lstms = nn.ModuleList()
+            self.rnns = nn.ModuleList()
             for i in range(params.encoder_num_layers):
                 if i == 0:
-                    self.lstms.append(
+                    self.rnns.append(
                         nn.LSTM(
                             in_dim,
                             params.encoder_inner_dim // (params.bidirectional + 1),
@@ -76,7 +76,7 @@ class RNNEncoder(CNNEncoder):
                         )
                     )
                 else:
-                    self.lstms.append(
+                    self.rnns.append(
                         nn.LSTM(
                             params.encoder_inner_dim + params.condition_dim,
                             params.encoder_inner_dim // (params.bidirectional + 1),
@@ -88,7 +88,7 @@ class RNNEncoder(CNNEncoder):
                     )
 
                 if i + 1 != params.encoder_num_layers:
-                    self.lstms.append(
+                    self.rnns.append(
                         AdaLayerNorm(params.encoder_inner_dim, params.condition_dim)
                     )
 
@@ -104,14 +104,14 @@ class RNNEncoder(CNNEncoder):
         x, x_lens, x_mask = self.get_content_and_mask(inputs)
 
         if not self.params.condition:
-            x = run_rnn_on_padded_sequence(self.lstm, x, x_lens)
+            x = run_rnn_on_padded_sequence(self.rnn, x, x_lens)
         else:
             cond = self.get_condition(inputs, self.params.condition)
             cond = cond.squeeze(1)
 
             s = cond.unsqueeze(1).expand(x.shape[0], x.shape[1], -1)
 
-            for block in self.lstms:
+            for block in self.rnns:
                 if isinstance(block, AdaLayerNorm):
                     x = block(x, cond)
                     continue
@@ -123,6 +123,6 @@ class RNNEncoder(CNNEncoder):
         y = self.proj(x)
 
         outputs = EncoderOutput.copy_from(inputs)
-        outputs = outputs.set_content(y).apply_mask(x_mask)
+        outputs = outputs.set_content(y)
         outputs.hidden_state = x
         return outputs

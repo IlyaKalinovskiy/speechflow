@@ -119,10 +119,11 @@ class TextDataSample(DataSample):
     transcription: tp_DATA = None  # type: ignore
     ling_feat: tp.Dict[str, tp_DATA] = None  # type: ignore
     intonation_type: int = None  # type: ignore
-    pad_symb_id: int = 0
     word_lengths: tp_DATA = None  # type: ignore
     synt_lengths: tp_DATA = None  # type: ignore
     lm_feat: tp_DATA = None  # type: ignore
+    pad_symb_id: int = 0
+    sil_symb_id: int = 0
 
 
 @dataclass(eq=False)

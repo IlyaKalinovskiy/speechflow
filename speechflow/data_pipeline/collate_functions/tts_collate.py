@@ -114,10 +114,11 @@ class TTSCollate(SpectrogramCollate):
         multiple = self.multiple.get("spec")
 
         pad_symb_id = batch[0].pad_symb_id
+        sil_symb_id = batch[0].sil_symb_id
 
         transcription, input_lens = sequence_collate(batch, "transcription", pad_symb_id)
         transcription_by_frames, frames_input_lens = sequence_collate(
-            batch, "transcription_by_frames", pad_symb_id
+            batch, "transcription_by_frames", sil_symb_id
         )
         lm_feat, _ = sequence_collate(batch, "lm_feat")
         durations, _ = sequence_collate(batch, "durations")

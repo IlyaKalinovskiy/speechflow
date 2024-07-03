@@ -2,7 +2,6 @@ import copy
 import typing as tp
 import logging
 
-from copy import deepcopy
 from typing import Any
 
 import torch

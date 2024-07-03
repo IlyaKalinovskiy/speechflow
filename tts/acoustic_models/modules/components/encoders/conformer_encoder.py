@@ -64,4 +64,4 @@ class ConformerEncoder(CNNEncoder):
         z, _ = self.encoder(x, x_lens)
         y = self.proj(z)
 
-        return EncoderOutput.copy_from(inputs).set_content(y).apply_mask(x_mask)
+        return EncoderOutput.copy_from(inputs).set_content(y)

@@ -225,6 +225,7 @@ class TextProcessor(BaseDSProcessor):
 
         ds.ling_feat = ling_feat
         ds.pad_symb_id = self._symbol_to_id[self.pad]
+        ds.sil_symb_id = self._symbol_to_id[self.sil]
 
         if isinstance(ds, PausesPredictionDataSample):
             ds.sil_mask = ling_feat.get("sil_mask")  # type: ignore

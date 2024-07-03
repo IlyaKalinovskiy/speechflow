@@ -137,7 +137,7 @@ class SFEncoder(Component):
         output: ComponentOutput = self.encoder(y)
         y = output.content
 
-        outputs = EncoderOutput.copy_from(inputs).set_content(y).apply_mask(x_mask)
+        outputs = EncoderOutput.copy_from(inputs).set_content(y)
         outputs.additional_content[f"{self.__class__.__name__}_{self.id}_src"] = y_src
         outputs.additional_content[f"{self.__class__.__name__}_{self.id}_ftr_e"] = y_ftr_e
         outputs.additional_content[f"{self.__class__.__name__}_{self.id}_ftr_p"] = y_ftr_p

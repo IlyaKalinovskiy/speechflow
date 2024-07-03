@@ -21,7 +21,7 @@ from speechflow.data_pipeline.core import DataPipeline
 from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
 from speechflow.data_pipeline.dataset_parsers import EasyDSParser
 from speechflow.data_server.helpers import LoaderParams, init_data_loader
-from speechflow.io import AudioSeg, Timestamps, construct_file_list
+from speechflow.io import AudioSeg, Timestamps, check_path, construct_file_list, tp_PATH
 from speechflow.logging.server import LoggingServer
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.dictutils import find_field
@@ -95,22 +95,19 @@ def parse_args():
 
 
 class Aligner:
+    @check_path
     def __init__(
         self,
-        ckpt_path: tp.Union[str, Path],
+        ckpt_path: tp_PATH,
         stage: AlignStage,
         batch_size: int = 1,
         n_processes: int = 1,
         device: str = "cpu",
-        ckpt_preload: tp.Optional[dict] = None,
         reverse_mode: bool = False,
         min_pause_len: float = 0.08,
         sega_suffix: str = "",
-        model_preload: tp.Optional[tp.Tuple] = None,
+        preload: tp.Optional[tp.Union[tp.Dict, tp.Tuple]] = None,
     ):
-        if Path(ckpt_path).exists():
-            ckpt_path = ExperimentSaver.get_last_checkpoint(ckpt_path)
-
         self._stage = stage
         self._batch_size = batch_size
         self._n_processes = n_processes
@@ -119,6 +116,11 @@ class Aligner:
         self._min_pause_len = min_pause_len
         self._sega_suffix = sega_suffix
 
+        if isinstance(preload, dict):
+            ckpt_preload = preload
+        else:
+            ckpt_preload = None
+
         (
             self._cfg_data,
             self._sample_rate,
@@ -126,19 +128,19 @@ class Aligner:
             self._speaker_id_map,
             self._lang_id_map,
             self._lang,
-        ) = self._prepare_aligning(ckpt_path, ckpt_preload, reverse_mode)
+        ) = self._prepare_aligning(ckpt_path, reverse_mode, ckpt_preload)
 
         env["DEVICE"] = device
 
         self._data_pipeline = DataPipeline(self._cfg_data)
         self._data_pipeline.init_components()
 
-        if model_preload is None:
+        if isinstance(preload, tuple):
+            self._aligner_model, self._batch_processor = preload
+        else:
             self._aligner_model, self._batch_processor = self._get_model(
                 ckpt_path, device, ckpt_preload
             )
-        else:
-            self._aligner_model, self._batch_processor = model_preload
 
     @property
     def lang(self) -> str:
@@ -162,9 +164,9 @@ class Aligner:
 
     @staticmethod
     def _prepare_aligning(
-        ckpt_path: tp.Union[str, Path],
-        ckpt_preload: tp.Optional[dict] = None,
+        ckpt_path: tp_PATH,
         reverse_mode: bool = False,
+        ckpt_preload: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ):
         if ckpt_preload is None:
             checkpoint = ExperimentSaver.load_checkpoint(ckpt_path)
@@ -225,9 +227,9 @@ class Aligner:
 
     @staticmethod
     def _get_model(
-        ckpt_path: tp.Union[str, Path],
+        ckpt_path: tp_PATH,
         device: str = "cpu",
-        ckpt_preload: tp.Optional[dict] = None,
+        ckpt_preload: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ):
         if ckpt_preload is None:
             checkpoint = ExperimentSaver.load_checkpoint(Path(ckpt_path))

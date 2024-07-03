@@ -13,6 +13,7 @@ from .source_filter_encoder import (
     SFEncoderWithTokenContext,
     SFEncoderWithTokenContextParams,
 )
+from .variance_encoder import VarianceEncoder, VarianceEncoderParams
 from .vq_encoder import (
     VQEncoder,
     VQEncoderParams,

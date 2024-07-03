@@ -218,7 +218,7 @@ class TTSEvaluationInterface:
         self.mean_bio_embs = self.info["singleton_handlers"].get("MeanBioEmbeddings")
 
         if self.mean_bio_embs is not None:
-            embs = self.mean_bio_embs.mean_bio_embeddings
+            embs = self.mean_bio_embs.data
             embs = {s: emb.tolist() for s, emb in embs.items()}
             handler = singleton_handlers.get("MeanBioEmbeddings", {})
             handler["mean_embeddings_file"] = "temp/MeanBioEmbeddings_data.json"
@@ -461,7 +461,7 @@ class TTSEvaluationInterface:
         ctx.prosody_reference.initialize(
             self.speaker_id_map,
             self.bio_embs,
-            self.mean_bio_embs.mean_bio_embeddings,
+            self.mean_bio_embs.data,
             self.biometric_pipe,
             self.audio_pipe,
             seed=ctx.seed,

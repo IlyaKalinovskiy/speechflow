@@ -54,4 +54,4 @@ class LinguisticCondition(Component):
 
         y = self.add_ling_features(x, inputs)
 
-        return ComponentOutput.copy_from(inputs).set_content(y).apply_mask(x_mask)
+        return ComponentOutput.copy_from(inputs).set_content(y)
