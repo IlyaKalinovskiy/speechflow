@@ -102,10 +102,10 @@ class TokenLevelDP(Component):
         t_dura = F.relu(t_predict).squeeze(-1)
 
         if self.training:
-            t_dura = apply_mask(t_dura, get_mask_from_lengths(x_length))
-
             if self.params.add_noise:
                 t_target = (t_target + 0.01 * torch.randn_like(t_target)).clip(min=0.1)
+
+            t_dura = apply_mask(t_dura, get_mask_from_lengths(x_length))
 
             if model_inputs.global_step % self.params.every_iter == 0:
                 losses["dp_loss_by_tokens"] = F.mse_loss(t_dura, t_target)

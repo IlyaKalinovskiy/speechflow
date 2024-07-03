@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from torch import nn
 
-from speechflow.training.utils.tensor_utils import apply_mask, run_rnn_on_padded_sequence
+from speechflow.training.utils.tensor_utils import run_rnn_on_padded_sequence
 from tts.acoustic_models.modules.common.layers import Conv, HighwayNetwork
 
 __all__ = ["VarianceEmbedding", "Regression", "ConvPrenet"]
@@ -85,10 +85,6 @@ class Regression(nn.Module):
 
         y = self.af(self.linear1(x).transpose(2, 1))
         y = self.linear2(self.dropout(y.transpose(2, 1)))
-
-        if x_mask is not None:
-            y = apply_mask(y, x_mask)
-
         return y
 
 

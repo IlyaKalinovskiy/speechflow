@@ -70,16 +70,16 @@ class DurationPredictor(torch.nn.Module):
         self.proj = torch.nn.Conv1d(filter_channels, 1, 1)
 
     def forward(self, x, x_mask):
-        x = self.conv_1(apply_mask(x, x_mask))
+        x = apply_mask(self.conv_1(x), x_mask)
         x = torch.relu(x)
         x = self.norm_1(x)
         x = self.drop(x)
-        x = self.conv_2(apply_mask(x, x_mask))
+        x = apply_mask(self.conv_2(x), x_mask)
         x = torch.relu(x)
         x = self.norm_2(x)
         x = self.drop(x)
-        x = self.proj(apply_mask(x, x_mask))
-        return apply_mask(x, x_mask)
+        x = self.proj(x)
+        return x
 
 
 class GradTTSFA(Component):

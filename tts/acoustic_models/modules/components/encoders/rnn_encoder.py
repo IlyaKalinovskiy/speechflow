@@ -4,7 +4,7 @@ import torch
 
 from torch import nn
 
-from speechflow.training.utils.tensor_utils import apply_mask, run_rnn_on_padded_sequence
+from speechflow.training.utils.tensor_utils import run_rnn_on_padded_sequence
 from tts.acoustic_models.modules.common.blocks import Regression
 from tts.acoustic_models.modules.common.layer_norm import AdaLayerNorm
 from tts.acoustic_models.modules.components.encoders.cnn_encoder import (
@@ -117,7 +117,6 @@ class RNNEncoder(CNNEncoder):
                     continue
 
                 x = torch.cat([x, s], dim=2)
-                x = apply_mask(x, x_mask)
                 x = run_rnn_on_padded_sequence(block, x, x_lens)
 
         y = self.proj(x)

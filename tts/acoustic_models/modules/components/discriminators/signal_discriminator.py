@@ -70,13 +70,12 @@ class SignalDiscriminator(nn.Module):
     def forward_probability(self, x, x_mask, signal, g=None):
         signal = self.signal_proj(signal)
         x = torch.cat([x, signal], dim=1)
-        x = self.pre_out_conv_1(apply_mask(x, x_mask))
+        x = apply_mask(self.pre_out_conv_1(x), x_mask)
         x = torch.relu(x)
         x = self.pre_out_norm_1(x)
-        x = self.pre_out_conv_2(apply_mask(x, x_mask))
+        x = apply_mask(self.pre_out_conv_2(x), x_mask)
         x = torch.relu(x)
         x = self.pre_out_norm_2(x)
-        x = apply_mask(x, x_mask)
         x = x.transpose(1, 2)
         output_prob = self.output_layer(x)
         return output_prob
@@ -85,10 +84,10 @@ class SignalDiscriminator(nn.Module):
         # if g is not None:
         #   g = torch.detach(g)
         #   x = x + self.cond(g)
-        x = self.conv_1(apply_mask(x, x_mask))
+        x = apply_mask(self.conv_1(x), x_mask)
         x = torch.relu(x)
         x = self.norm_1(x)
-        x = self.conv_2(apply_mask(x, x_mask))
+        x = apply_mask(self.conv_2(x), x_mask)
         x = torch.relu(x)
         x = self.norm_2(x)
 
