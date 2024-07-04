@@ -112,7 +112,7 @@ class TokenLevelDP(Component):
 
             durations = t_target
         else:
-            durations = t_dura
+            durations = apply_mask(t_dura, get_mask_from_lengths(x_length))
 
         return (
             durations,
