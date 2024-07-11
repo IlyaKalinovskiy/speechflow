@@ -19,7 +19,7 @@ class GoogleASR(CloudASR):
 
     def __init__(
         self,
-        asr_credentials_path: Path,
+        asr_credentials: Path,
         locale_code: str,
         raise_on_converter_exc: bool = False,
         raise_on_asr_limit_exc: bool = False,
@@ -30,7 +30,7 @@ class GoogleASR(CloudASR):
             raise_on_converter_exc=raise_on_converter_exc,
             raise_on_asr_limit_exc=raise_on_asr_limit_exc,
         )
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = asr_credentials_path.as_posix()
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = asr_credentials.as_posix()
         self._locale_code = locale_code
         self._bucket_name = "asr-bucket-big-files-rnd"
 

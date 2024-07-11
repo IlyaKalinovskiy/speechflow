@@ -20,7 +20,6 @@ __pycache__/
 *.zip
 *.tar
 *.dat
-*.wav
 *.log
 *.sif
 *.simg

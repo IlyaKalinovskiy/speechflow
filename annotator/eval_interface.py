@@ -222,13 +222,18 @@ class AnnotatorEvaluationInterface:
 if __name__ == "__main__":
     from annotator.audio_transcription import OpenAIASR
 
-    glow_tts_stage1 = Path("P:\\cfm\\3\\epoch=19-step=208340.ckpt")
-    glow_tts_stage2 = Path("P:\\cfm\\3\\epoch=29-step=312510.ckpt")
+    glow_tts_stage1 = Path(
+        "multilingual-forced-alignment/mfa_v1.0/mfa_stage1_epoch=19-step=208340.pt"
+    )
+    glow_tts_stage2 = Path(
+        "multilingual-forced-alignment/mfa_v1.0/mfa_stage2_epoch=29-step=312510.pt"
+    )
 
     _wav_path = get_root_dir() / "tests/data/test_audio.wav"
     _speaker_name = "Tatiana"
+    _lang = "RU"
 
-    _asr = OpenAIASR(lang="RU", model_name="tiny")
+    _asr = OpenAIASR(lang=_lang, model_name="tiny")
     _text = _asr.converter({"wav_path": _wav_path})[0]["text"]
 
     annotator = AnnotatorEvaluationInterface(
@@ -236,5 +241,5 @@ if __name__ == "__main__":
         glow_tts_stage2,
         device="cpu",
     )
-    _sega = annotator.proccess(_text, _wav_path, _speaker_name, "RU")
-    _sega.save("sega.TG", with_audio=True)
+    _sega = annotator.proccess(_text, _wav_path, _speaker_name, _lang)
+    _sega.save("sega.tg", with_audio=True)

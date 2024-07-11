@@ -16,7 +16,6 @@ psutil==5.9.0
 pydantic==2.7.1
 pydub==0.24.1
 pyproject-toml==0.0.10
-pytest==6.2.5
 python-dateutil==2.8.0
 python-Levenshtein==0.12.2
 pytorch-lightning==2.0.7
@@ -40,10 +39,11 @@ pesq==0.0.4
 
 resemblyzer @ git+https://github.com/resemble-ai/Resemblyzer.git@15d828edebe06bc72b9cabc8ef8ca5ab2cb457ce
 whisper-timestamped @ git+https://github.com/linto-ai/whisper-timestamped.git@5d4fdaa93e9c6e1b8d3152903993c85f5c7c0334
-wespeaker @ git+https://github.com/wenet-e2e/wespeaker.git@5bf8f27d2b151c04fc619ba183845b69b7721508
+wespeaker @ git+https://github.com/wenet-e2e/wespeaker.git@35ed59383f695341866b72c60df2e54d3a777925
 
-black==22.8
-isort==5.12.0
+pytest==8.2.2
+black==24.4
+isort==5.13.2
 mypy-extensions==0.4.3
 nuitka==0.9
 pre-commit==2.15.0
@@ -52,6 +52,3 @@ typing-extensions==4.9.0
 # st-annotated-text==4.0.0
 # streamlit-server-state==0.16.0
 # streamlit==1.33.0
-
-# fastapi==0.70.0
-# pydantic==1.10.2

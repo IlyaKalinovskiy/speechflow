@@ -1,2 +1,9 @@
-Mark:
-  root: ELEVENLABS/001_Mark
+Natasha:
+  root: 001_Natasha
+  file_list: meta.txt
+Ruslan:
+  root: 002_Ruslan
+  file_list: meta.txt
+Synthetic:
+  root: 003_Synthetic
+  many: True

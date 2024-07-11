@@ -30,7 +30,7 @@ def parse_args():
     )
     arguments_parser.add_argument(
         "-asr",
-        "--asr_credentials_path",
+        "--asr_credentials",
         help="path to credentials file for ASR cloud service",
         type=Path,
     )
@@ -64,7 +64,7 @@ def _convert_to_wav(audio_path: Path):
 def main(
     data_root: Path,
     lang: str,
-    asr_credentials_path: Path,
+    asr_credentials: Path,
     num_samples: int = 0,
     n_processes: int = 0,
     n_gpus: int = 0,
@@ -78,10 +78,10 @@ def main(
         data_root / "AudioTranscription_log.txt", disable=disable_logging
     ):
         try:
-            if asr_credentials_path is None:
+            if asr_credentials is None:
                 raise ValueError("Credentials for ASR cloud service not set!")
             else:
-                if not asr_credentials_path.exists():
+                if not asr_credentials.exists():
                     raise FileNotFoundError(
                         "Credentials for ASR cloud service not found!"
                     )
@@ -100,7 +100,7 @@ def main(
                 if "ru" in lang.lower() and not use_openai_asr:
                     LOGGER.info("Usage Yandex ASR")
                     asr = YandexASR(
-                        asr_credentials_path,
+                        asr_credentials,
                         TextParser.language_to_locale(lang).replace("_", "-"),
                         raise_on_converter_exc=raise_on_converter_exc,
                         raise_on_asr_limit_exc=raise_on_asr_limit_exc,
@@ -108,7 +108,7 @@ def main(
                 elif not use_openai_asr:
                     LOGGER.info("Usage Google ASR")
                     asr = GoogleASR(
-                        asr_credentials_path,
+                        asr_credentials,
                         TextParser.language_to_locale(lang).replace("_", "-"),
                         raise_on_converter_exc=raise_on_converter_exc,
                         raise_on_asr_limit_exc=raise_on_asr_limit_exc,

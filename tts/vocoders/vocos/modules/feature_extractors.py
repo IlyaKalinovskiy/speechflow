@@ -383,7 +383,10 @@ class AudioFeatures(FeatureExtractor):
             conditions["lang_emb"] = self.lang_embs(lang_id)
 
         if self.speaker_proj is not None:
-            conditions["speaker_emb"] = self.speaker_proj(inputs.speaker_emb_mean)
+            if inputs.speaker_emb_mean is not None:
+                conditions["speaker_emb"] = self.speaker_proj(inputs.speaker_emb_mean)
+            else:
+                conditions["speaker_emb"] = self.speaker_proj(inputs.speaker_emb)
 
         conditions["speech_quality_emb"] = inputs.speech_quality_emb
 

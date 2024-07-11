@@ -41,7 +41,7 @@ class YandexASR(CloudASR):
 
     def __init__(
         self,
-        asr_credentials_path: Path,
+        asr_credentials: Path,
         locale_code: str,
         max_http_retries: int = 3,
         raise_on_converter_exc: bool = False,
@@ -51,12 +51,12 @@ class YandexASR(CloudASR):
             raise_on_converter_exc=raise_on_converter_exc,
             raise_on_asr_limit_exc=raise_on_asr_limit_exc,
         )
-        if asr_credentials_path.suffix == ".yml":
+        if asr_credentials.suffix == ".yml":
             credentials = yaml.load(
-                asr_credentials_path.read_text(encoding="utf-8"), Loader=yaml.SafeLoader
+                asr_credentials.read_text(encoding="utf-8"), Loader=yaml.SafeLoader
             )
         else:
-            credentials = json.loads(asr_credentials_path.read_text(encoding="utf-8"))
+            credentials = json.loads(asr_credentials.read_text(encoding="utf-8"))
 
         self._credentials = YandexASRConfig(
             api_key=credentials.get("api_key"),

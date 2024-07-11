@@ -119,12 +119,12 @@ def parse_args():
         default="",
     )
     arguments_parser.add_argument(
-        "--finetune_path",
+        "--finetune_model",
         help="path to checkpoint for finetune",
         type=Path,
     )
     arguments_parser.add_argument(
-        "--pretrained_path",
+        "--pretrained_models",
         help="path to pretrained checkpoints",
         nargs="+",
         type=Path,
@@ -133,7 +133,7 @@ def parse_args():
         "--resume_from_path", help="path to experiment folder", type=Path
     )
     arguments_parser.add_argument(
-        "--asr_credentials_path",
+        "--asr_credentials",
         help="path to credentials file for ASR cloud service (used OpenAI Whisper by default)",
         type=Path,
     )
@@ -176,7 +176,7 @@ def _update_fa_configs(
     max_epochs: int,
     use_reverse_mode: bool,
     experiment_path: tp.Optional[Path],
-    finetune_path: tp.Optional[Path] = None,
+    finetune_model: tp.Optional[Path] = None,
     sega_suffix: str = "",
 ) -> tp.Tuple[tp.Optional[Path], tp.Optional[Path]]:
     n_gpus = max(n_gpus - 1, 0)
@@ -208,9 +208,9 @@ def _update_fa_configs(
         model_cfg["trainer"]["max_epochs"] = max_epochs
     if experiment_path:
         model_cfg["trainer"]["resume_from_checkpoint"] = experiment_path.as_posix()
-    if finetune_path:
-        assert finetune_path.exists()
-        model_cfg["model"]["init_from"] = {"ckpt_path": finetune_path.as_posix()}
+    if finetune_model:
+        assert finetune_model.exists()
+        model_cfg["model"]["init_from"] = {"ckpt_path": finetune_model.as_posix()}
     if n_gpus == 0:
         model_cfg["model"]["params"]["speaker_biometric_model"] = "resemblyzer"
 
@@ -241,8 +241,8 @@ def _update_fa_configs(
         speaker_ids["langs_filter"] = langs_filter
     if speakers_filter:
         speaker_ids["speakers_filter"] = speakers_filter
-    if finetune_path:
-        speaker_ids["resume_from_checkpoint"] = finetune_path.as_posix()
+    if finetune_model:
+        speaker_ids["resume_from_checkpoint"] = finetune_model.as_posix()
 
     if n_gpus == 0 and "voice_bio" in config_data["preproc"]["pipe"]:
         config_data["preproc"]["pipe_cfg"]["voice_bio"]["model_type"] = "resemblyzer"
@@ -301,7 +301,7 @@ def _run_align(**kwargs):
 
 def _seg_processing(
     sega_path: Path,
-    pretrained_path: tp.List[Path],
+    pretrained_models: tp.List[Path],
     langs_filter: tp.List,
     n_gpus: int = 0,
     sega_suffix: str = "",
@@ -310,8 +310,8 @@ def _seg_processing(
         with EasyDSParser.lock:
             device = "cpu" if n_gpus == 0 else f"cuda:{get_freer_gpu(strict=False)}"
             annotator = AnnotatorEvaluationInterface(
-                pretrained_path[0],
-                pretrained_path[1],
+                pretrained_models[0],
+                pretrained_models[1],
                 device=device,
                 use_reverse_mode=True,
             )
@@ -332,7 +332,7 @@ def _seg_processing(
 
 
 def _run_segs_correction(
-    pretrained_path: tp.List[Path],
+    pretrained_models: tp.List[Path],
     output_dir: Path,
     langs_filter=None,
     flist_path=None,
@@ -344,7 +344,7 @@ def _run_segs_correction(
     func = init_method_from_config(
         _seg_processing,
         {
-            "pretrained_path": pretrained_path,
+            "pretrained_models": pretrained_models,
             "langs_filter": langs_filter,
             "n_gpus": n_gpus,
             "sega_suffix": sega_suffix,
@@ -541,7 +541,9 @@ def _calc_statistics(
     LOGGER.info(f"Total audio duration in hours: {np.round(total_duration, 3)}")
 
 
-def _get_pretrained_path(output_dir: Path, lang: str, langs_filter=None) -> tp.List[Path]:
+def _get_pretrained_models(
+    output_dir: Path, lang: str, langs_filter=None
+) -> tp.List[Path]:
     def extract_step(txt):
         return int(re.split(r"stage(\d+)", str(txt))[1])
 
@@ -549,13 +551,13 @@ def _get_pretrained_path(output_dir: Path, lang: str, langs_filter=None) -> tp.L
     ckpt_path = (output_dir / "forced_alignment" / lang_dir).rglob("*.ckpt")
     ckpt_path = [item.parent for item in ckpt_path if "initial" not in item.name]
 
-    pretrained_path = []
+    pretrained_models = []
     for t in Counter(ckpt_path):
         files = list(t.glob("*.ckpt"))
-        pretrained_path.append(max(files, key=lambda f: f.stat().st_mtime))
+        pretrained_models.append(max(files, key=lambda f: f.stat().st_mtime))
 
-    pretrained_path.sort(key=extract_step)
-    return pretrained_path
+    pretrained_models.sort(key=extract_step)
+    return pretrained_models
 
 
 def main(
@@ -577,15 +579,15 @@ def main(
     use_asr_transcription: bool = False,
     max_step: int = 4,
     sega_suffix: str = "",
-    finetune_path: tp.Optional[Path] = None,
-    pretrained_path: tp.Optional[tp.List[Path]] = None,
+    finetune_model: tp.Optional[Path] = None,
+    pretrained_models: tp.Optional[tp.List[Path]] = None,
     resume_from_path: tp.Optional[Path] = None,
-    asr_credentials_path: tp.Optional[Path] = None,
+    asr_credentials: tp.Optional[Path] = None,
 ):
     with LoggingServer.ctx(output_dir, "runner"):
 
-        if pretrained_path is None and (output_dir / "forced_alignment").exists():
-            pretrained_path = _get_pretrained_path(output_dir, lang, langs_filter)
+        if pretrained_models is None and (output_dir / "forced_alignment").exists():
+            pretrained_models = _get_pretrained_models(output_dir, lang, langs_filter)
 
         if lang == "MULTILANG":
             speakers_profile = _get_multilang_speakers_profile(
@@ -607,7 +609,7 @@ def main(
                 run_audio_transcription(
                     data_root=data_root / meta["root"],
                     lang=meta.get("lang", lang),
-                    asr_credentials_path=asr_credentials_path,
+                    asr_credentials=asr_credentials,
                     num_samples=num_samples,
                     n_processes=n_processes,
                     n_gpus=n_gpus,
@@ -662,15 +664,15 @@ def main(
             if isinstance(max_epochs, list) and len(max_epochs) == 1:
                 max_epochs = [max_epochs[0]] * 3
 
-            experiment_path = pretrained_path[0] if pretrained_path else None
+            experiment_path = pretrained_models[0] if pretrained_models else None
             if resume_from_path is not None:
                 experiment_path = resume_from_path
 
             for stage in range(start_stage, 3):
                 LOGGER.info(f"Step: 2 - stage{stage}")
 
-                if pretrained_path and stage <= len(pretrained_path):
-                    experiment_path = pretrained_path[stage - 1]
+                if pretrained_models and stage <= len(pretrained_models):
+                    experiment_path = pretrained_models[stage - 1]
                 else:
                     model_config_path, data_config_path = _update_fa_configs(
                         f"model_stage{stage}.yml",
@@ -688,7 +690,7 @@ def main(
                         use_reverse_mode=use_reverse_mode,
                         experiment_path=experiment_path,
                         sega_suffix=sega_suffix,
-                        finetune_path=finetune_path,
+                        finetune_model=finetune_model,
                     )
                     experiment_path = _run_fa(
                         model_config_path=model_config_path,
@@ -710,11 +712,11 @@ def main(
 
         # step 3
         if start_step <= 3 <= max_step and use_reverse_mode:
-            if not pretrained_path or len(pretrained_path) < 2:
-                pretrained_path = _get_pretrained_path(output_dir, lang, langs_filter)
+            if not pretrained_models or len(pretrained_models) < 2:
+                pretrained_models = _get_pretrained_models(output_dir, lang, langs_filter)
 
             _run_segs_correction(
-                pretrained_path=pretrained_path,
+                pretrained_models=pretrained_models,
                 output_dir=output_dir,
                 langs_filter=langs_filter,
                 flist_path=seglist_paths,
@@ -734,7 +736,7 @@ if __name__ == "__main__":
     # example:
     #  runner.py -d ../examples/simple_datasets/speech/SRC
     #            -o ../examples/simple_datasets/speech/SEGS
-    #            --pretrained_path ../speechflow/data/fa/glowtts/stage1_epoch=19-step=208340.pt
+    #            --pretrained_models ../speechflow/data/fa/glowtts/stage1_epoch=19-step=208340.pt
     #                              ../speechflow/data/fa/glowtts/stage2_epoch=29-step=312510.pt
 
     main(**parse_args().__dict__)
