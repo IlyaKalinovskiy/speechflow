@@ -1,6 +1,9 @@
 import typing as tp
 import logging
 
+from pathlib import Path
+
+import numpy as np
 import torch
 import whisper_timestamped as whisper
 
@@ -30,7 +33,7 @@ class OpenAIASR(CloudASR):
         raise_on_converter_exc: bool = False,
     ):
         super().__init__(
-            sample_rate=None,
+            sample_rate=16000,
             output_file_ext=".whisper",
             raise_on_converter_exc=raise_on_converter_exc,
             raise_on_asr_limit_exc=False,
@@ -101,11 +104,16 @@ class OpenAIASR(CloudASR):
 
         md = {"wav_path": metadata["wav_path"]}
 
+        if "waveform" in metadata:
+            audio = metadata["waveform"] / np.float32(np.iinfo(np.int16).max)
+        else:
+            audio = Path(metadata["wav_path"]).as_posix()
+
         if model.device.type != "cpu":
             with torch.cuda.device(model.device):
                 result = whisper.transcribe(
                     model,
-                    audio=metadata["wav_path"].as_posix(),
+                    audio=audio,
                     language=self._lang,
                     condition_on_previous_text=False,
                     beam_size=5,
@@ -115,7 +123,7 @@ class OpenAIASR(CloudASR):
         else:
             result = whisper.transcribe(
                 model,
-                audio=metadata["wav_path"].as_posix(),
+                audio=audio,
                 language=self._lang,
                 condition_on_previous_text=False,
                 beam_size=5,

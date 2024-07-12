@@ -313,7 +313,7 @@ def _seg_processing(
                 pretrained_models[0],
                 pretrained_models[1],
                 device=device,
-                use_reverse_mode=True,
+                last_word_correction=True,
             )
             setattr(_seg_processing, "annotator", annotator)
 
@@ -326,7 +326,7 @@ def _seg_processing(
         return
 
     annotator = getattr(_seg_processing, "annotator")
-    sega = annotator.proccess(sega_path=sega_path)
+    sega = annotator.process(sega_path=sega_path)
     sega.save(new_sega_path)
     LOGGER.info(f"Save sega {new_sega_path.as_posix()}")
 

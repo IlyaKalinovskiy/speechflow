@@ -33,7 +33,7 @@ class CloudASR(BaseDSParser):
     def __init__(
         self,
         output_file_ext: str = ".json",
-        sample_rate: tp.Optional[int] = 16000,
+        sample_rate: int = 16000,
         raise_on_converter_exc: bool = False,
         raise_on_asr_limit_exc: bool = False,
         release_func: tp.Optional[tp.Callable] = None,
@@ -52,7 +52,8 @@ class CloudASR(BaseDSParser):
         return [metadata]
 
     def converter(self, metadata: Metadata) -> tp.List[Metadata]:
-        audio_chunk = AudioChunk(metadata["wav_path"])
+        wav_path = Path(metadata["wav_path"])
+        audio_chunk = AudioChunk(wav_path)
         audio_chunk = audio_chunk.load(sr=self._sample_rate).astype(np.int16)
 
         try:
@@ -70,13 +71,13 @@ class CloudASR(BaseDSParser):
             }
         )
 
-        output_file_path: Path = metadata["wav_path"].with_suffix(self._output_file_ext)
+        output_file_path = wav_path.with_suffix(self._output_file_ext)
         output_file_path.write_text(
             json.dumps(transcription, ensure_ascii=False, indent=4),
             encoding="utf-8",
         )
 
-        txt_file_path: Path = metadata["wav_path"].with_suffix(".txt")
+        txt_file_path = wav_path.with_suffix(".txt")
         if not txt_file_path.exists():
             txt_file_path.write_text(metadata["transcription"]["text"], encoding="utf-8")
 
