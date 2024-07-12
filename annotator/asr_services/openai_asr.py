@@ -13,6 +13,7 @@ from annotator.asr_services.cloud_asr import CloudASR
 from speechflow.data_pipeline.core.parser_types import Metadata
 from speechflow.utils.checks import check_install
 from speechflow.utils.gpu import get_freer_gpu, get_total_gpu_memory
+from speechflow.utils.tqdm_disable import tqdm_disable
 
 __all__ = ["OpenAIASR"]
 
@@ -109,8 +110,19 @@ class OpenAIASR(CloudASR):
         else:
             audio = Path(metadata["wav_path"]).as_posix()
 
-        if model.device.type != "cpu":
-            with torch.cuda.device(model.device):
+        with tqdm_disable():
+            if model.device.type != "cpu":
+                with torch.cuda.device(model.device):
+                    result = whisper.transcribe(
+                        model,
+                        audio=audio,
+                        language=self._lang,
+                        condition_on_previous_text=False,
+                        beam_size=5,
+                        best_of=5,
+                        suppress_tokens=[-1] + number_tokens,
+                    )
+            else:
                 result = whisper.transcribe(
                     model,
                     audio=audio,
@@ -120,16 +132,6 @@ class OpenAIASR(CloudASR):
                     best_of=5,
                     suppress_tokens=[-1] + number_tokens,
                 )
-        else:
-            result = whisper.transcribe(
-                model,
-                audio=audio,
-                language=self._lang,
-                condition_on_previous_text=False,
-                beam_size=5,
-                best_of=5,
-                suppress_tokens=[-1] + number_tokens,
-            )
 
         timestamps = []
         for segment in result["segments"]:

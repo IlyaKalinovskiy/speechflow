@@ -9,7 +9,7 @@ import numpy as np
 from multilingual_text_parser import Doc, TextParser
 
 from annotator.align import Aligner, AlignStage
-from speechflow.io import AudioChunk, AudioSeg, Timestamps, check_path, tp_PATH
+from speechflow.io import AudioChunk, AudioSeg, Timestamps, tp_PATH
 from speechflow.utils.fs import get_root_dir
 
 LOGGER = logging.getLogger("root")
