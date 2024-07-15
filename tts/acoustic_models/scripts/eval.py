@@ -2,39 +2,53 @@ import typing as tp
 
 from pathlib import Path
 
-import torch
-import numpy.typing as npt
-
-from speechflow.utils.plotting import plot_spectrogram as plot_spectrogram_with_phonemes
-from speechflow.utils.plotting import plot_tensor
+from speechflow.utils.plotting import plot_durations_and_signals, plot_tensor
 from speechflow.utils.profiler import Profiler
 from speechflow.utils.seed import get_seed
+from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
 from tts.acoustic_models.interface.eval_interface import (
     TTSContext,
     TTSEvaluationInterface,
 )
 from tts.acoustic_models.models.prosody_reference import REFERENECE_TYPE
+from tts.acoustic_models.modules.common.length_regulators import SoftLengthRegulator
 from tts.vocoders.eval_interface import VocoderEvaluationInterface
 
 
-def _plot_spectrogram(
-    spec: tp.Union[npt.NDArray, torch.Tensor], dura=None, symbols=None, pitch=None
-):
-    import matplotlib
+def plotting(tts_in: TTSForwardInput, tts_out: TTSForwardOutput, doc, signals=("pitch",)):
+    try:
+        dura = tts_out.variance_predictions["durations"]
+        max_len = tts_out.spectrogram[0].shape[0]
 
-    matplotlib.use("TkAgg")
+        if tts_out.spectrogram.shape[0] == 1:
+            lr = SoftLengthRegulator(sigma=999999)
 
-    if isinstance(spec, torch.Tensor):
-        spec = spec.cpu().numpy()[0].transpose()
+            signal = {}
+            for name in signals:
+                signal[name] = tts_out.variance_predictions[name][0]
 
-    if dura is not None:
-        dura = dura.cpu().cumsum(0).long().numpy().tolist()
-        symbols = list(symbols[1:]) + [symbols[0]]
-        pitch = pitch.cpu().numpy()[: spec.shape[1]]
-        pitch = pitch / pitch.max() * (spec.shape[0] // 2)
-        plot_spectrogram_with_phonemes(spec, symbols, dura, signal=pitch, dont_close=True)
-    else:
-        plot_spectrogram_with_phonemes(spec, dont_close=True)
+                name = f"aggregate_{name}"
+                if name in tts_out.variance_predictions:
+                    val = tts_out.variance_predictions[name]
+                    val, _ = lr(val.unsqueeze(-1), dura, max_len)
+                    signal[name] = val[0, :, 0]
+
+            val = tts_in.ling_feat.breath_mask * (-1)
+            val, _ = lr(val.unsqueeze(-1), dura, max_len)
+            signal["breath_mask"] = val[0, :, 0]
+
+            plot_durations_and_signals(
+                tts_out.spectrogram[0],
+                dura[0],
+                doc.sents[0].get_phonemes(as_tuple=True),
+                signal,
+            )
+        else:
+            plot_tensor(tts_out.spectrogram)
+    except Exception as e:
+        print(e)
+    finally:
+        Profiler.sleep(1)
 
 
 def synthesize(
@@ -74,12 +88,7 @@ def synthesize(
             speaker_name=tts_ctx.prosody_reference.default.speaker_name,
         )
 
-    try:
-        plot_tensor(tts_out.spectrogram)
-        Profiler.sleep(1)
-    except Exception as e:
-        print(e)
-
+    plotting(tts_in, tts_out, doc)
     return voc_out.audio_chunk
 
 
@@ -106,7 +115,7 @@ if __name__ == "__main__":
     tests = [
         {
             "lang": "RU",
-            "speaker_name": "Kontur",
+            "speaker_name": "Natasha",
             "style_reference": Path("374.wav"),
             "utterances": """
 

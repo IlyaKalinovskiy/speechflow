@@ -354,7 +354,11 @@ def add_pauses_from_timestamps(
                 asr_pause = float(token.asr_pause) if token.asr_pause is not None else 0
 
             if not _fp_eq(ts_word[0], prev_ts):
-                diff = ts_word[0] - prev_ts
+                if token.text == TextProcessor.eos:
+                    diff = ds.audio_chunk.duration - prev_ts
+                else:
+                    diff = ts_word[0] - prev_ts
+
                 if (
                     diff > min_len
                     or token in [begin_token, end_token]
@@ -375,6 +379,10 @@ def add_pauses_from_timestamps(
                     sil_ts = np.dstack((seq_idx, seq_idx + 1)).astype(np.float32)[0]
                     new_ts_ph = prev_ts + sil_ts * (1 if step is None else step)
                     new_ts_ph[-1][1] = ts_word[0]
+
+                    if token.text == TextProcessor.eos:
+                        new_ts_word[-1] = ds.audio_chunk.duration
+                        new_ts_ph[-1][1] = ds.audio_chunk.duration
 
                     tokens_processed.append(pause_token)
                     ts_words_processed.append(new_ts_word)
@@ -768,6 +776,10 @@ def add_service_tokens(ds: TTSDataSample):
 
     if ds.word_timestamps and ds.phoneme_timestamps:
         frame_dura = 0.25 * hop_len / ds.audio_chunk.sr
+        begin_phoneme_dura = float(np.diff(ds.phoneme_timestamps[0][0]))
+        end_phoneme_dura = float(np.diff(ds.phoneme_timestamps[-1][-1]))
+        frame_dura = min(frame_dura, min(begin_phoneme_dura, end_phoneme_dura) / 2)
+
         ts_end = ds.word_timestamps.end
 
         ds.word_timestamps.append_left([(0.0, frame_dura)])

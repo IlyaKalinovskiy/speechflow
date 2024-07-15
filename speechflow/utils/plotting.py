@@ -21,6 +21,7 @@ __all__ = [
     "phonemes_to_frame_ticks",
     "phonemes_to_frame_ticks_with_durations",
     "plot_tensor",
+    "plot_durations_and_signals",
 ]
 
 
@@ -199,7 +200,7 @@ def plot_spectrogram(
     spectrogram: npt.NDArray,
     phonemes: tp.Optional[tp.List[str]] = None,
     phonemes_ticks: tp.Optional[tp.List[float]] = None,
-    signal: tp.Optional[npt.NDArray] = None,
+    signal: tp.Optional[tp.Union[npt.NDArray, tp.Dict[str, npt.NDArray]]] = None,
     limits: tp.Optional[tp.Tuple[float, float]] = None,
     dpi: int = 80,
     **kwargs,
@@ -244,7 +245,18 @@ def plot_spectrogram(
     )
 
     if signal is not None:
-        ax.plot(np.arange(spectrogram.shape[1]), signal, c="indigo", lw=1, label="pitch")
+        if not isinstance(signal, dict):
+            signal = {"signal": signal}
+
+        for name, s in signal.items():
+            ax.plot(
+                np.arange(spectrogram.shape[1]),
+                s,
+                c=np.random.rand(3).tolist(),
+                lw=1,
+                label=name,
+            )
+        ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, fontsize="small")
 
     if phonemes and phonemes_ticks:
         ax.set_xticks(phonemes_ticks)
@@ -357,3 +369,27 @@ def plot_tensor(t: "torch.Tensor", title=None):
         plot_1d(t)
 
     plt.show()
+
+
+def plot_durations_and_signals(spec: "torch.Tensor", dura=None, symbols=None, signal=None):
+    import torch
+    import matplotlib
+
+    matplotlib.use("TkAgg")
+
+    if isinstance(spec, torch.Tensor):
+        spec = spec.cpu().numpy().transpose()
+
+    if not isinstance(signal, dict):
+        signal = {"signal": signal}
+
+    for name, val in signal.items():
+        val = val.cpu().numpy()[: spec.shape[1]]
+        val = val / val.max() * (spec.shape[0] // 2)
+        signal[name] = val
+
+    if dura is not None:
+        dura = dura.cpu().cumsum(0).long().numpy().tolist()
+        plot_spectrogram(spec, symbols, dura, signal=signal, dont_close=True)
+    else:
+        plot_spectrogram(spec, signal=signal, dont_close=True)

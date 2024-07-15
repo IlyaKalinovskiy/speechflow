@@ -7,7 +7,9 @@ from torch.nn import functional as F
 
 from speechflow.logging import trace
 from speechflow.training.utils.tensor_utils import (
+    apply_mask,
     get_lengths_from_durations,
+    get_mask_from_lengths,
     merge_additional_outputs,
 )
 from tts.acoustic_models.modules.common import VarianceEmbedding
@@ -352,6 +354,9 @@ class HierarchicalVarianceAdaptor(Component):
             if model_inputs.durations is not None:
                 model_inputs.durations = (
                     model_inputs.durations * _range[:, 2:3] + _range[:, 0:1]
+                )
+                model_inputs.durations = apply_mask(
+                    model_inputs.durations, get_mask_from_lengths(x_duration_length)
                 )
 
         durations_content.update({f"{DP_NAME}_postprocessed": durations})
