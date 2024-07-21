@@ -60,7 +60,7 @@ preproc:
     store_bio_emb:
       type: store_field
       key: speaker_emb
-      as_key: ecapa_emb
+      as_key: style_emb
     voice_bio_wespeaker:
       type: VoiceBiometricProcessor
       model_type: wespeaker

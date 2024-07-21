@@ -386,8 +386,6 @@ if __name__ == "__main__":
         _model.eval()
         _model.load_state_dict(_checkpoint["state_dict"])
 
-        _data_pipeline.init_components()
-
         _metadata = _data_pipeline["valid"].dataset_parser.reader(_flist[0])
         _batch = _data_pipeline["valid"].metadata_to_batch(_metadata)
 
