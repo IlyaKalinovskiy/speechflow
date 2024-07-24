@@ -152,11 +152,11 @@ class VocosExp(pl.LightningModule):
         )
 
     def forward(self, inputs, **kwargs):
-        features, feat_losses = self.feature_extractor(inputs, **kwargs)
+        features, losses, _ = self.feature_extractor(inputs, **kwargs)
         x = self.backbone(features, **kwargs)
         audio_output, mb_audio_output, head_losses = self.head(x, **kwargs)
-        feat_losses.update(head_losses)
-        return audio_output, mb_audio_output, feat_losses
+        losses.update(head_losses)
+        return audio_output, mb_audio_output, losses
 
     def training_step(self, batch, batch_idx, optimizer_idx, **kwargs):
         inputs, targets, metadata = self.batch_processor(

@@ -440,6 +440,7 @@ class AudioFeatures(FeatureExtractor):
 
     def forward(self, inputs: VocoderForwardInput, **kwargs):
         losses = {}
+        additional_content = {}
 
         x, x_lens = self._get_input_feat(inputs)
         conditions = self._get_conditions(inputs)
@@ -456,6 +457,7 @@ class AudioFeatures(FeatureExtractor):
             )
             vq_output = self.vq_enc(vq_input)
             x = vq_output.content
+            additional_content.update(vq_output.additional_content)
 
             losses.update(
                 {
@@ -538,4 +540,4 @@ class AudioFeatures(FeatureExtractor):
         else:
             output = x
 
-        return output.transpose(1, -1), losses
+        return output.transpose(1, -1), losses, additional_content

@@ -106,7 +106,12 @@ class VocoderLoader:
             for k, v in state_dict.items()
             if "discriminators" not in k and "loss" not in k
         }
-        model.load_state_dict(state_dict)
+        try:
+            model.load_state_dict(state_dict)
+        except:
+            state_dict = {k.replace("lstms.", "rnns."): v for k, v in state_dict.items()}
+            model.load_state_dict(state_dict)
+
         return model
 
 
@@ -256,10 +261,11 @@ if __name__ == "__main__":
 
         from tqdm import tqdm
 
-        voc_path = "vocos_checkpoint_epoch=6_step=1439522_val_loss=9.8176.pt"
-        test_files = "eng_spontan_2mic/wav_16k"
-        result_path = "eng_spontan_2mic/result"
-        ref_file = "4922.wav"
+        root_dir = Path("/data3/i.kalinovskiy")
+        voc_path = root_dir / "vocos_checkpoint_epoch=22_step=575000_val_loss=10.0199.ckpt"
+        test_files = root_dir / "eng_spontan/wav_16k"
+        result_path = root_dir / "eng_spontan/result"
+        ref_file = root_dir / "4922.wav"
 
         voc = VocoderEvaluationInterface(voc_path, device="cuda:0")
         Path(result_path).mkdir(parents=True, exist_ok=True)
@@ -273,5 +279,6 @@ if __name__ == "__main__":
             try:
                 voc_out = voc.resynthesize(wav_file, ref_file, lang="EN")
                 voc_out.audio_chunk.save(result_file_name, overwrite=True)
+                print(voc_out.additional_content["vq_codes"].squeeze().cpu().numpy())
             except Exception as e:
                 print(e)

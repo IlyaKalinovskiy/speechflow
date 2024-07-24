@@ -79,7 +79,7 @@ class Vocos(nn.Module):
             Tensor: The output tensor representing the reconstructed audio waveform of shape (B, T).
 
         """
-        features, _ = self.feature_extractor(audio_input, **kwargs)
+        features, _, _ = self.feature_extractor(audio_input, **kwargs)
         audio_output = self.decode(features, **kwargs)
         return audio_output
 
@@ -102,7 +102,7 @@ class Vocos(nn.Module):
 
     @torch.no_grad()
     def inference(self, inputs: VocoderForwardInput, **kwargs) -> VocoderForwardOutput:
-        feat, additional_content = self.feature_extractor(inputs, **kwargs)
+        feat, losses, additional_content = self.feature_extractor(inputs, **kwargs)
         waveform, _, _ = self.decode(feat, **kwargs)
         return VocoderForwardOutput(
             waveform=waveform, additional_content=additional_content
