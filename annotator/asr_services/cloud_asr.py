@@ -48,19 +48,19 @@ class CloudASR(BaseDSParser):
     def reader(
         self, file_path: Path, label: tp.Optional[str] = None
     ) -> tp.List[Metadata]:
-        metadata = {"wav_path": file_path}
+        metadata = {"audio_path": file_path}
         return [metadata]
 
     def converter(self, metadata: Metadata) -> tp.List[Metadata]:
-        wav_path = Path(metadata["wav_path"])
-        audio_chunk = AudioChunk(wav_path)
+        audio_path = Path(metadata["audio_path"])
+        audio_chunk = AudioChunk(audio_path)
         audio_chunk = audio_chunk.load(sr=self._sample_rate).astype(np.int16)
 
         try:
             metadata.update({"waveform": audio_chunk.waveform, "sr": audio_chunk.sr})
             metadata = self._transcription(metadata)
         except ASRException as e:
-            LOGGER.error(f"{metadata['wav_path']}: {e}")
+            LOGGER.error(f"{metadata['audio_path']}: {e}")
             raise e
 
         transcription: dict = metadata["transcription"]
@@ -71,13 +71,13 @@ class CloudASR(BaseDSParser):
             }
         )
 
-        output_file_path = wav_path.with_suffix(self._output_file_ext)
+        output_file_path = audio_path.with_suffix(self._output_file_ext)
         output_file_path.write_text(
             json.dumps(transcription, ensure_ascii=False, indent=4),
             encoding="utf-8",
         )
 
-        txt_file_path = wav_path.with_suffix(".txt")
+        txt_file_path = audio_path.with_suffix(".txt")
         if not txt_file_path.exists():
             txt_file_path.write_text(metadata["transcription"]["text"], encoding="utf-8")
 

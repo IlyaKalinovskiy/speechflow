@@ -9,6 +9,7 @@ from collections import Counter
 from pathlib import Path
 
 import numpy as np
+import distutils
 
 from tqdm import tqdm
 
@@ -65,7 +66,7 @@ def parse_args():
         "-ngpu", "--n_gpus", help="number of GPU device", type=int, default=0
     )
     arguments_parser.add_argument(
-        "-nw",
+        "-ngw",
         "--n_workers_per_gpu",
         help="number of workers running on GPU",
         type=int,
@@ -90,17 +91,27 @@ def parse_args():
         default=[20, 10],
     )
     arguments_parser.add_argument(
-        "-r",
         "--use_reverse_mode",
         help="inverting audios and transcriptions during training",
-        action="store_true",
+        type=lambda x: bool(distutils.util.strtobool(x)),
         default=True,
     )
     arguments_parser.add_argument(
-        "-t",
         "--use_asr_transcription",
         help="using ASR transcription to split audio into single utterances",
-        action="store_true",
+        type=lambda x: bool(distutils.util.strtobool(x)),
+        default=True,
+    )
+    arguments_parser.add_argument(
+        "--use_resampling_audio",
+        help="using resampling audio to sample rate",
+        type=lambda x: bool(distutils.util.strtobool(x)),
+        default=True,
+    )
+    arguments_parser.add_argument(
+        "--use_loudnorm_audio",
+        help="using audio volume nomalization",
+        type=lambda x: bool(distutils.util.strtobool(x)),
         default=True,
     )
     arguments_parser.add_argument(
@@ -577,6 +588,8 @@ def main(
     start_stage: int = 1,
     use_reverse_mode: bool = False,
     use_asr_transcription: bool = False,
+    use_resampling_audio: bool = False,
+    use_loudnorm_audio: bool = False,
     max_step: int = 4,
     sega_suffix: str = "",
     finetune_model: tp.Optional[Path] = None,
@@ -650,6 +663,8 @@ def main(
                     use_asr_transcription=meta.get(
                         "use_asr_transcription", use_asr_transcription
                     ),
+                    resampling_audio=use_resampling_audio,
+                    loudnorm_audio=meta.get("use_loudnorm_audio", use_loudnorm_audio),
                 )
                 seglist_paths.append(ret["flist_path"])
                 if speakers_filter is not None and meta.get("many", False):

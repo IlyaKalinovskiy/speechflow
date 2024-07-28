@@ -70,8 +70,8 @@ class AudiobookSpliter(BaseDSParser):
     def reader(
         self, file_path: Path, label: tp.Optional[str] = None
     ) -> tp.List[Metadata]:
-        wav_path = file_path.with_suffix(".wav")
-        if not wav_path.exists():
+        audio_path = file_path.with_suffix(".wav")
+        if not audio_path.exists():
             return []
 
         if self._text_from_label and label:
@@ -95,7 +95,7 @@ class AudiobookSpliter(BaseDSParser):
 
         metadata = {
             "file_path": file_path,
-            "wav_path": wav_path,
+            "audio_path": audio_path,
             "text": text,
             "transcription": transcription,
         }
@@ -190,7 +190,7 @@ class AudiobookSpliter(BaseDSParser):
                 offset = min(15, len(s1))
                 if nmalign.match([s1[:offset]], [s2[:offset]], cutoff=thr1)[1][0] < thr2:
                     LOGGER.warning(
-                        f"sentences no match [text]/[transcription]: {metadata['wav_path'].as_posix()}|[{s1}]/[{s2}]"
+                        f"sentences no match [text]/[transcription]: {metadata['audio_path'].as_posix()}|[{s1}]/[{s2}]"
                     )
                     continue
                 if (
@@ -202,7 +202,7 @@ class AudiobookSpliter(BaseDSParser):
                     < thr2
                 ):
                     LOGGER.warning(
-                        f"sentences no match [text]/[transcription]: {metadata['wav_path'].as_posix()}|[{s1}]/[{s2}]"
+                        f"sentences no match [text]/[transcription]: {metadata['audio_path'].as_posix()}|[{s1}]/[{s2}]"
                     )
                     continue
 
@@ -247,7 +247,7 @@ class AudiobookSpliter(BaseDSParser):
                     a = b
 
                 audio_chunk = AudioChunk(
-                    file_path=metadata["wav_path"],
+                    file_path=metadata["audio_path"],
                     begin=bos_ts,
                     end=eos_ts,
                 )
@@ -261,7 +261,7 @@ class AudiobookSpliter(BaseDSParser):
                         "lang": TextParser.locale_to_language(self._lang),
                         "bos_label": bos_label,
                         "eos_label": eos_label,
-                        "orig_wav_path": Path(audio_chunk.file_path).as_posix(),
+                        "orig_audio_path": Path(audio_chunk.file_path).as_posix(),
                         "orig_audio_chunk": (audio_chunk.begin, audio_chunk.end),
                         "text_parser_version": multilingual_text_parser.__version__,
                     }
@@ -320,7 +320,7 @@ class AudiobookSpliter(BaseDSParser):
         word_offset: int = 1,
         wave_offset: float = 1.0,
     ) -> tp.List[Metadata]:
-        wav_path: Path = metadata["wav_path"]
+        audio_path: Path = metadata["audio_path"]
         asr_timestamps: dict = metadata["transcription"]["timestamps"]
 
         timestamps = []
@@ -382,7 +382,7 @@ class AudiobookSpliter(BaseDSParser):
                 token.meta["next_word_ts"] = tuple(asr_timestamps[eos_index][1:])
             else:
                 token.meta["eos_ts"] = min(
-                    AudioChunk(wav_path).duration,
+                    AudioChunk(audio_path).duration,
                     token.meta["ts"][1] + wave_offset,
                 )
                 token.meta["eos_label"] = ""
@@ -428,7 +428,7 @@ if __name__ == "__main__":
         if "segmentation" in meta:
             for idx, sega in enumerate(meta["segmentation"]):
                 try:
-                    _file_name = f"{meta['wav_path'].name.split('.')[0]}_{idx}.TextGrid"
+                    _file_name = f"{meta['audio_path'].name.split('.')[0]}_{idx}.TextGrid"
                     _file_path = output_path / _file_name
                     sega.meta["speaker_name"] = "LJSpeech"
                     sega.save(_file_path, with_audio=True)

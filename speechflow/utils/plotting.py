@@ -338,7 +338,7 @@ def plot_1d(signal: npt.NDArray, dpi: int = 80, **kwargs) -> tp.Union[plt.Figure
     return None
 
 
-def plot_tensor(t: "torch.Tensor", title=None):
+def plot_tensor(t, title=None):
     import numpy as np
     import torch
     import matplotlib
@@ -371,7 +371,7 @@ def plot_tensor(t: "torch.Tensor", title=None):
     plt.show()
 
 
-def plot_durations_and_signals(spec: "torch.Tensor", dura=None, symbols=None, signal=None):
+def plot_durations_and_signals(spec, dura=None, symbols=None, signal=None):
     import torch
     import matplotlib
 

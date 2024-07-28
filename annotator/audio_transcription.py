@@ -130,7 +130,7 @@ def main(
                 time.sleep(5)
 
         parser = EasyDSParser(func=_convert_to_wav)
-        for file_ext in ["*.mp3", "*.flac"]:
+        for file_ext in ["*.mp3", "*.flac", "*.ogg", "*.opus"]:
             flist = list(data_root.rglob(file_ext))
             if flist:
                 parser.run_from_path_list(flist, n_processes)

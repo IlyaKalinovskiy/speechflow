@@ -1,4 +1,5 @@
 import json
+import shutil
 import typing as tp
 import itertools
 
@@ -35,7 +36,7 @@ class AudioSeg:
         sent: Sentence,
         sega_path: tp.Optional[tp_PATH] = None,
     ):
-        assert audio_chunk.duration > 0, "invalid wave!"
+        assert audio_chunk.duration > 0, "invalid waveform!"
         assert len(sent) > 0, "sentence contains no tokens!"
         self.audio_chunk = audio_chunk
         self.sent: Sentence = sent
@@ -56,6 +57,9 @@ class AudioSeg:
         string = string.replace("{'", '{"').replace("'}", '"}')
         string = string.replace("', '", '", "')
         string = string.replace("': '", '": "')
+        string = string.replace("n': ", 'n": ')
+        string = string.replace("r': ", 'r": ')
+        string = string.replace("t': ", 't": ')
         string = string.replace("': [", '": [').replace("], '", '], "')
         string = string.replace("': true, '", '": true, "')
         string = string.replace("': false, '", '": false, "')
@@ -90,11 +94,11 @@ class AudioSeg:
             )
         if not np.float32(ts.begin) >= np.float32(self.audio_chunk.begin):
             raise ValueError(
-                "Bounds of passed timestamps are not compatible with begin of wave."
+                "Bounds of passed timestamps are not compatible with begin of waveform."
             )
         if not np.float32(ts.end) <= np.float32(self.audio_chunk.end):
             raise ValueError(
-                "Bounds of passed timestamps are not compatible with end of wave."
+                "Bounds of passed timestamps are not compatible with end of waveform."
             )
 
         if self.ts_by_phonemes is None:
@@ -239,36 +243,34 @@ class AudioSeg:
     def save(
         self,
         file_path: tp_PATH,
-        fields: tp.Optional[tp.List[str]] = None,
         with_audio: bool = False,
         with_meta: bool = True,
         overwrite: bool = True,
+        fields: tp.Tuple[str, ...] = (
+            "orig",
+            "syntagmas",
+            "text",
+            "stress",
+            "phonemes",
+            "pos",
+            "rel",
+            "id",
+            "head_id",
+            "emphasis",
+            "asr_pause",
+            "prosody",
+        ),
     ):
         if not overwrite and file_path.exists():
             raise RuntimeError(f"Sega {str(file_path)} is exists!")
-
-        if fields is None:
-            fields = [
-                "orig",
-                "syntagmas",
-                "text",
-                "stress",
-                "phonemes",
-                "pos",
-                "rel",
-                "id",
-                "head_id",
-                "emphasis",
-                "asr_pause",
-                "prosody",
-                # "breath_mask",
-            ]
 
         seqs = {}
         for name in fields:
             seqs[name] = self.get_tier(name, relative=with_audio)
 
-        meta = {"lang": self.sent.lang, "sent_position": self.sent.position.name}
+        meta = self.meta
+        meta["lang"] = self.sent.lang
+        meta["sent_position"] = self.sent.position.name
 
         tg = tgio.Textgrid()
         for name, field in seqs.items():
@@ -276,17 +278,35 @@ class AudioSeg:
             tg.addTier(tier)
 
         if with_audio:
-            if self.audio_chunk.empty and self.audio_chunk.file_path:
-                self.audio_chunk.load()
+            audio_ext = self.audio_chunk.file_path.suffix
+            new_audio_path = file_path.with_suffix(audio_ext)
 
-            self.audio_chunk.file_path = file_path.with_suffix(".wav")
-            self.audio_chunk.save(overwrite=overwrite)
-            meta["wav_path"] = self.audio_chunk.file_path.name
+            if (
+                AudioChunk(self.audio_chunk.file_path).duration
+                == self.audio_chunk.duration
+            ):
+                shutil.copy(self.audio_chunk.file_path, new_audio_path)
+                self.audio_chunk.file_path = new_audio_path
+            else:
+                if self.audio_chunk.empty:
+                    self.audio_chunk.load()
+
+                self.audio_chunk.file_path = new_audio_path
+                self.audio_chunk.save(overwrite=overwrite)
+
+            meta["audio_path"] = self.audio_chunk.file_path.name
             meta["audio_chunk"] = (0.0, self.audio_chunk.duration)  # type: ignore
-            meta["with_audio"] = True
+            meta["audio_sr"] = self.audio_chunk.sr
         else:
-            meta["wav_path"] = Path(self.audio_chunk.file_path).as_posix()
+            audio_path = Path(self.audio_chunk.file_path)
+            if audio_path.parent == self.sega_path.parent:
+                audio_path = audio_path.name
+            else:
+                audio_path = audio_path.as_posix()
+
+            meta["audio_path"] = audio_path
             meta["audio_chunk"] = (self.audio_chunk.begin, self.audio_chunk.end)  # type: ignore
+            meta["audio_sr"] = self.audio_chunk.sr
 
         if with_meta:
             tier = self.get_tier_for_meta(meta, relative=with_audio)
@@ -378,18 +398,28 @@ class AudioSeg:
         ts_by_word = [(word[0], word[1]) for word in tiers["text"]]
 
         if "meta" in tiers:
-            meta = json.loads(AudioSeg._fix_meta_string(tiers["meta"][0].label))
-            orig_wav_path = Path(meta["wav_path"])
+            s = AudioSeg._fix_meta_string(tiers["meta"][0].label)
+            try:
+                meta = json.loads(s)
+            except Exception as e:
+                raise RuntimeError(f"{e}: {s}")
+            if "wav_path" in meta:
+                audio_path_from_meta = Path(meta["wav_path"])
+            else:
+                audio_path_from_meta = Path(meta["audio_path"])
             sent.position = Position[meta["sent_position"]]
             sent.lang = meta.get("lang")
         else:
             meta = {}
-            orig_wav_path = None  # type: ignore
+            audio_path_from_meta = None  # type: ignore
 
-        if orig_wav_path is None or not orig_wav_path.exists():
-            orig_wav_path = file_path.with_suffix(".wav")
+        if audio_path_from_meta is None:
+            audio_path_from_meta = file_path.with_suffix(".wav")
 
-        audio_path = orig_wav_path if audio_path is None else audio_path
+        if not audio_path_from_meta.is_absolute():
+            audio_path_from_meta = file_path.with_name(audio_path_from_meta.name)
+
+        audio_path = audio_path_from_meta if audio_path is None else audio_path
         if not audio_path.exists():
             raise FileNotFoundError(f"Audio file {audio_path.as_posix()} not found!")
 
@@ -401,16 +431,14 @@ class AudioSeg:
 
         if with_audio:
             audio_chunk.load()
-
-            if meta.get("with_audio", False):
-                assert AudioSeg._fp_eq(
-                    audio_chunk.duration, meta["audio_chunk"][1], eps=1.0e-3
-                )
+            assert AudioSeg._fp_eq(
+                audio_chunk.duration, meta["audio_chunk"][1], eps=1.0e-3
+            )
 
         words = sent.get_words()
         assert len(words) == len(tiers["text"]), f"{file_path}"
 
-        for name in [
+        for name in (
             "stress",
             "pos",
             "emphasis",
@@ -419,7 +447,7 @@ class AudioSeg:
             "rel",
             "asr_pause",
             "prosody",
-        ]:
+        ):
             if name in tiers:
                 for (_, _, label), word in zip(tiers[name], words):
                     label = None if label == "undefined" else label

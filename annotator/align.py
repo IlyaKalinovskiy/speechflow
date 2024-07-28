@@ -108,6 +108,7 @@ class Aligner:
         sega_suffix: str = "",
         preload: tp.Optional[tp.Union[tp.Dict, tp.Tuple]] = None,
     ):
+        self._ckpt_path = ckpt_path
         self._stage = stage
         self._batch_size = batch_size
         self._n_processes = n_processes
@@ -356,6 +357,7 @@ class Aligner:
         if self._reverse_mode:
             sega_name += "_reverse"
 
+        sega.meta["aligner_model"] = self._ckpt_path.name
         sega.save(file_path.with_suffix(sega_name))
 
     def _batch_processing(self, batch):

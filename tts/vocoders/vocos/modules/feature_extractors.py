@@ -519,7 +519,11 @@ class AudioFeatures(FeatureExtractor):
             vq_output.additional_losses = {}
             addm_out = self.addm(vq_output)
             losses.update(
-                {k: v for k, v in addm_out.additional_losses.items() if "constant" not in k}
+                {
+                    k: v
+                    for k, v in addm_out.additional_losses.items()
+                    if "constant" not in k
+                }
             )
 
         if self.training and self.mel_predictor is not None:

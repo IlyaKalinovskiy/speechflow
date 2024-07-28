@@ -9,7 +9,7 @@ import numpy as np
 from multilingual_text_parser import Doc, TextParser
 
 from annotator.align import Aligner, AlignStage
-from speechflow.io import AudioChunk, AudioSeg, Timestamps, tp_PATH
+from speechflow.io import AudioChunk, AudioSeg, Timestamps, check_path, tp_PATH
 from speechflow.utils.fs import get_root_dir
 
 LOGGER = logging.getLogger("root")
@@ -150,7 +150,7 @@ class AnnotatorEvaluationInterface:
     def get_sega_from_text(
         self,
         text: str,
-        wav_path: Path,
+        audio_path: Path,
         lang: str,
         speaker_name: str,
     ) -> AudioSeg:
@@ -158,7 +158,7 @@ class AnnotatorEvaluationInterface:
         assert len(sents) == 1
 
         sent = sents[0]
-        audio_chunk = AudioChunk(file_path=wav_path).load()
+        audio_chunk = AudioChunk(file_path=audio_path).load()
 
         words = sent.get_words()
         ts_intervals = np.linspace(audio_chunk.begin, audio_chunk.end, len(words) + 1)
@@ -170,10 +170,11 @@ class AnnotatorEvaluationInterface:
         sega.meta["speaker_name"] = speaker_name
         return sega
 
+    @check_path
     def _process(
         self,
         text: tp.Optional[str] = None,
-        wav_path: tp.Optional[tp_PATH] = None,
+        audio_path: tp.Optional[tp_PATH] = None,
         lang: tp.Optional[str] = None,
         speaker_name: tp.Optional[str] = None,
         sega_path: tp.Optional[tp_PATH] = None,
@@ -182,17 +183,14 @@ class AnnotatorEvaluationInterface:
 
             if sega_path is not None:
                 sega = AudioSeg.load(sega_path)
-                assert sega.meta.get("with_audio", False)
-                wav_path = sega_path.with_suffix(".wav")
-                sega.meta["wav_path"] = wav_path.as_posix()
-            elif text is not None and wav_path is not None:
-                sega = self.get_sega_from_text(text, wav_path, lang, speaker_name)
+            elif text is not None and audio_path is not None:
+                sega = self.get_sega_from_text(text, audio_path, lang, speaker_name)
             else:
-                raise NotImplementedError("Set 'text' and 'wav_path' or 'sega_path'")
+                raise NotImplementedError("Set 'text' and 'audio_path' or 'sega_path'")
 
-            file_name = Path(tmp_dir) / f"{wav_path.name}.TextGrid"
+            file_name = Path(tmp_dir) / f"{sega.audio_chunk.file_path.stem}.TextGrid"
             file_name = file_name.absolute()
-            sega.save(file_name)
+            sega.save(file_name, with_audio=True)
 
             self.aligner_stage1.align_sega(file_name)
             if self.use_reverse_mode:
@@ -213,16 +211,13 @@ class AnnotatorEvaluationInterface:
             else:
                 sega = AudioSeg.load(file_name)
 
-            if sega_path is not None:
-                sega.meta["wav_path"] = wav_path.name
-
         return sega
 
     @tp.overload
     def process(
         self,
         text: str,
-        wav_path: tp_PATH,
+        audio_path: tp_PATH,
         lang: str,
         speaker_name: str,
     ) -> AudioSeg:
@@ -251,10 +246,10 @@ if __name__ == "__main__":
 
     _lang = "RU"
     _speaker_name = "Tatiana"
-    _wav_path = get_root_dir() / "tests/data/test_audio.wav"
+    _audio_path = get_root_dir() / "tests/data/test_audio.wav"
 
     _asr = OpenAIASR(lang=_lang, model_name="tiny")
-    _text = _asr.converter({"wav_path": _wav_path})[0]["text"]
+    _text = _asr.converter({"audio_path": _audio_path})[0]["text"]
 
     annotator = AnnotatorEvaluationInterface(
         glow_tts_stage1,
@@ -262,5 +257,5 @@ if __name__ == "__main__":
         device="cpu",
         last_word_correction=False,
     )
-    _sega = annotator.process(_text, _wav_path, _lang, _speaker_name)
+    _sega = annotator.process(_text, _audio_path, _lang, _speaker_name)
     _sega.save("sega.tg", with_audio=True)

@@ -117,7 +117,7 @@ class YandexASR(CloudASR):
         obj_name = f"{uuid.uuid4()}.ogg"
         s3.upload_fileobj(metadata["audio_data"], self._credentials.bucket_name, obj_name)
 
-        md = {"wav_path": metadata["wav_path"]}
+        md = {"audio_path": metadata["audio_path"]}
         try:
             obj_url = s3.generate_presigned_url(
                 "get_object",

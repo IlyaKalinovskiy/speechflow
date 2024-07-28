@@ -98,7 +98,7 @@ Run this script to get segmentations:
 python -m annotator.runner -d source_data_root -o segmentation_dataset_name -l=MULTILANG -ngpu=1 -nproc=16 -bs=16 --pretrained_models mfa_stage1_epoch=19-step=208340.pt mfa_stage2_epoch=29-step=312510.pt
 
 # multi GPU (the minimum requirement is 256GB RAM and 24GB VRAM per GPU)
-python -m annotator.runner -d source_data_root -o segmentation_dataset_name -l=MULTILANG -ngpu=4 -nproc=32 -nw=8 --pretrained_models mfa_stage1_epoch=19-step=208340.pt mfa_stage2_epoch=29-step=312510.pt
+python -m annotator.runner -d source_data_root -o segmentation_dataset_name -l=MULTILANG -ngpu=4 -nproc=32 -ngw=8 --pretrained_models mfa_stage1_epoch=19-step=208340.pt mfa_stage2_epoch=29-step=312510.pt
 ```
 
 To improve the alignment of your data, use the flag `--finetune_model`:

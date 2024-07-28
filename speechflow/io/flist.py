@@ -29,15 +29,15 @@ def split_file_list(
 @check_path(assert_file_exists=True)
 def construct_file_list(
     data_root: tp_PATH,
-    ext: str = ".*",
+    ext: tp.Union[str, tp.Tuple[str, ...]] = ".*",
     with_subfolders: bool = False,
     path_filter: tp.Optional[tp.Callable] = None,
 ) -> tp.List[str]:
     flist = find_files(
-        data_root.as_posix(), extensions=(ext,) if type(ext) is str else ext
+        data_root.as_posix(), extensions=(ext,) if isinstance(ext, str) else ext
     )
     LOGGER.info(
-        trace("construct_file_list", f"find {len(flist)} *{ext} files in {data_root}")
+        trace("construct_file_list", f"find {len(flist)} {ext} files in {data_root}")
     )
 
     if not with_subfolders:
@@ -52,7 +52,7 @@ def construct_file_list(
 @check_path(assert_file_exists=True)
 def generate_file_list(
     data_root: tp_PATH,
-    ext: str = ".*",
+    ext: tp.Union[str, tp.Tuple[str, ...]] = ".*",
     with_subfolders: bool = False,
     path_filter: tp.Optional[tp.Callable] = None,
     separator: str = "|",

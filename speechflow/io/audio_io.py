@@ -23,10 +23,15 @@ class AudioFormat(Enum):
     wav = 0
     mp3 = 1
     ogg = 2
+    opus = 3
 
     @classmethod
     def names(cls):
         return list(map(lambda c: c.name, cls))
+
+    @staticmethod
+    def get_formats() -> tp.Tuple[str, ...]:
+        return tuple([f".{name}" for name in AudioFormat.names()])
 
 
 @dataclass
@@ -60,7 +65,7 @@ class AudioChunk:
                         )
                     else:
                         self.end = librosa.get_duration(path=self.file_path.as_posix())
-                except:
+                except Exception:
                     self.load()
             else:
                 self.end = len(self.waveform) / self.sr
@@ -131,21 +136,23 @@ class AudioChunk:
 
     def save(
         self,
-        wav_path: tp.Optional[tp.Union[str, Path, io.BytesIO]] = None,
+        audio_path: tp.Optional[tp.Union[str, Path, io.BytesIO]] = None,
         overwrite: bool = False,
     ):
-        wav_path = wav_path if wav_path else self.file_path
-        if isinstance(wav_path, str):
-            wav_path = Path(wav_path)
+        audio_path = audio_path if audio_path else self.file_path
+        if isinstance(audio_path, str):
+            audio_path = Path(audio_path)
 
-        if isinstance(wav_path, Path):
-            audio_format = wav_path.suffix[1:]
+        if isinstance(audio_path, Path):
+            audio_format = audio_path.suffix[1:]
             if audio_format not in ["wav", "flac"]:
                 raise ValueError(f"'{audio_format}' audio format is not supported.")
 
             if not overwrite:
-                if isinstance(wav_path, (Path, str)):
-                    assert not Path(wav_path).exists(), f"file {str(wav_path)} is exists!"
+                if isinstance(audio_path, (Path, str)):
+                    assert not Path(
+                        audio_path
+                    ).exists(), f"file {str(audio_path)} is exists!"
         else:
             audio_format = "wav"
 
@@ -156,7 +163,7 @@ class AudioChunk:
                 "Unacceptable data shape, single-channel data must be flatten."
             )
 
-        sf.write(wav_path, data, self.sr, format=audio_format)
+        sf.write(audio_path, data, self.sr, format=audio_format)
         return self
 
     def to_bytes(
@@ -165,7 +172,7 @@ class AudioChunk:
         buff = io.BytesIO()
         if audio_format in [AudioFormat.wav]:
             self.save(buff)
-        elif audio_format in [AudioFormat.mp3, AudioFormat.ogg]:
+        elif audio_format in [AudioFormat.mp3, AudioFormat.ogg, AudioFormat.opus]:
             in_buff = io.BytesIO(self.astype(np.int16).data.tobytes())
             audio = pydub.AudioSegment.from_raw(
                 in_buff, sample_width=2, channels=1, frame_rate=self.sr
@@ -173,7 +180,9 @@ class AudioChunk:
             buff = audio.export(
                 buff,
                 format=audio_format.name,
-                codec="opus" if audio_format == AudioFormat.ogg else None,
+                codec="opus"
+                if audio_format in [AudioFormat.ogg, AudioFormat.opus]
+                else None,
                 bitrate=None if audio_format == AudioFormat.ogg else bitrate,
                 parameters=["-strict", "-2"],
             )

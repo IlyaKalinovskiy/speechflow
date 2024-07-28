@@ -103,12 +103,12 @@ class OpenAIASR(CloudASR):
             model = getattr(OpenAIASR, "model")
             number_tokens = getattr(OpenAIASR, "number_tokens")
 
-        md = {"wav_path": metadata["wav_path"]}
+        md = {"audio_path": metadata["audio_path"]}
 
         if "waveform" in metadata:
             audio = metadata["waveform"] / np.float32(np.iinfo(np.int16).max)
         else:
-            audio = Path(metadata["wav_path"]).as_posix()
+            audio = Path(metadata["audio_path"]).as_posix()
 
         with tqdm_disable():
             if model.device.type != "cpu":

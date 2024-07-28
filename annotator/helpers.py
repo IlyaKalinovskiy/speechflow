@@ -15,19 +15,19 @@ from speechflow.data_pipeline.datasample_processors.tts_processors import (
 
 
 def forced_alignment(
-    text: str, wav_path: Path, asr: OpenAIASR, spliter: AudiobookSpliter
+    text: str, audio_path: Path, asr: OpenAIASR, spliter: AudiobookSpliter
 ):
-    transc_path = wav_path.with_suffix(".whisper")
+    transc_path = audio_path.with_suffix(".whisper")
 
     if not transc_path.exists():
-        data = asr.read_datasamples([wav_path], n_processes=1)
+        data = asr.read_datasamples([audio_path], n_processes=1)
         transcription = data.item(0)
     else:
         json_dump = transc_path.read_text(encoding="utf-8")
         transcription = json.loads(json_dump)
 
     metadata = {
-        "wav_path": wav_path,
+        "audio_path": audio_path,
         "text": text,
         "transcription": transcription,
     }
@@ -46,7 +46,7 @@ def forced_alignment(
                     pause = Token(TextProcessor.sil)
                     pause.meta["duration"] = float(token.asr_pause)
                     new_tokens.append(pause)
-            except:
+            except Exception:
                 pass
         results[-1]["text_with_pauses_from_asr"] = new_tokens
 
@@ -104,10 +104,10 @@ if __name__ == "__main__":
     spliter = AudiobookSpliter(lang="RU")
 
     text_path = Path("P:/asr/def_tts_RU_Elena.txt")
-    wav_path = Path("P:/asr/def_tts_RU_Elena.wav")
+    audio_path = Path("P:/asr/def_tts_RU_Elena.wav")
 
     text = text_path.read_text(encoding="utf-8")
-    results = forced_alignment(text, wav_path, asr, spliter)
+    results = forced_alignment(text, audio_path, asr, spliter)
 
     for item in results:
         print(item["text"])
