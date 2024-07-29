@@ -64,6 +64,7 @@ class AudioSeg:
         string = string.replace("': true, '", '": true, "')
         string = string.replace("': false, '", '": false, "')
         string = string.replace("\\'", "'")
+        string = string.replace(", '", ', "')
         return string
 
     def set_word_timestamps(

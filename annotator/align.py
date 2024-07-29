@@ -129,7 +129,7 @@ class Aligner:
             self._speaker_id_map,
             self._lang_id_map,
             self._lang,
-        ) = self._prepare_aligning(ckpt_path, reverse_mode, ckpt_preload)
+        ) = self._prepare_aligning(ckpt_path, reverse_mode, ckpt_preload=ckpt_preload)
 
         env["DEVICE"] = device
 
@@ -167,6 +167,7 @@ class Aligner:
     def _prepare_aligning(
         ckpt_path: tp_PATH,
         reverse_mode: bool = False,
+        max_duration: int = 15,  # in secs
         ckpt_preload: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ):
         if ckpt_preload is None:
@@ -178,7 +179,9 @@ class Aligner:
 
         cfg_data["dataset"]["subsets"].remove("train")
         if "split_by_phrases" in cfg_data["parser"]["pipe"]:
-            cfg_data["parser"]["pipe"].remove("split_by_phrases")
+            cfg_data["parser"]["pipe_cfg"]["split_by_phrases"][
+                "max_duration"
+            ] = max_duration
         if "check_phoneme_length" in cfg_data["parser"]["pipe"]:
             cfg_data["parser"]["pipe"].remove("check_phoneme_length")
         cfg_data["processor"]["output_collated_only"] = False
@@ -504,7 +507,7 @@ if __name__ == "__main__":
         processes = []
         args = args.__dict__
         args["n_gpus"] = 1
-        for i in range(n_proc):
+        for i in range(min(n_proc, len(flist_by_chunk))):
             tmp_file = Path(args["data_root"]) / f"{uuid.uuid4()}.txt"
             tmp_file.write_text("\n".join(flist_by_chunk[i]), encoding="utf-8")
             args["flist_path"] = tmp_file.as_posix()

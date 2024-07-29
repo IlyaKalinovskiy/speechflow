@@ -3,7 +3,13 @@ import subprocess
 
 import numpy as np
 
-__all__ = ["get_freer_gpu", "get_total_gpu_memory"]
+__all__ = ["get_gpu_count", "get_freer_gpu", "get_total_gpu_memory"]
+
+
+def get_gpu_count() -> int:
+    import torch
+
+    return torch.cuda.device_count()
 
 
 def get_freer_gpu(strict: bool = True) -> int:
@@ -27,3 +33,15 @@ def get_total_gpu_memory(gpu_index: int) -> float:
     import torch
 
     return torch.cuda.get_device_properties(gpu_index).total_memory / 1024**3
+
+
+if __name__ == "__main__":
+    import torch
+
+    data = []
+    for strict in [True, False]:
+        for i in range(get_gpu_count()):
+            gpu_idx = get_freer_gpu(strict=strict)
+            device = f"cuda:{gpu_idx}"
+            data.append(torch.FloatTensor([1]).to(device))
+            print(f"[strict={strict}] change device {device}")

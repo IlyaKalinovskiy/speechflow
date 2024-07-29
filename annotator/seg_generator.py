@@ -149,7 +149,7 @@ def main(
             LOGGER.info("Run SimpleSegGenerator")
             seg_generator = SimpleSegGenerator(
                 lang=lang,
-                device="cpu" if n_gpus == 0 else f"cuda:{get_freer_gpu()}",
+                device="cpu" if n_gpus == 0 else "cuda",
                 text_from_label=text_from_label,
                 raise_on_converter_exc=raise_on_converter_exc,
             )  # type: ignore
