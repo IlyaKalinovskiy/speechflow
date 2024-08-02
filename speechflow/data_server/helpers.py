@@ -100,6 +100,10 @@ def init_data_loader(
 
         yield data_loaders
 
+    except Exception as e:
+        LOGGER.error(e)
+        raise e
+
     finally:
         _finish_component([server], [workers], None, data_loaders)
 
@@ -168,8 +172,8 @@ def init_data_loader_from_config(
             os.environ["DATASERVER_ADDR"] = server_addr  # type: ignore
 
         except Exception as e:
-            LOGGER.error(e)
             _finish_component(servers, workers, proxy, data_loaders)
+            LOGGER.error(e)
             raise e
 
     server_addr = os.environ.get("DATASERVER_ADDR", server_addr)
@@ -204,6 +208,10 @@ def init_data_loader_from_config(
 
         yield data_loaders
 
+    except Exception as e:
+        LOGGER.error(e)
+        raise e
+
     finally:
         _finish_component(servers, workers, proxy, data_loaders)
 
@@ -222,12 +230,16 @@ def run_server(server, worker_type):
         worker_pool.start()
     except Exception as e:
         server.finish()
+        LOGGER.error(e)
         raise e
 
     try:
         yield
+
     except Exception as e:
+        LOGGER.error(e)
         raise e
+
     finally:
         worker_pool.finish()
         server.finish()

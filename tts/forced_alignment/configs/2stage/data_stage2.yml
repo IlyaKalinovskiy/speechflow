@@ -20,6 +20,7 @@ dataset:
 
 parser:
   type: TTSDSParser
+  dump: temp
   pipe: [audio_strip, split_by_phrases, check_phoneme_length]
   pipe_cfg:
     audio_strip:
