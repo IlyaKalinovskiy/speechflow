@@ -88,7 +88,7 @@ class LibriSpeechDSParser(BaseDSParser):
         sent.lang = "EN"
 
         wave = AudioChunk(file_path.with_suffix(".flac").as_posix().replace("-align", ""))
-        sega = AudioSeg(wave, sent, sega_path=file_path)
+        sega = AudioSeg(wave, sent)
         sega.set_phoneme_timestamps(Timestamps(np.asarray(tm_by_phones)))
 
         metadata = {"file_path": file_path, "label": label, "sega": sega}

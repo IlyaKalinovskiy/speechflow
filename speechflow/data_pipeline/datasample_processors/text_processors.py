@@ -19,12 +19,13 @@ from speechflow.data_pipeline.datasample_processors.data_types import (
     PausesPredictionDataSample,
     TextDataSample,
 )
+from speechflow.io import AudioSeg
 from speechflow.logging import trace
 from speechflow.utils.fs import get_module_dir, get_root_dir
 from speechflow.utils.init import lazy_initialization
 from speechflow.utils.profiler import Profiler
 
-__all__ = ["TextProcessor", "LMProcessor"]
+__all__ = ["load_text_from_sega", "TextProcessor", "LMProcessor"]
 
 LOGGER = logging.getLogger("root")
 
@@ -33,6 +34,22 @@ class ZeroSilTokensError(Exception):
     """Exception raised in TextProcessor if allow_zero_sil parameter is False."""
 
     pass
+
+
+@PipeRegistry.registry(
+    inputs={"file_path"}, outputs={"sent", "word_timestamps", "phoneme_timestamps"}
+)
+def load_text_from_sega(ds: TextDataSample):
+    sega = AudioSeg.load(ds.file_path)
+
+    sega.ts_bos = ds.audio_chunk.begin
+    sega.ts_eos = ds.audio_chunk.end
+    word_ts, phoneme_ts = sega.get_timestamps(relative=True)
+
+    ds.sent = sega.sent
+    ds.word_timestamps = word_ts
+    ds.phoneme_timestamps = phoneme_ts
+    return ds
 
 
 class TextProcessor(BaseDSProcessor):

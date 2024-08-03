@@ -266,7 +266,7 @@ class AudiobookSpliter(BaseDSParser):
                         "text_parser_version": multilingual_text_parser.__version__,
                     }
                 )
-                sega.auxiliary["transcription"] = transc_tokens
+                setattr(sega, "transcription", transc_tokens)
                 result.append(sega)
             except Exception as e:
                 LOGGER.error(trace(self, e))

@@ -29,9 +29,9 @@ parser:
       max_duration: 10
 
 preproc:
-  pipe: [audio_load, voice_bio, speech_quality, noise, spectrogram, melscale, add_pauses_from_text, text]
+  pipe: [load_audio, voice_bio, speech_quality, noise, spectrogram, melscale, add_pauses_from_text, text]
   pipe_cfg:
-    audio_load:
+    load_audio:
       type: SignalProcessor
       pipe: [load]
       pipe_cfg:

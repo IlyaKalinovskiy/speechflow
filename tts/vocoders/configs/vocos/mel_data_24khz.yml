@@ -37,11 +37,11 @@ parser:
       punctuation_marks: [".", "?"]
 
 preproc:
-  pipe: [audio_load, voice_bio_speechbrain, store_bio_emb, voice_bio_wespeaker, mean_bio_embedding,
+  pipe: [load_audio, voice_bio_speechbrain, store_bio_emb, voice_bio_wespeaker, mean_bio_embedding,
          speech_quality, spectrogram, melscale, ssl_features,
          trim, mu_law]
   pipe_cfg:
-    audio_load:
+    load_audio:
       type: SignalProcessor
       pipe: [load]
       pipe_cfg:

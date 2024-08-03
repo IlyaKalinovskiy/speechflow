@@ -51,7 +51,7 @@ def forced_alignment(
         results[-1]["text_with_pauses_from_asr"] = new_tokens
 
         new_tokens = []
-        for token in sega.auxiliary["transcription"]:
+        for token in getattr(sega, "transcription", []):
             prev_word_ts = token.meta.get("prev_word_ts")
             next_word_ts = token.meta.get("next_word_ts")
 

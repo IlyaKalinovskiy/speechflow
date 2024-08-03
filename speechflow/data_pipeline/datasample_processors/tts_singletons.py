@@ -448,7 +448,6 @@ class DatasetStatistics(metaclass=Singleton):
         data_subset_name: str,
         dump: tp.Optional[tp_PATH] = None,
         add_dataset_statistics: bool = True,
-        add_phonemes_statistics: bool = True,
         add_segmentations: bool = True,
         add_speaker_emb: bool = True,
         **kwargs,
@@ -456,16 +455,12 @@ class DatasetStatistics(metaclass=Singleton):
         self.data_subset_name = data_subset_name
         self.dump = Path(dump) if dump else None
         self.add_dataset_statistics = add_dataset_statistics
-        self.add_phonemes_statistics = add_phonemes_statistics
         self.add_segmentations = add_segmentations
         self.add_speaker_emb = add_speaker_emb
         self.data_cfg = kwargs.get("data_cfg", {})
         self.pause_step = find_field(self.data_cfg, "step")
         self.hop_len = find_field(self.data_cfg, "hop_len")
         self.hash = None
-        self.phonemes_statistics: tp.Dict[
-            str, tp.Dict[str, tp.List[float]]
-        ] = defaultdict(dict)
         self.transcription_length: tp.Dict[str, tp.List[int]] = defaultdict(list)
         self.wave_duration: tp.Dict[str, tp.List[float]] = defaultdict(list)
         self.max_transcription_length: int = 0
@@ -491,7 +486,6 @@ class DatasetStatistics(metaclass=Singleton):
 
         d = (
             f"{int(self.add_dataset_statistics)}"
-            f"{int(self.add_phonemes_statistics)}"
             f"{int(self.add_segmentations)}"
             f"{int(self.add_speaker_emb)}"
         )
@@ -505,12 +499,10 @@ class DatasetStatistics(metaclass=Singleton):
         for ds in tqdm(data, "Counting statistics over dataset"):
             try:
                 ds = add_pauses_from_timestamps(ds.copy(), step=self.pause_step)
-                ph_by_word = ds.sent.get_phonemes()
-                transcription = tuple(itertools.chain.from_iterable(ph_by_word))
+                transcription = ds.sent["phonemes"]
 
                 self.transcription_length[ds.speaker_name].append(len(transcription))  # type: ignore
                 self.wave_duration[ds.speaker_name].append(ds.audio_chunk.duration)  # type: ignore
-
             except Exception as e:
                 LOGGER.error(trace(self, e, message=ds.file_path.as_posix()))
 
@@ -530,34 +522,6 @@ class DatasetStatistics(metaclass=Singleton):
                 max(v) for v in self.transcription_length.values()
             )
             self.max_audio_duration = max(max(v) for v in self.wave_duration.values())
-
-    def _add_phonemes_stat(self, data: Dataset):
-        for ds in tqdm(data, "Counting phonemes statistics over dataset"):
-            try:
-                ph_by_word = ds.sent.get_phonemes()
-                transcription = tuple(itertools.chain.from_iterable(ph_by_word))
-
-                ph_timestamps = [
-                    end - start
-                    for start, end in tuple(
-                        itertools.chain.from_iterable(ds.phoneme_timestamps)
-                    )
-                ]
-                for ph, ph_len in zip(transcription, ph_timestamps):
-                    ph_lens = self.phonemes_statistics[ds.speaker_name].setdefault(ph, [])
-                    ph_lens.append(ph_len)
-
-            except Exception as e:
-                LOGGER.error(trace(self, e, message=ds.file_path.as_posix()))
-
-        if self.phonemes_statistics:
-            var = self.phonemes_statistics
-            for name, field in var.items():  # type: ignore
-                if isinstance(field, tp.Mapping):
-                    for ph, ph_lens in field.items():
-                        var[name][ph] = np.asarray(ph_lens, dtype=np.float32)  # type: ignore
-                else:
-                    var[name] = np.asarray(field, dtype=np.float32)  # type: ignore
 
     def _add_segmentations(self, data: Dataset):
         for ds in tqdm(data, "Loading segmentations"):
@@ -612,9 +576,6 @@ class DatasetStatistics(metaclass=Singleton):
             if self.add_dataset_statistics:
                 self._add_dataset_stat(data)
 
-            if self.add_phonemes_statistics:
-                self._add_phonemes_stat(data)
-
             if self.add_segmentations:
                 self._add_segmentations(data)
 
@@ -639,7 +600,7 @@ class DatasetStatistics(metaclass=Singleton):
             if isinstance(value, bytes):
                 try:
                     setattr(self, key, pickle.loads(value))
-                except:
+                except Exception:
                     pass
 
     @staticmethod

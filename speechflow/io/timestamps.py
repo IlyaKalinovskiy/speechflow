@@ -52,9 +52,14 @@ class Timestamps:
 
     @staticmethod
     def from_list(
-        array_list: tp.Union[tp.List[npt.NDArray], tp.List["Timestamps"]]
+        array_list: tp.Union[
+            tp.List[tp.Tuple[float, float]], tp.List[npt.NDArray], tp.List["Timestamps"]
+        ]
     ) -> "Timestamps":
-        return Timestamps(np.concatenate(array_list))
+        if isinstance(array_list[0], tuple):
+            return Timestamps(np.asarray(array_list, dtype=np.float32))
+        else:
+            return Timestamps(np.concatenate(array_list))
 
     @property
     def begin(self) -> float:
