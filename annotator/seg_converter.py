@@ -18,7 +18,7 @@ class SegConverter(BaseDSParser):
 
     def converter(self, metadata: dict):
         file_path = metadata["file_path"]
-        sega = AudioSeg.load(file_path, with_audio=True)
+        sega = AudioSeg.load(file_path, load_audio=True)
         if sega.audio_chunk.sr != self._new_sample_rate:
             sega.audio_chunk.resample(self._new_sample_rate, inplace=True)
             sega.audio_chunk.save(overwrite=True)

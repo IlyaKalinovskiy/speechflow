@@ -152,4 +152,4 @@ if __name__ == "__main__":
         if "segmentation" in meta:
             for idx, sega in enumerate(meta["segmentation"]):
                 fpath = output_path / f"{meta['audio_path'].name}_{idx}.TextGrid"
-                sega.save(fpath, with_audio=True)
+                sega.save(fpath, add_audio=True)

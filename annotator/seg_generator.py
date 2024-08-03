@@ -206,7 +206,7 @@ def main(
                     if split_audio:
                         sega.audio_chunk.load()
 
-                    sega.save(file_name, with_audio=split_audio)
+                    sega.save(file_name, add_audio=split_audio)
 
                     seg_files.append(f"{file_name.as_posix()}|{sega.sent.text_orig}")
                     audio_files.append(sega.audio_chunk.file_path)

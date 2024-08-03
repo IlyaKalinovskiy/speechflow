@@ -44,6 +44,8 @@ def load_text_from_sega(ds: TextDataSample):
 
     sega.ts_bos = ds.audio_chunk.begin
     sega.ts_eos = ds.audio_chunk.end
+    sega.audio_chunk.begin = ds.audio_chunk.begin
+    sega.audio_chunk.end = ds.audio_chunk.end
     word_ts, phoneme_ts = sega.get_timestamps(relative=True)
 
     ds.sent = sega.sent

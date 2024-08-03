@@ -431,7 +431,7 @@ if __name__ == "__main__":
                     _file_name = f"{meta['audio_path'].name.split('.')[0]}_{idx}.TextGrid"
                     _file_path = output_path / _file_name
                     sega.meta["speaker_name"] = "LJSpeech"
-                    sega.save(_file_path, with_audio=True)
+                    sega.save(_file_path, add_audio=True)
                     print(sega.sent.text_orig, _file_name)
                 except Exception as e:
                     print(e)

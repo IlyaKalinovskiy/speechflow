@@ -1,6 +1,8 @@
 import sys
 import subprocess
 
+from os import environ as env
+
 import numpy as np
 
 __all__ = ["get_gpu_count", "get_freer_gpu", "get_total_gpu_memory"]
@@ -21,6 +23,13 @@ def get_freer_gpu(strict: bool = True) -> int:
     )
 
     memory_used = [int(x.split()[2]) for x in arch.decode("utf-8").split("\n") if x]
+
+    if "CUDA_VISIBLE_DEVICES" in env:
+        v = [int(item) for item in env["CUDA_VISIBLE_DEVICES"].split(",")]
+        memory_used = [
+            1e9 if idx not in v else item for idx, item in enumerate(memory_used)
+        ]
+
     free_gpu = int(np.argmin(memory_used))
 
     if strict and memory_used[free_gpu] > 50:

@@ -10,7 +10,6 @@ import numpy as np
 
 from multilingual_text_parser import Doc, Position, Sentence, Syntagma, Token
 from praatio import tgio
-from praatio.tgio import Interval
 
 from speechflow.io import AudioChunk, Timestamps
 from speechflow.io.utils import check_path, tp_PATH
@@ -18,13 +17,45 @@ from speechflow.io.utils import check_path, tp_PATH
 __all__ = ["AudioSeg", "AudioSegPreview"]
 
 
-def _get_new_position(new_text: str, old_text: str):
-    if old_text.startswith(new_text):
-        return "first"
-    elif old_text.endswith(new_text):
-        return "last"
-    else:
-        return "internal"
+def _fp_eq(a, b, eps: float = 1.0e-6):
+    return np.abs(np.float32(a) - np.float32(b)) < eps
+
+
+def _fix_json_string(string: str) -> str:
+    string = string.replace("{'", '{"').replace("'}", '"}')
+    string = string.replace("', '", '", "')
+    string = string.replace("': '", '": "')
+    string = string.replace("n': ", 'n": ')
+    string = string.replace("r': ", 'r": ')
+    string = string.replace("t': ", 't": ')
+    string = string.replace("': [", '": [').replace("], '", '], "')
+    string = string.replace("': true, '", '": true, "')
+    string = string.replace("': false, '", '": false, "')
+    string = string.replace("\\'", "'")
+    string = string.replace(", '", ', "')
+    return string
+
+
+def _extract_meta(string: str):
+    string = string[string.rfind("meta") + len("meta") + 1 :]
+    string = string[string.find('"{') + 1 :][::-1]
+    string = string[string.find('"}') + 1 :][::-1]
+    return json.loads(_fix_json_string(string))
+
+
+def _remove_service_tokens(
+    tiers: tp.Dict,
+) -> tp.Tuple[tp.Dict, tp.Optional[float], tp.Optional[float]]:
+    ts_bos = ts_eos = None
+    if tiers["text"][0][2] == "BOS":
+        ts_bos = tiers["text"][0][1]
+    if tiers["text"][-1][2] == "EOS":
+        ts_eos = tiers["text"][-1][0]
+
+    for name, field in tiers.items():
+        tiers[name] = [item for item in field if item[2] not in ["BOS", "EOS"]]
+
+    return tiers, ts_bos, ts_eos
 
 
 class AudioSeg:
@@ -45,24 +76,26 @@ class AudioSeg:
         self.meta: tp.Dict[str, tp.Any] = {}
         self.sega_path: tp.Optional[tp_PATH] = None
 
-    @staticmethod
-    def _fp_eq(a, b, eps: float = 1.0e-6):
-        return np.abs(np.float32(a) - np.float32(b)) < eps
+    @property
+    def duration(self) -> float:
+        return self.ts_eos - self.ts_bos
 
     @staticmethod
-    def _fix_meta_string(string: str) -> str:
-        string = string.replace("{'", '{"').replace("'}", '"}')
-        string = string.replace("', '", '", "')
-        string = string.replace("': '", '": "')
-        string = string.replace("n': ", 'n": ')
-        string = string.replace("r': ", 'r": ')
-        string = string.replace("t': ", 't": ')
-        string = string.replace("': [", '": [').replace("], '", '], "')
-        string = string.replace("': true, '", '": true, "')
-        string = string.replace("': false, '", '": false, "')
-        string = string.replace("\\'", "'")
-        string = string.replace(", '", ', "')
-        return string
+    def _get_sent(tiers: tp.Dict[str, tp.Any]) -> Sentence:
+        words = " ".join([word[2] for word in tiers["text"]])
+        doc = Doc(words, sentenize=True, tokenize=True)
+
+        assert len(doc.sents) == 1, doc.text
+        sent = doc.sents[0]
+
+        if "orig" in tiers:
+            sent.text_orig = tiers["orig"][0][2]
+
+        for token in sent.tokens:
+            if token.is_punctuation:
+                token.pos = "PUNCT"
+
+        return sent
 
     def set_word_timestamps(
         self,
@@ -136,10 +169,6 @@ class AudioSeg:
         ts_by_words = [(ts.begin, ts.end) for ts in ts_by_phonemes]
         self.set_word_timestamps(Timestamps(np.asarray(ts_by_words)), ts_begin, ts_end)
 
-    @property
-    def duration(self) -> float:
-        return self.ts_eos - self.ts_bos
-
     def get_tier(self, name: str, relative: bool = False):
         assert self.ts_by_words, "timestamps not set!"
 
@@ -181,9 +210,9 @@ class AudioSeg:
                 label = "".join(word)
                 seq.append((ts[0], ts[1], label))
 
-        if not self._fp_eq(self.audio_chunk.begin, self.ts_bos):
+        if not _fp_eq(self.audio_chunk.begin, self.ts_bos):
             seq.insert(0, (self.audio_chunk.begin, self.ts_bos, "BOS"))
-        if not self._fp_eq(self.ts_eos, self.audio_chunk.end):
+        if not _fp_eq(self.ts_eos, self.audio_chunk.end):
             seq.append((self.ts_eos, self.audio_chunk.end, "EOS"))
 
         if relative:
@@ -215,34 +244,121 @@ class AudioSeg:
         return tier
 
     @staticmethod
-    def _remove_service_tokens(
-        tiers: tp.Dict,
-    ) -> tp.Tuple[tp.Dict, tp.Optional[float], tp.Optional[float]]:
-        ts_bos = ts_eos = None
-        if tiers["text"][0][2] == "BOS":
-            ts_bos = tiers["text"][0][1]
-        if tiers["text"][-1][2] == "EOS":
-            ts_eos = tiers["text"][-1][0]
-
-        for name, field in tiers.items():
-            tiers[name] = [item for item in field if item[2] not in ["BOS", "EOS"]]
-
-        return tiers, ts_bos, ts_eos
-
-    @staticmethod
     def timestamps_from_tier(
         tier: tp.List[tp.Tuple[float, float, str]]
     ) -> tp.Tuple["Timestamps", tp.Optional[float], tp.Optional[float]]:
-        tiers, ts_begin, ts_end = AudioSeg._remove_service_tokens({"text": tier})
+        tiers, ts_begin, ts_end = _remove_service_tokens({"text": tier})
         tm = [t[:2] for t in tiers["text"]]
         return Timestamps(np.asarray(tm)), ts_begin, ts_end
+
+    @staticmethod
+    @check_path(assert_file_exists=True)
+    def load(
+        file_path: tp_PATH,
+        load_audio: bool = False,
+        audio_path: tp.Optional[tp_PATH] = None,
+    ) -> "AudioSeg":
+        tg = tgio.openTextgrid(file_path.as_posix())
+
+        tiers = {}
+        for name, field in tg.tierDict.items():
+            tiers[name] = field.entryList
+
+        tiers, ts_bos, ts_eos = _remove_service_tokens(tiers)
+
+        sent = AudioSeg._get_sent(tiers)
+        ts_by_word = [(word[0], word[1]) for word in tiers["text"]]
+
+        if "meta" in tiers:
+            s = _fix_json_string(tiers["meta"][0].label)
+            try:
+                meta = json.loads(s)
+            except Exception as e:
+                raise RuntimeError(f"{e}: {s}")
+            sent.position = Position[meta.get("sent_position", "first")]
+            sent.lang = meta.get("lang")
+        else:
+            meta = {}
+
+        audio_chunk = AudioSeg.load_audio_chunk(file_path, meta, audio_path)
+
+        if load_audio:
+            audio_chunk.load()
+            assert _fp_eq(audio_chunk.duration, meta["audio_chunk"][1], eps=1.0e-3)
+
+        words = sent.get_words()
+        assert len(words) == len(tiers["text"]), f"{file_path}"
+
+        for name in (
+            "stress",
+            "pos",
+            "emphasis",
+            "id",
+            "head_id",
+            "rel",
+            "asr_pause",
+            "prosody",
+        ):
+            if name in tiers:
+                for (_, _, label), word in zip(tiers[name], words):
+                    label = None if label == "undefined" else label
+                    setattr(word, name, label)
+
+        ph_word = []
+        ts_by_ph = []
+        word_idx = 0
+        if "phonemes" in tiers:
+            for begin, end, label in tiers["phonemes"]:
+                if "|" in label:
+                    label = tuple(label.split("|"))
+                ph_word.append(label)
+                ts_by_ph.append((begin, end))
+                if _fp_eq(end, tiers["text"][word_idx][1]):
+                    words[word_idx].phonemes = tuple(ph_word)
+                    ph_word = []
+                    word_idx += 1
+            assert all([word.phonemes for word in words]), f"{file_path}"
+
+        if "syntagmas" in tiers:
+            synt_tokens: tp.List[tp.List[Token]] = []
+            words_with_punct = sent.get_words_with_punct()
+            for (begin, _, label), tokens in zip(tiers["text"], words_with_punct):
+                if any([begin == synt[0] for synt in tiers["syntagmas"]]):
+                    synt_tokens.append([])
+                synt_tokens[-1] += tokens
+
+            syntagmas = []
+            for tokens, synt_position in zip(synt_tokens, tiers["syntagmas"]):
+                syntagma = Syntagma(tokens)
+                syntagma.position = Position[synt_position.label]
+                syntagmas.append(syntagma)
+            sent.syntagmas = syntagmas
+
+        sega = AudioSeg(audio_chunk, sent)
+
+        if ts_by_ph:
+            sega.set_phoneme_timestamps(
+                Timestamps(np.asarray(ts_by_ph)),
+                ts_begin=ts_bos,
+                ts_end=ts_eos,
+            )
+        else:
+            sega.set_word_timestamps(
+                Timestamps(np.asarray(ts_by_word)),
+                ts_begin=ts_bos,
+                ts_end=ts_eos,
+            )
+
+        sega.meta = meta
+        sega.sega_path = file_path
+        return sega
 
     @check_path(make_dir=True)
     def save(
         self,
         file_path: tp_PATH,
-        with_audio: bool = False,
-        with_meta: bool = True,
+        add_audio: bool = False,
+        add_meta: bool = True,
         overwrite: bool = True,
         fields: tp.Tuple[str, ...] = (
             "orig",
@@ -264,7 +380,7 @@ class AudioSeg:
 
         seqs = {}
         for name in fields:
-            seqs[name] = self.get_tier(name, relative=with_audio)
+            seqs[name] = self.get_tier(name, relative=add_audio)
 
         meta = self.meta
         meta["lang"] = self.sent.lang
@@ -275,7 +391,7 @@ class AudioSeg:
             tier = tgio.IntervalTier(name, field, 0, maxT=self.audio_chunk.duration)
             tg.addTier(tier)
 
-        if with_audio:
+        if add_audio:
             audio_ext = self.audio_chunk.file_path.suffix
             new_audio_path = file_path.with_suffix(audio_ext)
 
@@ -306,32 +422,18 @@ class AudioSeg:
             meta["audio_chunk"] = (self.audio_chunk.begin, self.audio_chunk.end)  # type: ignore
             meta["audio_sr"] = self.audio_chunk.sr
 
-        if with_meta:
-            tier = self.get_tier_for_meta(meta, relative=with_audio)
+        if add_meta:
+            tier = self.get_tier_for_meta(meta, relative=add_audio)
             tg.addTier(tier)
 
         tg.save(file_path.as_posix())
 
-    @classmethod
-    def _get_sent(cls, tiers) -> Sentence:
-        words = " ".join([word[2] for word in tiers["text"]])
-        doc = Doc(words, sentenize=True, tokenize=True)
-
-        assert len(doc.sents) == 1, doc.text
-        sent = doc.sents[0]
-
-        if "orig" in tiers:
-            sent.text_orig = tiers["orig"][0][2]
-
-        for token in sent.tokens:
-            if token.is_punctuation:
-                token.pos = "PUNCT"
-
-        return sent
-
     @staticmethod
-    def _load_audio_chunk(
-        file_path: Path, meta: tp.Dict[str, tp.Any], audio_path: tp.Optional[Path] = None
+    @check_path(assert_file_exists=True)
+    def load_audio_chunk(
+        file_path: tp_PATH,
+        meta: tp.Optional[tp.Dict[str, tp.Any]] = None,
+        audio_path: tp.Optional[tp_PATH] = None,
     ):
         if meta:
             if "wav_path" in meta:
@@ -339,9 +441,7 @@ class AudioSeg:
             else:
                 audio_path_from_meta = Path(meta["audio_path"])
         else:
-            audio_path_from_meta = None
-
-        if audio_path_from_meta is None:
+            meta = {}
             audio_path_from_meta = file_path.with_suffix(".wav")
 
         if not audio_path_from_meta.is_absolute():
@@ -371,171 +471,9 @@ class AudioSeg:
 
     @staticmethod
     @check_path(assert_file_exists=True)
-    def load(
-        file_path: tp_PATH,
-        audio_path: tp.Optional[tp_PATH] = None,
-        with_audio: bool = False,
-        crop_begin: tp.Optional[float] = None,
-        crop_end: tp.Optional[float] = None,
-    ) -> "AudioSeg":
-        tg = tgio.openTextgrid(file_path.as_posix())
-        orig_text = " ".join(
-            [
-                t.label
-                for t in tg.tierDict["text"].entryList
-                if t.label not in ["BOS", "EOS"]
-            ]
-        )
-        if crop_end is not None and crop_begin is not None:
-            max_timestamp = tg.maxTimestamp
-            tg = tg.crop(crop_begin, crop_end, rebaseToZero=False, mode="lax")
-        else:
-            max_timestamp = None
-
-        tiers = {}
-        for name, field in tg.tierDict.items():
-            entrylist = field.entryList
-            if (
-                crop_end is not None
-                and crop_begin is not None
-                and name not in ("orig", "meta")
-            ):
-                entrylist.insert(0, Interval(start=0.0, end=crop_begin, label="BOS"))
-                entrylist.append(Interval(start=crop_end, end=max_timestamp, label="EOS"))
-            tiers[name] = entrylist
-
-        if crop_end is not None and crop_begin is not None:
-            new_text = " ".join(
-                [t.label for t in tiers["text"] if t.label not in ["BOS", "EOS"]]
-            )
-            new_position = _get_new_position(new_text, tiers["orig"][0][2])
-            tiers["orig"][0] = Interval(start=crop_begin, end=crop_end, label=new_text)
-
-            new_meta = json.loads(AudioSeg._fix_meta_string(tiers["meta"][0].label))
-            meta_bos_label, meta_eos_label = (
-                new_meta.get("bos_label", ""),
-                new_meta.get("eos_label", ""),
-            )
-            orig_part_bos = meta_bos_label + " " + orig_text[: orig_text.index(new_text)]
-            orig_part_eos = (
-                orig_text[orig_text.index(new_text) + len(new_text) :]
-                + " "
-                + meta_eos_label
-            )
-
-            new_meta["sent_position"] = new_position
-            new_meta["bos_label"] = orig_part_bos.strip()
-            new_meta["eos_label"] = orig_part_eos.strip()
-            tiers["meta"][0] = Interval(
-                start=crop_begin, end=crop_end, label=json.dumps(new_meta)
-            )
-
-        tiers, ts_bos, ts_eos = AudioSeg._remove_service_tokens(tiers)
-
-        sent = AudioSeg._get_sent(tiers)
-        ts_by_word = [(word[0], word[1]) for word in tiers["text"]]
-
-        if "meta" in tiers:
-            s = AudioSeg._fix_meta_string(tiers["meta"][0].label)
-            try:
-                meta = json.loads(s)
-            except Exception as e:
-                raise RuntimeError(f"{e}: {s}")
-            sent.position = Position[meta["sent_position"]]
-            sent.lang = meta.get("lang")
-        else:
-            meta = {}
-
-        audio_chunk = AudioSeg._load_audio_chunk(file_path, meta, audio_path)
-
-        if with_audio:
-            audio_chunk.load()
-            assert AudioSeg._fp_eq(
-                audio_chunk.duration, meta["audio_chunk"][1], eps=1.0e-3
-            )
-
-        words = sent.get_words()
-        assert len(words) == len(tiers["text"]), f"{file_path}"
-
-        for name in (
-            "stress",
-            "pos",
-            "emphasis",
-            "id",
-            "head_id",
-            "rel",
-            "asr_pause",
-            "prosody",
-        ):
-            if name in tiers:
-                for (_, _, label), word in zip(tiers[name], words):
-                    label = None if label == "undefined" else label
-                    setattr(word, name, label)
-
-        ph_word = []
-        ts_by_ph = []
-        word_idx = 0
-        if "phonemes" in tiers:
-            for begin, end, label in tiers["phonemes"]:
-                if "|" in label:
-                    label = tuple(label.split("|"))
-                ph_word.append(label)
-                ts_by_ph.append((begin, end))
-                if AudioSeg._fp_eq(end, tiers["text"][word_idx][1]):
-                    words[word_idx].phonemes = tuple(ph_word)
-                    ph_word = []
-                    word_idx += 1
-            assert all([word.phonemes for word in words]), f"{file_path}"
-
-        if "syntagmas" in tiers:
-            synt_tokens: tp.List[tp.List[Token]] = []
-            words_with_punct = sent.get_words_with_punct()
-            for (begin, _, label), tokens in zip(tiers["text"], words_with_punct):
-                if any([begin == synt[0] for synt in tiers["syntagmas"]]):
-                    synt_tokens.append([])
-                synt_tokens[-1] += tokens
-
-            syntagmas = []
-            for tokens, synt_position in zip(synt_tokens, tiers["syntagmas"]):
-                syntagma = Syntagma(tokens)
-                syntagma.position = Position[synt_position.label]
-                syntagmas.append(syntagma)
-            sent.syntagmas = syntagmas
-
-        sega = AudioSeg(audio_chunk, sent)
-        if crop_end is not None and crop_begin is not None:
-            sega.ts_bos = crop_begin
-            sega.ts_eos = crop_end
-
-        if ts_by_ph:
-            sega.set_phoneme_timestamps(
-                Timestamps(np.asarray(ts_by_ph)),
-                ts_begin=ts_bos,
-                ts_end=ts_eos,
-            )
-        else:
-            sega.set_word_timestamps(
-                Timestamps(np.asarray(ts_by_word)),
-                ts_begin=ts_bos,
-                ts_end=ts_eos,
-            )
-
-        sega.meta = meta
-        sega.sega_path = file_path
-        return sega
-
-    @staticmethod
-    def _extract_meta(string: str):
-        string = string[string.rfind("meta") + len("meta") + 1 :]
-        string = string[string.find('"{') + 1 :][::-1]
-        string = string[string.find('"}') + 1 :][::-1]
-        return json.loads(AudioSeg._fix_meta_string(string))
-
-    @staticmethod
-    @check_path(assert_file_exists=True)
     def load_meta(file_path: tp_PATH) -> tp.Dict[str, tp.Any]:
         string = file_path.read_text(encoding="utf-8")
-        return AudioSeg._extract_meta(string)
+        return _extract_meta(string)
 
     def get_timestamps(
         self, relative: bool = False
@@ -637,7 +575,6 @@ class AudioSegPreview:
     @staticmethod
     @check_path(assert_file_exists=True)
     def load(file_path: tp_PATH) -> "AudioSegPreview":
-        sega = AudioSegPreview()
         raw_data = file_path.read_text(encoding="utf-8")
 
         tiers = {}
@@ -653,7 +590,9 @@ class AudioSegPreview:
 
                     break
 
-        tiers, ts_bos, ts_eos = AudioSeg._remove_service_tokens(tiers)
+        tiers, ts_bos, ts_eos = _remove_service_tokens(tiers)
+
+        sega = AudioSegPreview()
 
         if "orig" in tiers:
             sega.sent["text"] = tiers["orig"][0][2]
@@ -681,7 +620,7 @@ class AudioSegPreview:
                     label = tuple(label.split("|"))
                 ph_word.append(label)
                 ts_by_ph.append((begin, end))
-                if AudioSeg._fp_eq(end, tiers["text"][word_idx][1]):
+                if _fp_eq(end, tiers["text"][word_idx][1]):
                     phonemes.append(tuple(ph_word))
                     ph_word = []
                     word_idx += 1
@@ -691,13 +630,13 @@ class AudioSegPreview:
         """
 
         if '\n"meta"' in raw_data:
-            meta = AudioSeg._extract_meta(raw_data)
+            meta = _extract_meta(raw_data)
             sega.sent["position"] = Position[meta["sent_position"]]
             sega.sent["lang"] = meta.get("lang")
         else:
             meta = {}
 
-        sega.audio_chunk = AudioSeg._load_audio_chunk(file_path, meta)
+        sega.audio_chunk = AudioSeg.load_audio_chunk(file_path, meta)
 
         sega.ts_bos = sega.audio_chunk.begin if ts_bos is None else ts_bos
         sega.ts_eos = sega.audio_chunk.end if ts_eos is None else ts_eos
@@ -716,12 +655,12 @@ if __name__ == "__main__":
         (_root / "examples/simple_datasets/speech/SEGS").rglob("*.TextGridStage2")
     )
 
-    with Profiler(name="full sega load"):
+    with Profiler(name="full sega load", format=Profiler.Format.ms):
         for _ in range(10):
             for _path in _fpath:
                 _sega = AudioSeg.load(_path)
 
-    with Profiler(name="preview sega load"):
+    with Profiler(name="preview sega load", format=Profiler.Format.ms):
         for _ in range(10):
             for _path in _fpath:
                 _sega = AudioSegPreview.load(_path)

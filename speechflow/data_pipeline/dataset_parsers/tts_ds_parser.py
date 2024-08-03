@@ -246,7 +246,7 @@ class TTSDSParser(BaseDSParser):
             assert sega.ts_by_words
             left_dura = sega.ts_by_words.begin - sega.audio_chunk.begin
             right_dura = sega.audio_chunk.end - sega.ts_by_words.end
-            left_dura = 0.0 if left_dura < fade_threshold else left_dura
+            left_dura = 0.0 if left_dura < fade_threshold else left_dura / 2
             right_dura = 0.0 if right_dura < fade_threshold else right_dura / 2
             sega.audio_chunk.fade_duration = (left_dura, right_dura)
 
