@@ -15,30 +15,29 @@ def get_gpu_count() -> int:
 
 
 def get_freer_gpu(strict: bool = True) -> int:
+    import torch
+
     if sys.platform == "win32":
         return 0
 
-    arch = subprocess.check_output(
-        "nvidia-smi -q -d Memory |grep -A4 GPU|grep Used", shell=True
-    )
+    gpu_count = get_gpu_count()
+    if gpu_count == 0:
+        raise RuntimeError("GPU device not found!")
 
-    memory_used = [int(x.split()[2]) for x in arch.decode("utf-8").split("\n") if x]
-
-    if "CUDA_VISIBLE_DEVICES" in env:
-        v = [int(item) for item in env["CUDA_VISIBLE_DEVICES"].split(",")]
-        memory_used = [
-            1e9 if idx not in v else item for idx, item in enumerate(memory_used)
-        ]
+    memory_used = []
+    for idx in range(gpu_count):
+        mem = torch.cuda.mem_get_info(device=f"cuda:{idx}")
+        memory_used.append((mem[1] - mem[0]) / 1024**2)
 
     free_gpu = int(np.argmin(memory_used))
 
-    if strict and memory_used[free_gpu] > 50:
+    if strict and memory_used[free_gpu] > 500:
         raise RuntimeError("All GPUs are busy!")
 
     return free_gpu
 
 
-def get_total_gpu_memory(gpu_index: int) -> float:
+def get_total_gpu_memory(gpu_index: int) -> float:  # in GB
     import torch
 
     return torch.cuda.get_device_properties(gpu_index).total_memory / 1024**3
