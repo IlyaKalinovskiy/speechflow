@@ -109,11 +109,15 @@ def read_file_list(
         elif isinstance(directory_filter, tp.MutableMapping):
             if directory_filter.get("include"):
                 include_paths = directory_filter.get("include", [])
+                if isinstance(include_paths, str):
+                    include_paths = [include_paths]
                 flist = [
                     item for item in flist if any(path in item for path in include_paths)
                 ]
             if directory_filter.get("exclude"):
                 exclude_paths = directory_filter.get("exclude", [])
+                if isinstance(exclude_paths, str):
+                    exclude_paths = [exclude_paths]
                 flist = [
                     item
                     for item in flist

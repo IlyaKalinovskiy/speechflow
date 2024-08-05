@@ -18,8 +18,8 @@ dataset:
   split_ratio: { default: 0.999, debug: 0.5 }
   max_num_samples: { default: 0, debug: 40 }
   directory_filter:
-    exclude:
-      default: ["!"]
+    include: { default: ~, ru: RU, en: EN }
+    exclude: ["!"]
 
 parser:
   type: TTSDSParser

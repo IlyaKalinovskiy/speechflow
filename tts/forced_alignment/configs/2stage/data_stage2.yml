@@ -113,5 +113,8 @@ sampler:
     fields_to_compute_weight: [lang, speaker_name, uid]
     chunks_ratio: [0.3, 0.3, 0.4]
   test:
-    type: SimpleSampler
+    type: WeightedSampler
     comb_by_len: true
+    epoch_size: 1000
+    fields_to_compute_weight: [lang, speaker_name]
+    chunks_ratio: [0.5, 0.5]
