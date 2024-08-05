@@ -31,7 +31,7 @@ def get_freer_gpu(strict: bool = True) -> int:
 
     free_gpu = int(np.argmin(memory_used))
 
-    if strict and memory_used[free_gpu] > 500:
+    if strict and memory_used[free_gpu] > 100:
         raise RuntimeError("All GPUs are busy!")
 
     return free_gpu

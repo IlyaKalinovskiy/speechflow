@@ -36,7 +36,7 @@ parser:
       punctuation_marks: [".", "?"]
 
 preproc:
-  pipe: [load_audio,
+  pipe: [load_audio, load_text_from_sega,
          style, store_style, voice_bio, speech_quality,
          spectrogram, melscale,
          energy, pitch, enhancement_energy, enhancement_pitch,
