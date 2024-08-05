@@ -97,7 +97,9 @@ class Whisper(BaseSSLModel):
         device: str = "cpu",
         min_audio_duration: tp.Optional[float] = None,
         max_audio_duration: tp.Optional[float] = None,
-        model_name: str = "tiny",  # tiny, base, small, medium, large
+        model_name: tp.Literal[
+            "tiny", "base", "small", "medium", "large-v2"
+        ] = "large-v2",
     ):
         super().__init__(device, min_audio_duration, max_audio_duration)
 

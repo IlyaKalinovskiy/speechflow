@@ -16,8 +16,8 @@ LOGGER = logging.getLogger("root")
 
 
 class BatchWorker(ProcessWorker):
-    def __init__(self, server_addr: str):
-        ProcessWorker.__init__(self)
+    def __init__(self, server_addr: str, lock=None):
+        ProcessWorker.__init__(self, lock=lock)
         self._server_addr = server_addr
         self._zmq_client: ZMQClient = None  # type: ignore
         self._zmq_worker: ZMQWorker = None  # type: ignore

@@ -17,8 +17,9 @@ class WorkerPool:
     def __init__(
         self, server_addr: str, n_processes: int = 0, worker_type: tp.Any = BatchWorker
     ):
+        lock = mp.Lock()
         n_processes = n_processes if n_processes else mp.cpu_count()
-        self._workers = [worker_type(server_addr) for _ in range(n_processes)]
+        self._workers = [worker_type(server_addr, lock=lock) for _ in range(n_processes)]
 
     @staticmethod
     @check_path(assert_file_exists=True)

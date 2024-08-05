@@ -8,18 +8,22 @@ import torch.multiprocessing as mp
 from speechflow.concurrency.abstract_worker import AbstractWorker
 from speechflow.logging import trace, track_process
 
+__all__ = ["ProcessWorker", "DummyLock"]
+
 LOGGER = logging.getLogger("root")
+LOCK = None
 
 
 class ProcessWorker(AbstractWorker, mp.Process, ABC):
     """Base worker class which implements "multiprocessing" execution model."""
 
-    def __init__(self, init_logger: bool = True):
+    def __init__(self, init_logger: bool = True, lock=None):
         mp.set_start_method("spawn", force=True)
         self._active = mp.Value("i", 0)
         self._started = mp.Value("i", 0)
         self._none_stop = mp.Value("i", 0)
         self._init_logger = init_logger
+        self._lock = lock
         mp.Process.__init__(self)
 
     def __del__(self):
@@ -53,6 +57,10 @@ class ProcessWorker(AbstractWorker, mp.Process, ABC):
 
     def run(self):
         global LOGGER
+        global LOCK
+
+        if self._lock is not None:
+            LOCK = self._lock
 
         if self._init_logger:
             from speechflow.logging.logger import create_logger
@@ -126,3 +134,11 @@ class ProcessWorker(AbstractWorker, mp.Process, ABC):
                 break
             time.sleep(tick)
             counter += tick
+
+
+class DummyLock:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass

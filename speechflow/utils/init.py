@@ -7,6 +7,7 @@ import functools
 from functools import wraps
 from os import environ as env
 
+from speechflow.concurrency import DummyLock
 from speechflow.io import Config
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
 ]
 
 LOGGER = logging.getLogger("root")
+LOCK = DummyLock()
 
 
 def get_default_args(func):
@@ -116,7 +118,8 @@ def lazy_initialization(func):
             return res
         else:
             if not getattr(args[0], "__is_init", False):
-                args[0].init()
+                with LOCK:
+                    args[0].init()
                 setattr(args[0], "__is_init", True)
 
             return func(*args, **kwargs)

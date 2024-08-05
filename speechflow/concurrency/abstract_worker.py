@@ -3,6 +3,8 @@ import logging
 
 from speechflow.logging import trace
 
+__all__ = ["AbstractWorker"]
+
 LOGGER = logging.getLogger("root")
 
 
