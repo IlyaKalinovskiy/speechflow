@@ -37,7 +37,7 @@ class ZeroSilTokensError(Exception):
 
 
 @PipeRegistry.registry(
-    inputs={"file_path"}, outputs={"sent", "word_timestamps", "phoneme_timestamps"}
+    inputs={"file_path"}, outputs={"word_timestamps", "phoneme_timestamps"}
 )
 def load_text_from_sega(ds: TextDataSample):
     sega = AudioSeg.load(ds.file_path)
@@ -288,8 +288,12 @@ class TextProcessor(BaseDSProcessor):
         phonemes = sentence.get_phonemes()
         meta = TokenUtils.get_attr(sentence.tokens, attr_names=["meta"])["meta"]
         breath_mask = []
-        for m, ph in zip(meta, phonemes):
-            if self.sil not in ph[0]:
+        for idx, (m, ph) in enumerate(zip(meta, phonemes)):
+            if (
+                self.sil not in ph[0]
+                or idx + 1 == len(phonemes)
+                or phonemes[idx + 1][0] == self.eos
+            ):
                 breath_mask.append([-10.0] * len(ph))
             else:
                 if "noise_level" in m:

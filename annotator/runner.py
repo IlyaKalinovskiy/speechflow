@@ -748,10 +748,21 @@ def main(
 
 
 if __name__ == "__main__":
-    # example:
-    #  runner.py -d ../examples/simple_datasets/speech/SRC
-    #            -o ../examples/simple_datasets/speech/SEGS
-    #            --pretrained_models ../speechflow/data/fa/glowtts/stage1_epoch=19-step=208340.pt
-    #                              ../speechflow/data/fa/glowtts/stage2_epoch=29-step=312510.pt
+    """
+    example for TTS:
+      runner.py -d ../examples/simple_datasets/speech/SRC
+                -o ../examples/simple_datasets/speech/SEGS
+                -l MULTILANG
+                --pretrained_models mfa_stage1_epoch=19-step=208340.pt mfa_stage2_epoch=29-step=312510.pt
+
+    example for ASR:
+      runner.py -d ../examples/simple_datasets/speech/SRC
+                -o ../examples/simple_datasets/speech/SEGS
+                -l MULTILANG
+                --finetune_model mfa_stage1_epoch=19-step=208340.pt
+                --use_asr_transcription False
+                --use_resampling_audio False
+                --use_loudnorm_audio False
+    """
 
     main(**parse_args().__dict__)

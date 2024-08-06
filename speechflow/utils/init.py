@@ -9,6 +9,7 @@ from os import environ as env
 
 from speechflow.concurrency import process_worker
 from speechflow.io import Config
+from speechflow.utils.checks import str_to_bool
 
 __all__ = [
     "init_method_from_config",
@@ -101,7 +102,7 @@ def init_class_from_config(
 def lazy_initialization(func):
     @wraps(func)
     def decorated_func(*args, **kwargs):
-        if bool(env.get("MEMORY_SAVE", False)):
+        if str_to_bool(env.get("MEMORY_SAVE", "False")):
             none_attr_before = [k for k, v in args[0].__dict__.items() if v is None]
             args[0].create()
             none_attr_after = [k for k, v in args[0].__dict__.items() if v is None]

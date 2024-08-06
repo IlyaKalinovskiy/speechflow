@@ -5,6 +5,7 @@ from functools import wraps
 from os import environ as env
 
 from speechflow.logging import log_profiler
+from speechflow.utils.checks import str_to_bool
 from speechflow.utils.profiler import Profiler
 
 LOGGER = logging.getLogger("root")
@@ -13,7 +14,7 @@ LOGGER = logging.getLogger("root")
 def gpu_profiler(func):
     @wraps(func)
     def decorated_func(*args, **kwargs):
-        if bool(env.get("MODEL_PROFILING", False)):
+        if str_to_bool(env.get("MODEL_PROFILING", "False")):
             with Profiler(
                 format=Profiler.Format.ms, auto_logging=False, gpu=True
             ) as prof:

@@ -17,6 +17,7 @@ from speechflow.data_pipeline.core.abstract import AbstractDataProcessor
 from speechflow.data_pipeline.core.dataset import DatasetItem
 from speechflow.io import Config, check_path, tp_PATH
 from speechflow.logging import log_to_file, trace
+from speechflow.utils.checks import str_to_bool
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.profiler import ProfilerManager
 
@@ -64,7 +65,7 @@ class DumpProcessor:
         :param update_functions: functions that will be updated in the dump, remaining functions will not be
         recalculated.
         """
-        self._verbose_logging = bool(env.get("VERBOSE", False))
+        self._verbose_logging = str_to_bool(env.get("VERBOSE", "False"))
 
         self.data_root = data_root
         self.folder_path = folder_path
@@ -326,8 +327,8 @@ class DataProcessor(AbstractDataProcessor):
         else:
             self._dump_proc = None  # type: ignore
 
-        self._verbose_logging = bool(env.get("VERBOSE", False))
-        self._use_profiler = bool(env.get("DATAPIPE_PROFILING", False))
+        self._verbose_logging = str_to_bool(env.get("VERBOSE", "False"))
+        self._use_profiler = str_to_bool(env.get("DATAPIPE_PROFILING", "False"))
 
     @staticmethod
     def apply(

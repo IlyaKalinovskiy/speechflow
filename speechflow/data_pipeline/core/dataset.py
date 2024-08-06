@@ -8,6 +8,8 @@ from pathlib import Path
 
 from tqdm import tqdm
 
+from speechflow.utils.checks import str_to_bool
+
 __all__ = ["Dataset", "DatasetItem"]
 
 
@@ -56,7 +58,7 @@ class Dataset:
         self._samples: tp.List[tp.Any] = []
         self._is_use_serialize = use_serialize
         self._readonly_mode: bool = False
-        self._mem_save = bool(env.get("MEMORY_SAVE", False))
+        self._mem_save = str_to_bool(env.get("MEMORY_SAVE", "False"))
 
         if not data:
             return

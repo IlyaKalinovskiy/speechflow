@@ -290,7 +290,10 @@ def add_pauses_from_text(
                 if pauses_with_punctuation and last_token.is_punctuation:
                     pause.phonemes = (f"<{last_token.text}>{pause.text}",)
 
-                ds.sent.syntagmas[-1].tokens.append(pause)
+                if ds.sent.syntagmas[-1].tokens[-1].is_punctuation:
+                    ds.sent.syntagmas[-1].tokens.insert(-1, pause)
+                else:
+                    ds.sent.syntagmas[-1].tokens.append(pause)
 
     all_tokens = [synt.tokens for synt in ds.sent.syntagmas]
     all_tokens = list(itertools.chain.from_iterable(all_tokens))
@@ -384,7 +387,13 @@ def add_pauses_from_timestamps(
                         new_ts_word[-1] = ds.audio_chunk.duration
                         new_ts_ph[-1][1] = ds.audio_chunk.duration
 
-                    tokens_processed.append(pause_token)
+                        if tokens_processed[-1].is_punctuation:
+                            tokens_processed.insert(-1, pause_token)
+                        else:
+                            tokens_processed.append(pause_token)
+                    else:
+                        tokens_processed.append(pause_token)
+
                     ts_words_processed.append(new_ts_word)
                     ts_phonemes_processed.append(Timestamps(new_ts_ph))
 
