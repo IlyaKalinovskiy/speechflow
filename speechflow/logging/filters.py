@@ -8,6 +8,11 @@ class AssertionErrorFilter(logging.Filter):
         return "AssertionError" not in record.getMessage()
 
 
+class ValueErrorFilter(logging.Filter):
+    def filter(self, record):
+        return "ValueError" not in record.getMessage()
+
+
 class TimestampErrorFilter(logging.Filter):
     def filter(self, record):
         return "timestamps.py" not in record.getMessage()
@@ -30,6 +35,7 @@ class CollatedErrorFilter(logging.Filter):
 
 def set_logging_filters(logger, **kwargs):
     logger.addFilter(AssertionErrorFilter())
+    logger.addFilter(ValueErrorFilter())
     logger.addFilter(TimestampErrorFilter())
     logger.addFilter(TextProcessorErrorFilter())
     logger.addFilter(LPCProcessorErrorFilter())

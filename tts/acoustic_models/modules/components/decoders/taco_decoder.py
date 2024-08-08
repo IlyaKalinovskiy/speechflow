@@ -172,11 +172,11 @@ class TacoDecoder(Component):
 
     def forward_step(self, inputs: VarianceAdaptorOutput) -> DecoderOutput:  # type: ignore
         x = self.get_content(inputs)[0]
-        target_feat = getattr(inputs.model_inputs, self.params.target_feat)
+        target = getattr(inputs.model_inputs, self.params.target)
 
         memory = x.permute(1, 0, 2)
-        if target_feat is not None:
-            target_feat = target_feat.permute(1, 0, 2)
+        if target is not None:
+            target = target.permute(1, 0, 2)
 
         self.dec_step.initialize_states(memory.shape[1], memory.device)
         frame = self.dec_step.get_go_frame(memory.shape[1], memory.device)
@@ -185,7 +185,10 @@ class TacoDecoder(Component):
         decoder_outputs = []
         decoder_context_outputs = []
 
-        if not self.training and spec_mask is not None and spec_mask.shape[0] == 1:
+        imputer_masks = inputs.model_inputs.imputer_masks
+        smask = imputer_masks.get(self.params.target)
+
+        if not self.training and smask is not None and smask.shape[0] == 1:
             group_mask = groupby(spec_mask.tolist()[0])  # type: ignore
         else:
             group_mask = [(True, [True] * memory.shape[0])]  # type: ignore
@@ -195,7 +198,7 @@ class TacoDecoder(Component):
             end = begin + len(list(mask))
             if not flag:
                 encoder_context = memory[begin:end]
-                frames = torch.cat([frame.unsqueeze(0), target_feat[begin : end - 1]])
+                frames = torch.cat([frame.unsqueeze(0), target[begin : end - 1]])
                 (next_frame, gate, self.dec_step.states, dec_context) = self.dec_step(
                     frames,
                     encoder_context,
@@ -222,11 +225,11 @@ class TacoDecoder(Component):
                         self.dec_step.states,
                     )
 
-                    if spec_mask is not None:  # train or inference as imputer
-                        frame = target_feat[idx].clone()
-                        frame[spec_mask[:, idx]] = next_frame[spec_mask[:, idx]]
+                    if smask is not None:  # train or inference as imputer
+                        frame = target[idx].clone()
+                        frame[smask[:, idx]] = next_frame[smask[:, idx]]
                     else:  # train or inference as tts
-                        frame = target_feat[idx] if self.training else next_frame
+                        frame = target[idx] if self.training else next_frame
 
                     local_decoder_context_outputs.append(dec_context)
                     local_decoder_outputs.append(next_frame)

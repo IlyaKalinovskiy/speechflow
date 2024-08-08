@@ -78,7 +78,6 @@ class TTSForwardInput(TrainData):
     aggregate_pitch: Tensor = None
     aggregate_curv_energy: Tensor = None
     aggregate_curv_pitch: Tensor = None
-    concatenate: Tensor = None  # type: ignore
     averages: tp.Dict[str, Tensor] = None  # type: ignore
     ranges: tp.Dict[str, Tensor] = None  # type: ignore
     synt_lengths: Tensor = None
@@ -91,10 +90,13 @@ class TTSForwardInput(TrainData):
     output_lengths: Tensor = None
     prosody_reference: tp.Optional[ComplexProsodyReference] = None
     additional_inputs: tp.Optional[tp.Dict[str, tp.Any]] = None
+    imputer_masks: tp.Optional[tp.Dict[str, Tensor]] = None
 
     def __post_init__(self):
         if self.additional_inputs is None:
             self.additional_inputs = {}
+        if self.imputer_masks is None:
+            self.imputer_masks = {}
 
 
 @dataclass

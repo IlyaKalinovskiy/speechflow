@@ -86,7 +86,6 @@ class TTSCollateOutput(SpectrogramCollateOutput):
     word_lengths: Tensor = None
     num_tokens: Tensor = None
     token_lengths: Tensor = None
-    concatenate: Tensor = None
 
     def __post_init__(self):
         super().__post_init__()
@@ -140,12 +139,6 @@ class TTSCollate(SpectrogramCollate):
         else:
             aggregated = {}
 
-        if batch[0].concatenate is not None:
-            concatenate = [sample.concatenate for sample in batch]
-            concatenate, _ = pad_2d(concatenate, n_channel=concatenate[0].shape[1])
-        else:
-            concatenate = None
-
         collated.transcription = transcription
         collated.transcription_lengths = input_lens
         collated.transcription_by_frames = transcription_by_frames
@@ -155,7 +148,6 @@ class TTSCollate(SpectrogramCollate):
         collated.durations = durations
         collated.invert_durations = invert_durations
         collated.aggregated = aggregated
-        collated.concatenate = concatenate
         collated.num_words = num_words
         collated.word_lengths = words_lens
         collated.num_tokens = input_lens

@@ -141,7 +141,6 @@ class TTSDataSample(SpectrogramDataSample, TextDataSample, ProsodySSMLDataSample
     invert_durations: tp_DATA = None  # type: ignore
     transcription_by_frames: tp_DATA = None
     aggregated: tp.Dict[str, tp_DATA] = None  # type: ignore
-    concatenate: tp_DATA = None  # type: ignore
     pauses_durations: torch.Tensor = None  # type: ignore
 
     def __str__(self) -> str:

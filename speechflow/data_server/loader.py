@@ -251,7 +251,9 @@ class DataLoader:
             if sleep > 0 and sleep % 15 == 0:
                 self.abort_processing()
             elif sleep > 300:
-                raise RuntimeError("DataServer stopped responding!")
+                raise RuntimeError(
+                    f"DataServer stopped responding for {self.subset_name} DataLoader!"
+                )
 
             return self.next_batch(sleep + 3)
 

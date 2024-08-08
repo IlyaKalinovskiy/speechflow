@@ -32,7 +32,6 @@ __all__ = [
     "aggregate_by_phoneme",
     "curvature_estimate_by_phoneme",
     "phonemes_by_frames",
-    "concatenate_features",
     "reverse",
     "random_chunk",
     "ContoursExtractor",
@@ -825,32 +824,6 @@ def phonemes_by_frames(ds: TTSDataSample):
 
     ds.transcription_by_frames = np.array(ext_transcription)
     assert ds.magnitude.shape[0] == ds.transcription_by_frames.shape[0]
-    return ds
-
-
-@PipeRegistry.registry(inputs={"energy", "pitch", "durations"}, outputs={"concatenate"})
-def concatenate_features(
-    ds: TTSDataSample,
-    attributes: tp.Union[tp.List[str], str],
-):
-    feats = []
-    for attr in attributes:
-        feat = getattr(ds, attr)
-        if isinstance(feat, tp.MutableMapping):
-            feat = list(feat.values())
-        elif not isinstance(feat, tp.MutableSequence):
-            feat = [feat]
-
-        for item in feat:
-            if item.ndim == 1:
-                item = np.expand_dims(item, axis=1)
-            else:
-                item = item
-
-            assert item.ndim == 2, ValueError("feature must have two dimensions!")
-            feats.append(item.astype(np.float32))
-
-    ds.concatenate = np.concatenate(feats, axis=1)
     return ds
 
 
