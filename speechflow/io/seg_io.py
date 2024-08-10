@@ -275,8 +275,8 @@ class AudioSeg:
                 meta = json.loads(s)
             except Exception as e:
                 raise RuntimeError(f"{e}: {s}")
-            sent.position = Position[meta.get("sent_position", "first")]
             sent.lang = meta.get("lang")
+            sent.position = Position[meta.get("sent_position", "first")]
         else:
             meta = {}
 
@@ -553,10 +553,21 @@ class AudioSeg:
     """
 
 
+class SentencePreview:
+    __slots__ = ("text", "words", "phonemes", "lang", "position")
+
+    def __init__(self):
+        self.text = None
+        self.words = None
+        self.phonemes = None
+        self.lang = None
+        self.position = None
+
+
 @dataclass
 class AudioSegPreview:
     audio_chunk: AudioChunk = None
-    sent: tp.Dict[str, tp.Any] = None
+    sent: SentencePreview = None
     ts_by_words: Timestamps = None
     ts_by_phonemes: Timestamps = None
     ts_bos: float = 0.0
@@ -565,7 +576,7 @@ class AudioSegPreview:
     sega_path: tp_PATH = None
 
     def __post_init__(self):
-        self.sent = {}
+        self.sent = SentencePreview()
         self.meta = {}
 
     @property
@@ -595,16 +606,16 @@ class AudioSegPreview:
         sega = AudioSegPreview()
 
         if "orig" in tiers:
-            sega.sent["text"] = tiers["orig"][0][2]
+            sega.sent.text = tiers["orig"][0][2]
 
         if "text" in tiers:
-            sega.sent["words"] = tuple(item[2] for item in tiers["text"])
+            sega.sent.words = tuple(item[2] for item in tiers["text"])
             sega.ts_by_words = Timestamps.from_list(
                 [(item[0], item[1]) for item in tiers["text"]]
             )
 
         if "phonemes" in tiers:
-            sega.sent["phonemes"] = tuple(item[2] for item in tiers["phonemes"])
+            sega.sent.phonemes = tuple(item[2] for item in tiers["phonemes"])
             sega.ts_by_phonemes = Timestamps.from_list(
                 [(item[0], item[1]) for item in tiers["phonemes"]]
             )
@@ -631,8 +642,8 @@ class AudioSegPreview:
 
         if '\n"meta"' in raw_data:
             meta = _extract_meta(raw_data)
-            sega.sent["position"] = Position[meta["sent_position"]]
-            sega.sent["lang"] = meta.get("lang")
+            sega.sent.lang = meta.get("lang")
+            sega.sent.position = Position[meta["sent_position"]]
         else:
             meta = {}
 

@@ -14,7 +14,7 @@ from speechflow.data_pipeline.core.dataset import Dataset
 from speechflow.data_pipeline.core.parser_types import Metadata, MetadataTransform
 from speechflow.data_pipeline.core.registry import PipeRegistry
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
-from speechflow.io import AudioSegPreview
+from speechflow.io import AudioSeg, AudioSegPreview
 from speechflow.logging import trace
 from speechflow.utils.versioning import version_check
 
@@ -55,13 +55,13 @@ class TTSDSParser(BaseDSParser):
         return [metadata]
 
     def converter(self, metadata: Metadata) -> tp.List[TTSDataSample]:
-        sega: AudioSegPreview = metadata["sega"]
+        sega: tp.Union[AudioSeg, AudioSegPreview] = metadata["sega"]
 
         datasample = TTSDataSample(
             file_path=metadata.get("file_path", Path()),
             label=metadata.get("label", ""),
             audio_chunk=sega.audio_chunk,
-            lang=sega.sent["lang"],
+            lang=sega.sent.lang,
             speaker_name=sega.meta.get("speaker_name"),
             intonation_type=metadata.get("intonation_type"),  # type: ignore
             index=(metadata.get("index_text"), metadata.get("index_wave")),
