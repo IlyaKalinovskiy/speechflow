@@ -2,7 +2,6 @@ import math
 import typing as tp
 import logging
 
-from multiprocessing import current_process
 from pathlib import Path
 
 import numpy as np
@@ -11,22 +10,13 @@ import whisper
 import torchaudio
 import transformers
 
+from speechbrain.pretrained import EncoderClassifier
 from transformers.tokenization_utils_base import PaddingStrategy
 from whisper.decoding import DecodingTask
 
 from speechflow.data_pipeline.datasample_processors.data_types import SSLFeatures
-from speechflow.io import AudioChunk, tp_PATH
+from speechflow.io import AudioChunk, check_path, tp_PATH
 from speechflow.utils.fs import get_root_dir
-from speechflow.utils.profiler import Profiler
-
-LOGGER = logging.getLogger("root")
-
-try:
-    from speechbrain.pretrained import EncoderClassifier
-except ImportError as e:
-    if current_process().name == "MainProcess":
-        LOGGER.warning(f"speechbrain is not available: {e}")
-
 
 __all__ = [
     "Whisper",
@@ -35,6 +25,8 @@ __all__ = [
     "WavLM",
     "ECAPABiometric",
 ]
+
+LOGGER = logging.getLogger("root")
 
 
 class BaseSSLModel(torch.nn.Module):
@@ -85,10 +77,12 @@ class BaseSSLModel(torch.nn.Module):
 
         return data.unsqueeze(0)
 
-    def postprocessing(self, feat: SSLFeatures) -> SSLFeatures:
+    def postprocessing(self, ssl_feat: SSLFeatures) -> SSLFeatures:
+        ssl_feat.encoder_feat = ssl_feat.encoder_feat.cpu()
         if self._min_audio_duration is not None:
             pass
-        return feat
+
+        return ssl_feat
 
 
 class Whisper(BaseSSLModel):
@@ -103,12 +97,13 @@ class Whisper(BaseSSLModel):
     ):
         super().__init__(device, min_audio_duration, max_audio_duration)
 
-        self.sample_rate = 16000
-        self.embedding_dim = 384
         self.model = whisper.load_model(model_name, device)
         self.options = whisper.DecodingOptions(fp16=False)
         self.dec_task = DecodingTask(self.model, self.options)
         self.pos_emb = self.model.encoder.positional_embedding.clone()
+
+        self.model.eval()
+        self.embedding_dim = self.model.dims.n_audio_state
 
     @torch.inference_mode()
     def __call__(self, audio_chunk: AudioChunk) -> SSLFeatures:
@@ -122,39 +117,56 @@ class Whisper(BaseSSLModel):
             : math.ceil(mel.shape[-1] / 2)
         ]
         emb = self.dec_task._get_audio_features(mel)
-        ssl_feat.encode = emb.squeeze(0).cpu()
 
+        ssl_feat.encoder_feat = emb.squeeze(0)
         return self.postprocessing(ssl_feat)
 
 
 class Wav2Vec(BaseSSLModel):
+    @check_path(assert_file_exists=True)
     def __init__(
         self,
         device: str = "cpu",
         min_audio_duration: tp.Optional[float] = None,
         max_audio_duration: tp.Optional[float] = None,
-        model_name: tp.Optional[
-            tp.Union[str, Path]
-        ] = "anton-l/wav2vec2-large-xlsr-53-russian",
+        model_name: str = "anton-l/wav2vec2-large-xlsr-53-russian",
         pretrain_path: tp.Optional[tp_PATH] = None,
-        feature_type: str = "encoder",
+        vocab_path: tp.Optional[tp_PATH] = None,
+        feature_type: tp.Literal[
+            "logits", "last_hidden_state", "partial"
+        ] = "last_hidden_state",
         level: int = 4,
         stream_mod: tp.Optional[dict] = None,
         trim_pad: bool = True,
     ):
         super().__init__(device, min_audio_duration, max_audio_duration)
 
-        self.sample_rate = 16000
-        self.embedding_dim = 1024
         self._feature_type = feature_type
         self._level = level
         self._stream_mod = stream_mod
         self._trim_pad = trim_pad
 
-        self._init_model(model_name, feature_type, pretrain_path)
+        if feature_type not in ["logits", "last_hidden_state", "partial"]:
+            raise ValueError(
+                f"Available model_type's: wav2vec logits/last_hidden_state/partial, "
+                f"but got model_type={feature_type}!"
+            )
+
+        self._init_model(model_name, feature_type, pretrain_path, vocab_path)
+
+        if feature_type == "logits":
+            self.embedding_dim = self.model.lm_head.out_features
+        else:
+            self.embedding_dim = self.model.lm_head.in_features
+
+        self._pad = self.model.config.conv_kernel[0] // 2
 
     def _init_model(
-        self, model_name: tp.Union[str, Path], feature_type: str, pretrain_path: tp_PATH
+        self,
+        model_name: str,
+        feature_type: str,
+        pretrain_path: tp_PATH,
+        vocab_path: tp_PATH,
     ):
         self.model = transformers.Wav2Vec2Model.from_pretrained(
             model_name,
@@ -164,12 +176,15 @@ class Wav2Vec(BaseSSLModel):
             mask_time_prob=0.05,
             layerdrop=0.01,
         )
-        self.processor = transformers.Wav2Vec2FeatureExtractor(
+        self.feature_extractor = transformers.Wav2Vec2FeatureExtractor(
             feature_size=1,
             sampling_rate=self.sample_rate,
             padding_value=0.0,
             do_normalize=True,
             return_attention_mask=True,
+        )
+        self.processor = transformers.Wav2Vec2Processor(
+            feature_extractor=self.feature_extractor, tokenizer=None
         )
 
         if pretrain_path is not None:
@@ -181,23 +196,8 @@ class Wav2Vec(BaseSSLModel):
             }
             self.model.load_state_dict(state_dict, strict=True)
 
-        if feature_type in ["encoder", "encode_level"]:
-            self.model.eval()
-            self.model.to(self.device)
-        elif feature_type == "projection":
-            self.wav_ft_model = self.model.feature_extractor
-            self.wav_fp_model = self.model.feature_projection
-
-            self.wav_ft_model.eval()
-            self.wav_fp_model.eval()
-
-            self.wav_ft_model.to(self.device)
-            self.wav_fp_model.to(self.device)
-        else:
-            raise ValueError(
-                f"Available model_type's: wav2vec encoder, wav2vec projection, "
-                f"but got model_type={feature_type}!"
-            )
+        self.model.eval()
+        self.model.to(self.device)
 
     def encode(
         self,
@@ -219,6 +219,16 @@ class Wav2Vec(BaseSSLModel):
 
         return hidden_states
 
+    def get_tokens(self, ssl_feat: SSLFeatures) -> SSLFeatures:
+        if getattr(self.processor, "tokenizer", None) is not None:
+            feat = ssl_feat.encoder_feat
+            if feat.shape[1] != self.model.lm_head.out_features:
+                feat = self.model.lm_head(feat)
+
+            ssl_feat.tokens = self.processor.batch_decode(feat.argmax(dim=-1))[0]
+
+        return ssl_feat
+
     @torch.inference_mode()
     def __call__(self, audio_chunk: AudioChunk) -> SSLFeatures:
         ssl_feat = SSLFeatures()
@@ -232,8 +242,8 @@ class Wav2Vec(BaseSSLModel):
             return_attention_mask=True,
         )
         processed = {k: v.to(self.device) for k, v in processed.data.items()}
+        attention_mask = processed.pop("attention_mask")
 
-        tmp_attention_mask = None
         if self._stream_mod is not None:
             wave = processed["input_values"].squeeze(0)
             pad_size = wave.shape[0] % self._stream_mod["chunk_size"]
@@ -245,41 +255,18 @@ class Wav2Vec(BaseSSLModel):
                 self._stream_mod["context_size"]
             )
             chunks = wave_pad.unfold(0, chunks_size, self._stream_mod["chunk_size"])
+            chunks = torch.nn.functional.pad(chunks, (self._pad, 0, 0, 0), "constant", 0)
             processed["input_values"] = chunks
-            tmp_attention_mask = processed.pop("attention_mask", None)
 
-        if self._feature_type == "encoder":
+        if self._feature_type == "logits":
             outputs = self.model(**processed)
-            ssl_feat.encode = outputs[0]
-            ssl_feat.attention_mask = processed.get("attention_mask")
-        elif self._feature_type == "projection":
-            # Wav2Vec2FeatureExtractor
-            extract_features = self.wav_ft_model(processed["input_values"])
-
-            extract_features = extract_features.transpose(1, 2)
-            if processed["attention_mask"] is not None:
-                # compute reduced attention_mask corresponding to feature vectors
-                attention_mask = self.model._get_feature_vector_attention_mask(
-                    extract_features.shape[1],
-                    processed["attention_mask"],
-                    add_adapter=False,
-                )
-                # print(attention_mask.shape, extract_features.shape)
-            else:
-                attention_mask = None
-
-            # Wav2Vec2FeatureProjection
-            hidden_states, extract_features = self.wav_fp_model(extract_features)
-            hidden_states = self.model._mask_hidden_states(
-                hidden_states,
-                mask_time_indices=None,
-                attention_mask=attention_mask,
-            )
-            ssl_feat.encode = hidden_states
-            ssl_feat.attention_mask = attention_mask
-        elif self._feature_type == "encode_level":
+            ssl_feat.encoder_feat = outputs.logits
+        elif self._feature_type == "last_hidden_state":
+            outputs = self.model(**processed, output_hidden_states=True)
+            ssl_feat.encoder_feat = outputs.hidden_states[-1]
+        elif self._feature_type == "partial":
             if self._level > 0:
-                ssl_feat.encode = self.encode(
+                ssl_feat.encoder_feat = self.encode(
                     input_values=processed["input_values"],
                     level=self._level,
                 )
@@ -289,83 +276,81 @@ class Wav2Vec(BaseSSLModel):
                     attention_mask=processed["attention_mask"],
                     output_hidden_states=True,
                 )
-                ssl_feat.encode = outputs.hidden_states[self._level]
-            ssl_feat.attention_mask = processed["attention_mask"]
-        else:
-            raise ValueError(
-                f"Available model_type's: wav2vec encoder, wav2vec projection, encode_level "
-                f"but got model_type={self._feature_type}!"
-            )
+                ssl_feat.encoder_feat = outputs.hidden_states[self._level]
 
         if self._stream_mod is not None:
             chunks_size = self._stream_mod["chunk_size"] + sum(
                 self._stream_mod["context_size"]
             )
-            shape = ssl_feat.encode.shape
+            shape = ssl_feat.encoder_feat.shape
             a = round(shape[1] * self._stream_mod["context_size"][0] / chunks_size)
             b = -round(shape[1] * self._stream_mod["context_size"][1] / chunks_size)
-            ssl_feat.encode = ssl_feat.encode[:, a:b, :].reshape(
-                (1, -1, ssl_feat.encode.shape[2])
+            ssl_feat.encoder_feat = ssl_feat.encoder_feat[:, a:b, :].reshape(
+                (1, -1, ssl_feat.encoder_feat.shape[2])
             )
-            feat_len = round(audio_chunk.duration / 0.02)
-            ssl_feat.encode = ssl_feat.encode[:, :feat_len, :]
-            ssl_feat.attention_mask = tmp_attention_mask
 
-        ssl_feat.encode = ssl_feat.encode.cpu().squeeze(0)
-        ssl_feat.attention_mask = ssl_feat.attention_mask.cpu().bool().squeeze(0)
+        ssl_feat = self.get_tokens(ssl_feat)
+        ssl_feat.encoder_feat = ssl_feat.encoder_feat.cpu().squeeze(0)
 
         if self._trim_pad:
-            ratio = ssl_feat.attention_mask.shape[0] / ssl_feat.encode.shape[0]
-            attention_len = int(ssl_feat.attention_mask.sum())
+            attention_mask = attention_mask.squeeze(0)
+            ratio = attention_mask.shape[0] / ssl_feat.encoder_feat.shape[0]
+            attention_len = int(attention_mask.sum())
             feat_len = int(attention_len / ratio)
-            ssl_feat.encode = ssl_feat.encode[:feat_len, :].contiguous()
-            ssl_feat.attention_mask = ssl_feat.attention_mask[:attention_len].contiguous()
+            ssl_feat.encoder_feat = ssl_feat.encoder_feat[:feat_len, :].contiguous()
 
-        ssl_feat.encode = ssl_feat.encode.cpu()
         return self.postprocessing(ssl_feat)
 
 
 class Hubert(Wav2Vec):
-    def _init_model(self, model_name, feature_type, pretrain_path):
+    def _init_model(
+        self,
+        model_name: str,
+        feature_type: str,
+        pretrain_path: tp_PATH,
+        vocab_path: tp_PATH,
+    ):
+        if vocab_path is not None:
+            tokenizer = transformers.Wav2Vec2CTCTokenizer(
+                vocab_file=vocab_path.as_posix(),
+                unk_token="<unk>",
+                pad_token="<pad>",
+                word_delimiter_token="|",
+            )
+        else:
+            tokenizer = None
+
         self.model = transformers.HubertForCTC.from_pretrained(model_name)
+        self.feature_extractor = transformers.Wav2Vec2FeatureExtractor.from_pretrained(
+            model_name
+        )
+        self.processor = transformers.Wav2Vec2Processor(
+            feature_extractor=self.feature_extractor, tokenizer=tokenizer
+        )
+
         self.model.lm_head = torch.nn.Linear(1024, 64)
-        self.processor = transformers.Wav2Vec2FeatureExtractor.from_pretrained(model_name)
 
         if pretrain_path is not None:
             checkpoint = torch.load(pretrain_path, map_location="cpu")
             state_dict = {
-                k.replace("model.wav2vec2.", "hubert.").replace("aux", "lm_head"): v
+                k.replace("model.wav2vec2.", "hubert.")
+                .replace("aux", "lm_head")
+                .replace("encoder.feature_projection", "feature_projection")
+                .replace("transformer.", "")
+                .replace(
+                    "model.mask_generator.mask_embedding", "hubert.masked_spec_embed"
+                ): v
                 for k, v in checkpoint["state_dict"].items()
                 if "logit_generator" not in k
             }
-            state_dict = {
-                k.replace("encoder.feature_projection", "feature_projection").replace(
-                    "transformer.", ""
-                ): v
-                for k, v in state_dict.items()
-            }
-            state_dict = {
-                k.replace(
-                    "model.mask_generator.mask_embedding", "hubert.masked_spec_embed"
-                ): v
-                for k, v in state_dict.items()
-            }
-            state_dict = {k.replace("model.model.", ""): v for k, v in state_dict.items()}
-            # bias mismatch for feature extraction is correct
             try:
                 self.model.load_state_dict(state_dict, strict=True)
             except Exception as e:
                 print(e)
                 self.model.load_state_dict(state_dict, strict=False)
 
-        if feature_type in ["encoder", "encode_level"]:
-            self.model.eval()
-            self.model.to(self.device)
-        else:
-            raise ValueError(
-                f"Available model_type's: hubert encoder, "
-                f"but got model_type={feature_type}!"
-            )
+        self.model.eval()
+        self.model.to(self.device)
 
 
 class WavLM(BaseSSLModel):
@@ -388,12 +373,13 @@ class WavLM(BaseSSLModel):
         pipe = getattr(torchaudio.pipelines, model_name)
 
         if model_dir is not None and model_dir.exists():
-            self._model = pipe.get_model(dl_kwargs={"model_dir": model_dir}).to(
+            self.model = pipe.get_model(dl_kwargs={"model_dir": model_dir}).to(
                 self.device
             )
         else:
-            self._model = pipe.get_model().to(self.device)
+            self.model = pipe.get_model().to(self.device)
 
+        self.model.eval()
         self.sample_rate = pipe.sample_rate
         self.embedding_dim = pipe._params["encoder_embed_dim"]
 
@@ -402,15 +388,14 @@ class WavLM(BaseSSLModel):
         ssl_feat = SSLFeatures()
         data = self.preprocessing(audio_chunk)
 
-        feat = self._model.extract_features(data)[0]
+        feat = self.model.extract_features(data)[0]
 
         if self._num_layer:
             emb = feat[self._num_layer]
         else:
             emb = feat
 
-        ssl_feat.encode = emb.squeeze(0).cpu()
-
+        ssl_feat.encoder_feat = emb.squeeze(0)
         return self.postprocessing(ssl_feat)
 
 
@@ -434,13 +419,13 @@ class ECAPABiometric(BaseSSLModel):
             )
             model_name.mkdir(parents=True, exist_ok=True)
 
-        self._model = EncoderClassifier.from_hparams(
+        self.model = EncoderClassifier.from_hparams(
             source=f"speechbrain/{Path(model_name).name}",
             savedir=Path(model_name).absolute().as_posix(),
             run_opts={"device": self.device},
         )
 
-        _model = self._model.mods.embedding_model
+        _model = self.model.mods.embedding_model
         _state_dict = _model.fc.state_dict()
         _state_dict_mean = {
             "weight": _state_dict["conv.weight"][:, :3072, :],
@@ -459,7 +444,7 @@ class ECAPABiometric(BaseSSLModel):
         self.bn.load_state_dict(_state_dict_bn)
 
     @torch.inference_mode()
-    def get_feats(self, wavs, wav_lens=None, normalize=False):
+    def get_feats(self, wavs, wav_lens=None):
         if len(wavs.shape) == 1:
             wavs = wavs.unsqueeze(0)
 
@@ -471,14 +456,14 @@ class ECAPABiometric(BaseSSLModel):
         wavs, wav_lens = wavs.to(self.device), wav_lens.to(self.device)
         wavs = wavs.float()
 
-        feats = self._model.mods.compute_features(wavs)
-        feats = self._model.mods.mean_var_norm(feats, wav_lens)
+        feats = self.model.mods.compute_features(wavs)
+        feats = self.model.mods.mean_var_norm(feats, wav_lens)
 
         return feats
 
     @torch.inference_mode()
     def get_embeddings(self, features):
-        _model = self._model.mods.embedding_model
+        _model = self.model.mods.embedding_model
         x = features.transpose(1, 2)
 
         xl = []
@@ -504,24 +489,43 @@ class ECAPABiometric(BaseSSLModel):
 
         features = self.get_feats(data).to(self.device)
         emb = self.get_embeddings(features=features)
-        ssl_feat.encode = emb.squeeze(0).cpu()
 
+        ssl_feat.encoder_feat = emb.squeeze(0)
         return self.postprocessing(ssl_feat)
 
 
 if __name__ == "__main__":
-    _wav_path = get_root_dir() / "tests/data/test_audio.wav"
-    _audio_chunk = AudioChunk(_wav_path, end=3.9).load()
+    if 1:
+        from speechflow.utils.profiler import Profiler
 
-    for _ssl_cls in [Whisper, Wav2Vec, WavLM, ECAPABiometric]:
-        try:
-            _ssl_model = _ssl_cls()
-        except Exception as e:
-            print(e)
-            continue
+        _wav_path = get_root_dir() / "tests/data/test_audio.wav"
+        _audio_chunk = AudioChunk(_wav_path, end=3.9).load()
 
-        with Profiler(_ssl_cls.__name__) as prof:
-            _ssl_feat = _ssl_model(_audio_chunk)
+        for _ssl_cls in [Whisper, Wav2Vec, WavLM, ECAPABiometric]:
+            try:
+                _ssl_model = _ssl_cls()
+            except Exception as e:
+                print(e)
+                continue
 
-        print(f"{_ssl_cls.__name__}: {_ssl_feat.encode.shape}")
-        assert _ssl_feat.encode.shape[-1] == _ssl_model.embedding_dim
+            with Profiler(_ssl_cls.__name__) as prof:
+                _ssl_feat = _ssl_model(_audio_chunk)
+
+            print(f"{_ssl_cls.__name__}: {_ssl_feat.encoder_feat.shape}")
+            assert _ssl_feat.encoder_feat.shape[-1] == _ssl_model.embedding_dim
+    else:
+        from pathlib import Path
+
+        _hubert = Hubert(
+            model_name="facebook/hubert-large-ls960-ft",
+            pretrain_path="epoch=0-step=4500.ckpt",
+            vocab_path="vocab.json",
+            stream_mod={"chunk_size": 6400, "context_size": [64000, 6550]},
+        )
+
+        _flist = Path("test").glob("*.wav")
+        for _wav_path in _flist:
+            _audio_chunk = AudioChunk(_wav_path).load()
+            _ssl_feat = _hubert(_audio_chunk)
+            print(f"{_hubert.__class__.__name__}: {_ssl_feat.encoder_feat.shape}")
+            print(f"{_wav_path.as_posix()}: {_ssl_feat.tokens}")

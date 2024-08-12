@@ -2,7 +2,6 @@ import random
 import typing as tp
 import logging
 
-from multiprocessing import current_process
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +10,7 @@ import wespeaker
 import torch.nn.functional as F
 
 from resemblyzer import VoiceEncoder, preprocess_wav
+from speechbrain.pretrained import EncoderClassifier
 
 from speechflow.data_pipeline.core import BaseDSProcessor, PipeRegistry
 from speechflow.data_pipeline.datasample_processors.data_types import AudioDataSample
@@ -24,12 +24,6 @@ from speechflow.utils.init import lazy_initialization
 __all__ = ["VoiceBiometricProcessor", "mean_bio_embedding", "wespeaker"]
 
 LOGGER = logging.getLogger("root")
-
-try:
-    from speechbrain.pretrained import EncoderClassifier
-except ImportError as e:
-    if current_process().name == "MainProcess":
-        LOGGER.warning(f"speechbrain is not available: {e}")
 
 
 class VoiceBiometricProcessor(BaseDSProcessor):

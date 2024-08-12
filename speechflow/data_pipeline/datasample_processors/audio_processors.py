@@ -381,14 +381,14 @@ class SSLProcessor(BaseAudioProcessor):
 
         if self._resize_from:
             attr = getattr(ds, self._resize_from)
-            scale = (attr.shape[0] + 1) / ds.ssl_feat.encode.shape[0]
-            feat = ds.ssl_feat.encode.t().unsqueeze(0)
-            ds.ssl_feat.encode = torch_interpolate(feat, scale_factor=scale)
-            ds.ssl_feat.encode = ds.ssl_feat.encode.squeeze(0).t()
-            ds.ssl_feat.encode = ds.ssl_feat.encode[: attr.shape[0]]
+            scale = (attr.shape[0] + 1) / ds.ssl_feat.encoder_feat.shape[0]
+            feat = ds.ssl_feat.encoder_feat.t().unsqueeze(0)
+            ds.ssl_feat.encoder_feat = torch_interpolate(feat, scale_factor=scale)
+            ds.ssl_feat.encoder_feat = ds.ssl_feat.encoder_feat.squeeze(0).t()
+            ds.ssl_feat.encoder_feat = ds.ssl_feat.encoder_feat[: attr.shape[0]]
             assert (
-                ds.ssl_feat.encode.shape[0] == attr.shape[0]
-            ), f"shape mismatch {ds.ssl_feat.encode.shape[0]} != {attr.shape[0]}"
+                ds.ssl_feat.encoder_feat.shape[0] == attr.shape[0]
+            ), f"shape mismatch {ds.ssl_feat.encoder_feat.shape[0]} != {attr.shape[0]}"
 
         return ds.to_numpy()
 

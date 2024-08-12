@@ -27,7 +27,7 @@ from speechflow.data_pipeline.core import (
     TrainData,
 )
 from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing.ssl_models import (
-    Wav2Vec,
+    Whisper,
 )
 from speechflow.data_pipeline.samplers import RandomSampler
 from speechflow.data_server.helpers import LoaderParams, init_data_loader
@@ -128,19 +128,23 @@ class SignalProcessor(BaseDSProcessor):
 
 
 class SSLProcessor(BaseDSProcessor):
-    def __init__(self, device: str = "cpu"):
+    def __init__(
+        self,
+        model_name: tp.Literal["tiny", "base", "small", "medium", "large-v2"] = "tiny",
+        device: str = "cpu",
+    ):
         super().__init__(device=device)
-        self.ssl_model = None
+        self.model_name = model_name
+        self.ssl_model: tp.Optional[Whisper] = None
 
     def init(self):
         super().init()
-        self.ssl_model = Wav2Vec(feature_type="encode_level", device=self.device)
+        self.ssl_model = Whisper(model_name=self.model_name, device=self.device)
 
     @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"ssl_feat"})
     @lazy_initialization
     def process(self, ds: SSLDataSample) -> SSLDataSample:
-        ssl_feat = self.ssl_model(ds.audio_chunk)
-        ds.ssl_feat = ssl_feat.encode
+        ds.ssl_feat = self.ssl_model(ds.audio_chunk).encoder_feat
         return ds.to_numpy()
 
 
@@ -203,7 +207,7 @@ class SpeakerID(metaclass=Singleton):
 
 class SSLBiometricModelParams(BaseTorchModelParams):
     n_speakers: int = pydantic.Field(0, ge=0)
-    ssl_dim: tp.Literal[768, 1024] = 1024
+    ssl_dim: tp.Literal[384, 1280] = 384
     proj_dim: int = pydantic.Field(256, ge=128, le=1024)
     rnn_dim: int = pydantic.Field(128, ge=64, le=256)
 

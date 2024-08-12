@@ -841,7 +841,7 @@ def reverse(ds: TTSDataSample, p: float = 0.15):
         ds.ling_feat[k] = np.flipud(v).copy()
 
     if ds.ssl_feat is not None:
-        ds.ssl_feat.encode = np.flipud(ds.ssl_feat.encode).copy()
+        ds.ssl_feat.encoder_feat = np.flipud(ds.ssl_feat.encoder_feat).copy()
 
     if ds.symbols is not None:
         ds.symbols = ds.symbols[::-1]

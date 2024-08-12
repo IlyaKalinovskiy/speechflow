@@ -100,7 +100,7 @@ class AudioCollate(BaseCollate):
 
         if batch[0].ssl_feat is not None:
             pad_val = self.pad_values.get("ssl_encode", 0.0)
-            embs = [x.ssl_feat.encode for x in batch]
+            embs = [x.ssl_feat.encoder_feat for x in batch]
             ssl_feat, ssl_feat_lens = pad_2d(
                 embs, pad_val, embs[0].shape[1], multiple=multiple
             )

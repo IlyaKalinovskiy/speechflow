@@ -39,27 +39,26 @@ class ImageDataSample(DataSample):
 
 @dataclass
 class SSLFeatures(ToTensor, ToNumpy, MovableToDevice):
-    encode: tp_DATA = None  # type: ignore
-    projection: tp_DATA = None  # type: ignore
-    attention_mask: tp_DATA = None  # type: ignore
+    encoder_feat: tp_DATA = None
+    tokens: str = None
 
     def __getitem__(self, item):
-        return self.encode[item]
+        return self.encoder_feat[item]
 
     def get(self):
-        return self.encode
+        return self.encoder_feat
 
 
 @dataclass
 class AudioCodecFeatures(ToTensor, ToNumpy, MovableToDevice):
-    encode: tp_DATA = None  # type: ignore
+    encoder_feat: tp_DATA = None  # type: ignore
     waveform: tp_DATA = None  # type: ignore
 
     def __getitem__(self, item):
-        return self.encode[item]
+        return self.encoder_feat[item]
 
     def get(self):
-        return self.encode
+        return self.encoder_feat
 
 
 @dataclass(eq=False)

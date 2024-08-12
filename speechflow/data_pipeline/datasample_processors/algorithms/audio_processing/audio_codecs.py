@@ -118,11 +118,11 @@ class DAC(BaseAudioCodecModel):
         z, codes, latents, _, _ = self.model.encode(x)
 
         if self._feat_type == ACFeatureType.latent:
-            ac_feat.encode = latents.squeeze(0).t().cpu()
+            ac_feat.encoder_feat = latents.squeeze(0).t().cpu()
         elif self._feat_type == ACFeatureType.quantized:
-            ac_feat.encode = codes.squeeze(0).t().cpu()
+            ac_feat.encoder_feat = codes.squeeze(0).t().cpu()
         elif self._feat_type == ACFeatureType.continuous:
-            ac_feat.encode = z.squeeze(0).t().cpu()
+            ac_feat.encoder_feat = z.squeeze(0).t().cpu()
         else:
             raise NotImplementedError(f"feature {self._feat_type} is not supported")
 
@@ -185,7 +185,7 @@ class VocosAC(BaseAudioCodecModel):
             spectrogram_lengths=lens,
             linear_spectrogram=ds.magnitude.unsqueeze(0).to(self.device),
             linear_spectrogram_lengths=lens,
-            ssl_feat=ds.ssl_feat.encode.unsqueeze(0).to(self.device),
+            ssl_feat=ds.ssl_feat.encoder_feat.unsqueeze(0).to(self.device),
             ssl_feat_lengths=lens,
             energy=ds.energy.unsqueeze(0).to(self.device),
             pitch=ds.pitch.unsqueeze(0).to(self.device),
@@ -203,11 +203,11 @@ class VocosAC(BaseAudioCodecModel):
         _addc = _output.additional_content
 
         if self._feat_type == ACFeatureType.latent:
-            ac_feat.encode = _addc["vq_latent"].queeze(0).cpu()
+            ac_feat.encoder_feat = _addc["vq_latent"].queeze(0).cpu()
         elif self._feat_type == ACFeatureType.quantized:
-            ac_feat.encode = _addc["vq_codes"].squeeze(0).cpu()
+            ac_feat.encoder_feat = _addc["vq_codes"].squeeze(0).cpu()
         elif self._feat_type == ACFeatureType.continuous:
-            ac_feat.encode = _addc["vq_z"].squeeze(0).cpu()
+            ac_feat.encoder_feat = _addc["vq_z"].squeeze(0).cpu()
         else:
             raise NotImplementedError(f"feature {self._feat_type} is not supported")
 
@@ -226,15 +226,15 @@ if __name__ == "__main__":
         ACFeatureType.quantized,
         ACFeatureType.latent,
     ]:
-        for _ssl_cls in [DAC]:
+        for _ac_cls in [DAC]:
             try:
-                _ssl_model = _ssl_cls(feat_type=_feat_type)
+                _ac_model = _ac_cls(feat_type=_feat_type)
             except Exception as e:
                 print(e)
                 continue
 
-            with Profiler(_ssl_cls.__name__) as prof:
-                _ssl_feat = _ssl_model(_audio_chunk)
+            with Profiler(_ac_cls.__name__) as prof:
+                _ac_feat = _ac_model(_audio_chunk)
 
-            print(f"{_ssl_cls.__name__}: {_ssl_feat.encode.shape}")
-            assert _ssl_feat.encode.shape[-1] == _ssl_model.embedding_dim
+            print(f"{_ac_cls.__name__}: {_ac_feat.encoder_feat.shape}")
+            assert _ac_feat.encoder_feat.shape[-1] == _ac_model.embedding_dim
