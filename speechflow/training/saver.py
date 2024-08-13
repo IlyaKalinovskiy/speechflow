@@ -148,7 +148,7 @@ class ExperimentSaver:
             with ExperimentSaver.portable_pathlib():
                 return torch.load(file_path, map_location)
         else:
-            raise NotImplementedError
+            raise NotImplementedError(f"Unknown checkpoint extension: {file_path.name}")
 
     @staticmethod
     @check_path(make_dir=True)

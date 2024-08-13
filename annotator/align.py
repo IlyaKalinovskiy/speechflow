@@ -21,7 +21,14 @@ from speechflow.data_pipeline.core import DataPipeline
 from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
 from speechflow.data_pipeline.dataset_parsers import EasyDSParser
 from speechflow.data_server.helpers import LoaderParams, init_data_loader
-from speechflow.io import AudioSeg, Timestamps, check_path, construct_file_list, tp_PATH
+from speechflow.io import (
+    AudioSeg,
+    AudioSegPreview,
+    Timestamps,
+    check_path,
+    construct_file_list,
+    tp_PATH,
+)
 from speechflow.logging.server import LoggingServer
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.dictutils import find_field
@@ -220,6 +227,8 @@ class Aligner:
 
         lang = find_field(cfg_data["preproc"], "lang")
 
+        cfg_data["sampler"] = {"type": "SimpleSampler", "comb_by_len": True}
+
         return (
             cfg_data,
             sample_rate,
@@ -385,7 +394,7 @@ class Aligner:
 
     @staticmethod
     def _read_metadata(file_path: str):
-        return {"file_path": Path(file_path), "sega": AudioSeg.load(file_path)}
+        return {"file_path": Path(file_path), "sega": AudioSegPreview.load(file_path)}
 
     def process(self, file_list: tp.List[str]):
         parser = EasyDSParser(self._read_metadata)
@@ -412,7 +421,7 @@ class Aligner:
 
     def align_sega(self, file_path: tp.Union[str, Path]):
         pipe = self._data_pipeline[self._data_pipeline.subsets[0]]
-        md = {"file_path": Path(file_path), "sega": AudioSeg.load(file_path)}
+        md = {"file_path": Path(file_path), "sega": AudioSegPreview.load(file_path)}
         ds = pipe.metadata_to_datasample([md]).to_list()[0]
         ds.speaker_id = self._speaker_id_map.get(ds.speaker_name, 0)
         ds.lang_id = self._lang_id_map[ds.lang]

@@ -192,7 +192,7 @@ class TTSDSParser(BaseDSParser):
         is_valid = True
 
         if min_len:
-            phonemes = sega.sent["phonemes"]
+            phonemes = sega.sent.phonemes
             is_valid = sega.audio_chunk.duration >= min_len * len(phonemes)
 
         if max_len:
@@ -265,7 +265,7 @@ class TTSDSParser(BaseDSParser):
         src_wav_path = sega.meta.get("orig_wav_path")
 
         if not sega.meta.get("intonation_type"):
-            if "?" in sega.sent["text"]:
+            if "?" in sega.sent.text:
                 if src_wav_path and "question" in src_wav_path:
                     pos = src_wav_path.find("question_")
                     pos = pos + 9 if pos != -1 else src_wav_path.find("questions_") + 10
@@ -276,7 +276,7 @@ class TTSDSParser(BaseDSParser):
                         intonation_type = intonation_types["."]
                 else:
                     intonation_type = intonation_types[0]
-            elif "!" in sega.sent["text"]:
+            elif "!" in sega.sent.text:
                 intonation_type = intonation_types["!"]
             else:
                 intonation_type = intonation_types["."]
@@ -298,7 +298,7 @@ class TTSDSParser(BaseDSParser):
 
         sega: AudioSegPreview = metadata["sega"]
         for mark in punctuation_marks:
-            if mark in sega.sent["text"] and mark in intonation_types:
+            if mark in sega.sent.text and mark in intonation_types:
                 metadata["intonation_type"] = intonation_types[mark]
                 break
         else:
