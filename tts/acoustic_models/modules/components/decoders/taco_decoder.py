@@ -189,14 +189,14 @@ class TacoDecoder(Component):
         smask = imputer_masks.get(self.params.target)
 
         if not self.training and smask is not None and smask.shape[0] == 1:
-            group_mask = groupby(spec_mask.tolist()[0])  # type: ignore
+            group_mask = groupby(smask.tolist()[0])  # type: ignore
         else:
             group_mask = [(True, [True] * memory.shape[0])]  # type: ignore
 
         begin = 0
         for flag, mask in group_mask:
             end = begin + len(list(mask))
-            if not flag:
+            if flag:
                 encoder_context = memory[begin:end]
                 frames = torch.cat([frame.unsqueeze(0), target[begin : end - 1]])
                 (next_frame, gate, self.dec_step.states, dec_context) = self.dec_step(
@@ -227,7 +227,7 @@ class TacoDecoder(Component):
 
                     if smask is not None:  # train or inference as imputer
                         frame = target[idx].clone()
-                        frame[smask[:, idx]] = next_frame[smask[:, idx]]
+                        frame[smask[:, idx]] = next_frame[~smask[:, idx]]
                     else:  # train or inference as tts
                         frame = target[idx] if self.training else next_frame
 

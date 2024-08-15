@@ -160,7 +160,7 @@ class ProsodyReference:
                 sp_name, emb_index = getattr(self, attr_name)
                 emb_meta = bio_embeddings[sp_name][emb_index]
                 bio_emb = emb_meta[0] if emb_meta.ndim == 2 else emb_meta
-                setattr(self, f"{ref_type}_bio_emb", bio_emb)
+                setattr(self, f"{ref_type}_emb", bio_emb)
 
                 try:
                     self.meta[f"{ref_type}_ref_path"] = Path(emb_meta[0]).with_suffix(
@@ -180,11 +180,11 @@ class ProsodyReference:
                 ds = AudioDataSample(audio_chunk=audio_chunk)
                 ds = biometric_pipe.preprocessing_datasample([ds])[0]
                 if not ds.additional_fields:
-                    setattr(self, f"{ref_type}_bio_emb", ds.speaker_emb)
+                    setattr(self, f"{ref_type}_emb", ds.speaker_emb)
                 else:
                     setattr(
                         self,
-                        f"{ref_type}_bio_emb",
+                        f"{ref_type}_emb",
                         list(ds.additional_fields.values())[0],
                     )
                 continue

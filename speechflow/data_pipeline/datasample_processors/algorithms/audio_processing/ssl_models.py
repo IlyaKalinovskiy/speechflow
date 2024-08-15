@@ -145,6 +145,7 @@ class Wav2Vec(BaseSSLModel):
         self._level = level
         self._stream_mod = stream_mod
         self._trim_pad = trim_pad
+        self._vocab_path = vocab_path
 
         if feature_type not in ["logits", "last_hidden_state", "partial"]:
             raise ValueError(
@@ -154,10 +155,10 @@ class Wav2Vec(BaseSSLModel):
 
         self._init_model(model_name, feature_type, pretrain_path, vocab_path)
 
-        if feature_type == "logits":
+        if feature_type == "logits" and hasattr(self.model, "lm_head"):
             self.embedding_dim = self.model.lm_head.out_features
         else:
-            self.embedding_dim = self.model.lm_head.in_features
+            self.embedding_dim = self.model.config.output_hidden_size
 
         self._pad = self.model.config.conv_kernel[0] // 2
 
@@ -184,7 +185,8 @@ class Wav2Vec(BaseSSLModel):
             return_attention_mask=True,
         )
         self.processor = transformers.Wav2Vec2Processor(
-            feature_extractor=self.feature_extractor, tokenizer=None
+            feature_extractor=self.feature_extractor,
+            tokenizer=transformers.PreTrainedTokenizerBase(),
         )
 
         if pretrain_path is not None:
@@ -220,7 +222,7 @@ class Wav2Vec(BaseSSLModel):
         return hidden_states
 
     def get_tokens(self, ssl_feat: SSLFeatures) -> SSLFeatures:
-        if getattr(self.processor, "tokenizer", None) is not None:
+        if self._vocab_path is not None:
             feat = ssl_feat.encoder_feat
             if feat.shape[1] != self.model.lm_head.out_features:
                 feat = self.model.lm_head(feat)

@@ -183,6 +183,7 @@ class AnnotatorEvaluationInterface:
 
             if sega_path is not None:
                 sega = AudioSeg.load(sega_path)
+                audio_path = sega.audio_chunk.file_path
             elif text is not None and audio_path is not None:
                 sega = self.get_sega_from_text(text, audio_path, lang, speaker_name)
             else:
@@ -210,6 +211,8 @@ class AnnotatorEvaluationInterface:
                 sega = self._fix_last_word(file_name)
             else:
                 sega = AudioSeg.load(file_name)
+
+            sega.audio_chunk.file_path = audio_path
 
         return sega
 

@@ -392,21 +392,26 @@ class AudioSeg:
             tg.addTier(tier)
 
         if add_audio:
-            audio_ext = self.audio_chunk.file_path.suffix
+            if self.audio_chunk.file_path is not None:
+                audio_ext = self.audio_chunk.file_path.suffix
+            else:
+                audio_ext = ".wav"
+
+            curr_audio_path = self.audio_chunk.file_path
             new_audio_path = file_path.with_suffix(audio_ext)
 
-            if (
-                AudioChunk(self.audio_chunk.file_path).duration
-                == self.audio_chunk.duration
-            ):
-                shutil.copy(self.audio_chunk.file_path, new_audio_path)
-                self.audio_chunk.file_path = new_audio_path
+            if curr_audio_path is None:
+                self.audio_chunk.save(new_audio_path, overwrite=overwrite)
             else:
-                if self.audio_chunk.empty:
-                    self.audio_chunk.load()
+                if AudioChunk(curr_audio_path).duration == self.audio_chunk.duration:
+                    shutil.copy(curr_audio_path, new_audio_path)
+                else:
+                    if self.audio_chunk.empty:
+                        self.audio_chunk.load()
 
-                self.audio_chunk.file_path = new_audio_path
-                self.audio_chunk.save(overwrite=overwrite)
+                    self.audio_chunk.save(new_audio_path, overwrite=overwrite)
+
+            self.audio_chunk.file_path = new_audio_path
 
             meta["audio_path"] = self.audio_chunk.file_path.name
             meta["audio_chunk"] = (0.0, self.audio_chunk.duration)  # type: ignore
@@ -554,9 +559,10 @@ class AudioSeg:
 
 
 class SentencePreview:
-    __slots__ = ("text", "words", "phonemes", "lang", "position")
+    __slots__ = ("text_orig", "text", "words", "phonemes", "lang", "position")
 
     def __init__(self):
+        self.text_orig = None
         self.text = None
         self.words = None
         self.phonemes = None
@@ -606,13 +612,14 @@ class AudioSegPreview:
         sega = AudioSegPreview()
 
         if "orig" in tiers:
-            sega.sent.text = tiers["orig"][0][2]
+            sega.sent.text_orig = tiers["orig"][0][2]
 
         if "text" in tiers:
             sega.sent.words = tuple(item[2] for item in tiers["text"])
             sega.ts_by_words = Timestamps.from_list(
                 [(item[0], item[1]) for item in tiers["text"]]
             )
+            sega.sent.text = " ".join(sega.sent.words)
 
         if "phonemes" in tiers:
             sega.sent.phonemes = tuple(item[2] for item in tiers["phonemes"])

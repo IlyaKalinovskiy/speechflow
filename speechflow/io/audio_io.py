@@ -105,8 +105,10 @@ class AudioChunk:
         dtype: npt.DTypeLike = np.float32,
         load_entire_file: bool = False,
     ) -> "AudioChunk":
-        assert isinstance(self.file_path, Path), "wav path not set!"
-        assert self.file_path.exists(), f"wav file {self.file_path.as_posix()} not found!"
+        assert isinstance(self.file_path, Path), "file path not set!"
+        assert (
+            self.file_path.exists()
+        ), f"audio file {self.file_path.as_posix()} not found!"
 
         if load_entire_file:
             self.data, self.sr = librosa.load(self.file_path, sr=sr)
@@ -136,23 +138,23 @@ class AudioChunk:
 
     def save(
         self,
-        audio_path: tp.Optional[tp.Union[str, Path, io.BytesIO]] = None,
+        file_path: tp.Optional[tp.Union[str, Path, io.BytesIO]] = None,
         overwrite: bool = False,
     ):
-        audio_path = audio_path if audio_path else self.file_path
-        if isinstance(audio_path, str):
-            audio_path = Path(audio_path)
+        file_path = file_path if file_path else self.file_path
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
 
-        if isinstance(audio_path, Path):
-            audio_format = audio_path.suffix[1:]
+        if isinstance(file_path, Path):
+            audio_format = file_path.suffix[1:]
             if audio_format not in ["wav", "flac"]:
                 raise ValueError(f"'{audio_format}' audio format is not supported.")
 
             if not overwrite:
-                if isinstance(audio_path, (Path, str)):
+                if isinstance(file_path, (Path, str)):
                     assert not Path(
-                        audio_path
-                    ).exists(), f"file {str(audio_path)} is exists!"
+                        file_path
+                    ).exists(), f"file {str(file_path)} is exists!"
         else:
             audio_format = "wav"
 
@@ -163,7 +165,7 @@ class AudioChunk:
                 "Unacceptable data shape, single-channel data must be flatten."
             )
 
-        sf.write(audio_path, data, self.sr, format=audio_format)
+        sf.write(file_path, data, self.sr, format=audio_format)
         return self
 
     def to_bytes(

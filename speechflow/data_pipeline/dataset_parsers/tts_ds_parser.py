@@ -57,16 +57,34 @@ class TTSDSParser(BaseDSParser):
     def converter(self, metadata: Metadata) -> tp.List[TTSDataSample]:
         sega: tp.Union[AudioSeg, AudioSegPreview] = metadata["sega"]
 
-        datasample = TTSDataSample(
-            file_path=metadata.get("file_path", Path()),
-            label=metadata.get("label", ""),
-            audio_chunk=sega.audio_chunk,
-            lang=sega.sent.lang,
-            speaker_name=sega.meta.get("speaker_name"),
-            intonation_type=metadata.get("intonation_type"),  # type: ignore
-            index=(metadata.get("index_text"), metadata.get("index_wave")),
-        )
-        return [datasample]
+        if isinstance(sega, AudioSeg):
+            word_ts, phoneme_ts = sega.get_timestamps(relative=True)
+            ds = TTSDataSample(
+                file_path=metadata.get("file_path", Path()),
+                label=metadata.get("label", ""),
+                audio_chunk=sega.audio_chunk,
+                sent=sega.sent,
+                lang=sega.sent.lang,
+                speaker_name=sega.meta.get("speaker_name"),
+                intonation_type=metadata.get("intonation_type"),  # type: ignore
+                index=(metadata.get("index_text"), metadata.get("index_wave")),
+                word_timestamps=word_ts,
+                phoneme_timestamps=phoneme_ts,
+            )
+        elif isinstance(sega, AudioSegPreview):
+            ds = TTSDataSample(
+                file_path=metadata.get("file_path", Path()),
+                label=metadata.get("label", ""),
+                audio_chunk=sega.audio_chunk,
+                lang=sega.sent.lang,
+                speaker_name=sega.meta.get("speaker_name"),
+                intonation_type=metadata.get("intonation_type"),  # type: ignore
+                index=(metadata.get("index_text"), metadata.get("index_wave")),
+            )
+        else:
+            raise NotImplementedError
+
+        return [ds]
 
     @staticmethod
     @PipeRegistry.registry(inputs={"sega"}, outputs={"sega"})

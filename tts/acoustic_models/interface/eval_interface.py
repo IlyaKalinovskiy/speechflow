@@ -216,9 +216,11 @@ class TTSEvaluationInterface:
             self._dump_to_file(handler["statistics_file"], self.stat_ranges.statistics)
 
         self.mean_bio_embs = self.info["singleton_handlers"].get("MeanBioEmbeddings")
+        if self.mean_bio_embs is not None:
+            self.mean_bio_embs = self.mean_bio_embs.data
 
         if self.mean_bio_embs is not None:
-            embs = self.mean_bio_embs.data
+            embs = self.mean_bio_embs
             embs = {s: emb.tolist() for s, emb in embs.items()}
             handler = singleton_handlers.get("MeanBioEmbeddings", {})
             handler["mean_embeddings_file"] = "temp/MeanBioEmbeddings_data.json"
@@ -237,10 +239,13 @@ class TTSEvaluationInterface:
             self.audio_hours_per_speaker = None  # type: ignore
 
         # init averages
-        model_averages = self.model.get_params().get("averages", {})
-        self.averages = self._get_averages_by_speaker(
-            self.stat_ranges.statistics, model_averages
-        )
+        if self.stat_ranges is not None:
+            model_averages = self.model.get_params().get("averages", {})
+            self.averages = self._get_averages_by_speaker(
+                self.stat_ranges.statistics, model_averages
+            )
+        else:
+            self.averages = None
 
         # init data pipeline
         self.pipeline = PipelineComponents(data_cfg, "test")
@@ -329,7 +334,7 @@ class TTSEvaluationInterface:
                 with ExperimentSaver.portable_pathlib():
                     return pickle.loads(info_path[0].read_bytes())
 
-        raise FileNotFoundError(f"*info.pkl file not found!")
+        raise FileNotFoundError("*info.pkl file not found!")
 
     @staticmethod
     def _dump_to_file(file_name: str, data: tp.Any):
@@ -461,7 +466,7 @@ class TTSEvaluationInterface:
         ctx.prosody_reference.initialize(
             self.speaker_id_map,
             self.bio_embs,
-            self.mean_bio_embs.data,
+            self.mean_bio_embs,
             self.biometric_pipe,
             self.audio_pipe,
             seed=ctx.seed,
@@ -481,17 +486,22 @@ class TTSEvaluationInterface:
         )
 
         ds.averages = {}
-        for key in self.averages.keys():
-            value = self.averages[key].get(ds.speaker_name)  # type: ignore
-            if value is None or value == 0.0:
-                value = 20 if key == "rate" else 0.0
-            if opt.average_val.get(key, 0.0) == 0.0:
-                ds.averages[key] = value
-            else:
-                ds.averages[key] = deepcopy(opt.average_val[key])
+        if self.averages is not None:
+            for key in self.averages.keys():
+                value = self.averages[key].get(ds.speaker_name)  # type: ignore
+                if value is None or value == 0.0:
+                    value = 20 if key == "rate" else 0.0
+                if opt.average_val.get(key, 0.0) == 0.0:
+                    ds.averages[key] = value
+                else:
+                    ds.averages[key] = deepcopy(opt.average_val[key])
 
-            scale = opt.average_val.get(f"{key}_scale", 1.0)
-            ds.averages[key] *= 4 * scale
+                scale = opt.average_val.get(f"{key}_scale", 1.0)
+                ds.averages[key] *= 4 * scale
+        else:
+            ds.averages["energy"] = 150
+            ds.averages["pitch"] = 220
+            ds.averages["rate"] = 12
 
         ds.ranges = {}
         if self.stat_ranges is not None:
@@ -608,6 +618,14 @@ class TTSEvaluationInterface:
         inputs.prosody_reference = ctx.prosody_reference.copy()
         inputs.output_lengths = None
         return inputs
+
+    def predict_variance(self, inputs, ignored_variance: tp.Set = None):
+        (
+            variance_embeddings,
+            variance_predictions,
+            additional_content,
+        ) = self.model.get_variance(inputs, ignored_variance)
+        return variance_embeddings, variance_predictions, additional_content
 
     @torch.inference_mode()
     def evaluate(
