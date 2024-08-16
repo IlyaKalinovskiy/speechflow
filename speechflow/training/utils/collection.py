@@ -1,6 +1,6 @@
 import typing as tp
 
-__all__ = ["ComponentCollection"]
+__all__ = ["ComponentCollection", "ModelCollection"]
 
 
 class ComponentCollection:
@@ -42,3 +42,33 @@ class ComponentCollection:
             raise RuntimeError(f"Component '{item}' not found")
 
         return self.components[item]
+
+
+class ModelCollection:
+    models: tp.Dict[str, object]
+
+    def __init__(self):
+        self.models: tp.Dict[str, tp.Union[object, tp.Tuple[object, object]]] = {}
+
+    def _check(self, model_name: str):
+        if model_name in self.models:
+            raise RuntimeError(f"Model '{model_name}' already registered")
+
+    def registry_model(
+        self, model: object, model_params: object = None, tag: tp.Optional[str] = None
+    ):
+        model_name = model.__name__ if tag is None else tag
+        self._check(model_name)
+        if model_params is not None:
+            self.models[model_name] = (model, model_params)
+        else:
+            self.models[model_name] = model
+
+    def __contains__(self, key):
+        return key in self.models
+
+    def __getitem__(self, item: str) -> tp.Union[object, tp.Tuple[object, object]]:
+        if item not in self.models:
+            raise RuntimeError(f"Model '{item}' not found")
+
+        return self.models[item]

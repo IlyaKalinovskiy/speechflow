@@ -1,7 +1,7 @@
 import tts.acoustic_models.modules.components.variance_adaptors as va
 
+from speechflow.training.utils.collection import ComponentCollection
 from tts.acoustic_models.modules import ada_speech, common, forward_tacotron, tacotron2
-from tts.acoustic_models.modules.collection import ComponentCollection
 from tts.acoustic_models.modules.components import (
     decoders,
     duration_predictors,
