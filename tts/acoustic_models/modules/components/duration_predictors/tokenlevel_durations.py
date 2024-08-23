@@ -97,7 +97,7 @@ class TokenLevelDP(Component):
 
         x_by_tokens = self.token_proj(torch.cat([x, w_ctx], dim=2))
         t_predict, t_ctx = self.token_encoder.process_content(
-            x_by_tokens, model_inputs.token_lengths, model_inputs
+            x_by_tokens, model_inputs.transcription_lengths, model_inputs
         )
         t_dura = F.relu(t_predict).squeeze(-1)
 

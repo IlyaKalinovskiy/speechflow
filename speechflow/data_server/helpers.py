@@ -326,12 +326,10 @@ def dataset_iterator(
 if __name__ == "__main__":
     from tqdm import tqdm
 
-    config_path = (
-        "P:\\TTS\\tts_research\\tts\\acoustic_models\\configs\\tts\\tts_data_22khz.yml"
-    )
+    config_path = "../../tts/acoustic_models/configs/tts/tts_data_24khz.yml"
 
     iterator = dataset_iterator(
-        config_path, device="cuda:0", with_dump=True, value_select=["en"]
+        config_path, device="cpu", with_dump=True, value_select=["ru"]
     )
 
     count = 0

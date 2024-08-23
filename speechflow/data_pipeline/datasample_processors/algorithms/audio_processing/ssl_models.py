@@ -19,6 +19,7 @@ from speechflow.io import AudioChunk, check_path, tp_PATH
 from speechflow.utils.fs import get_root_dir
 
 __all__ = [
+    "SSLFeatures",
     "Whisper",
     "Wav2Vec",
     "Hubert",
@@ -158,7 +159,10 @@ class Wav2Vec(BaseSSLModel):
         if feature_type == "logits" and hasattr(self.model, "lm_head"):
             self.embedding_dim = self.model.lm_head.out_features
         else:
-            self.embedding_dim = self.model.config.output_hidden_size
+            if hasattr(self.model, "lm_head"):
+                self.embedding_dim = self.model.lm_head.in_features
+            else:
+                self.embedding_dim = self.model.config.output_hidden_size
 
         self._pad = self.model.config.conv_kernel[0] // 2
 

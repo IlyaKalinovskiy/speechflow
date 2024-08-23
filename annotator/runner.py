@@ -748,9 +748,8 @@ def main(
 
 
 if __name__ == "__main__":
-    """
-    example for TTS:
-      runner.py -d ../examples/simple_datasets/speech/SRC
+    """example for TTS: runner.py -d ../examples/simple_datasets/speech/SRC.
+
                 -o ../examples/simple_datasets/speech/SEGS
                 -l MULTILANG
                 --pretrained_models mfa_stage1_epoch=19-step=208340.pt mfa_stage2_epoch=29-step=312510.pt
@@ -763,6 +762,7 @@ if __name__ == "__main__":
                 --use_asr_transcription False
                 --use_resampling_audio False
                 --use_loudnorm_audio False
+
     """
 
     main(**parse_args().__dict__)

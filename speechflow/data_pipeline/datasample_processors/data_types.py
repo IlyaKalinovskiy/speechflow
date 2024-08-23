@@ -51,8 +51,8 @@ class SSLFeatures(ToTensor, ToNumpy, MovableToDevice):
 
 @dataclass
 class AudioCodecFeatures(ToTensor, ToNumpy, MovableToDevice):
-    encoder_feat: tp_DATA = None  # type: ignore
-    waveform: tp_DATA = None  # type: ignore
+    encoder_feat: tp_DATA = None
+    waveform: tp_DATA = None
 
     def __getitem__(self, item):
         return self.encoder_feat[item]
@@ -63,20 +63,19 @@ class AudioCodecFeatures(ToTensor, ToNumpy, MovableToDevice):
 
 @dataclass(eq=False)
 class AudioDataSample(DataSample):
-    audio_chunk: AudioChunk = None  # type: ignore
-    lang: str = None  # type: ignore
-    lang_id: int = None  # type: ignore
-    speaker_name: str = None  # type: ignore
+    audio_chunk: AudioChunk = None
+    lang: str = None
+    lang_id: int = None
+    speaker_name: str = None
     speaker_id: int = 0
-    speaker_emb: tp_DATA = None  # type: ignore
-    speaker_emb_mean: tp_DATA = None  # type: ignore
-    speech_quality_emb: tp_DATA = None  # type: ignore
-    lpc_feat: tp_DATA = None  # type: ignore
-    ssl_feat: SSLFeatures = None  # type: ignore
-    ac_feat: AudioCodecFeatures = None  # type: ignore
-    mu_law_waveform: tp_DATA = None  # type: ignore
-    lpc_waveform: tp_DATA = None  # type: ignore
-    bits: int = 16
+    speaker_emb: tp_DATA = None
+    speaker_emb_mean: tp_DATA = None
+    speech_quality_emb: tp_DATA = None
+    lpc_feat: tp_DATA = None
+    ssl_feat: SSLFeatures = None
+    ac_feat: AudioCodecFeatures = None
+    mu_law_waveform: tp_DATA = None
+    lpc_waveform: tp_DATA = None
 
     def __len__(self):
         if self.audio_chunk and self.audio_chunk.duration:
@@ -90,17 +89,16 @@ class AudioDataSample(DataSample):
 
 @dataclass(eq=False)
 class SpectrogramDataSample(AudioDataSample):
-    magnitude: tp_DATA = None  # type: ignore
-    mel: tp_DATA = None  # type: ignore
-    energy: tp_DATA = None  # type: ignore
-    spectral_flatness: tp_DATA = None  # type: ignore
-    spectral_tilt: tp_DATA = None  # type: ignore
-    spectral_envelope: tp_DATA = None  # type: ignore
-    pitch: tp_DATA = None  # type: ignore
-    precomputed_mel: tp_DATA = None  # type: ignore
-    averages: tp.Dict[str, tp_DATA] = None  # type: ignore
-    ranges: tp.Dict[str, tp_DATA] = None  # type: ignore
-    gate: tp_DATA = None  # type: ignore
+    magnitude: tp_DATA = None
+    mel: tp_DATA = None
+    energy: tp_DATA = None
+    spectral_flatness: tp_DATA = None
+    spectral_tilt: tp_DATA = None
+    spectral_envelope: tp_DATA = None
+    pitch: tp_DATA = None
+    averages: tp.Dict[str, tp_DATA] = None
+    ranges: tp.Dict[str, tp_DATA] = None
+    gate: tp_DATA = None
 
     def __len__(self):
         if self.magnitude is not None:
@@ -113,54 +111,54 @@ class SpectrogramDataSample(AudioDataSample):
 
 @dataclass(eq=False)
 class TextDataSample(DataSample):
-    sent: Sentence = None  # type: ignore
-    symbols: tp.Tuple[str, ...] = None  # type: ignore
-    transcription: tp_DATA = None  # type: ignore
-    ling_feat: tp.Dict[str, tp_DATA] = None  # type: ignore
-    intonation_type: int = None  # type: ignore
-    word_lengths: tp_DATA = None  # type: ignore
-    synt_lengths: tp_DATA = None  # type: ignore
-    lm_feat: tp_DATA = None  # type: ignore
-    pad_symb_id: int = 0
-    sil_symb_id: int = 0
+    sent: Sentence = None
+    transcription_text: tp.Tuple[str, ...] = None
+    transcription_id: tp_DATA = None
+    ling_feat: tp.Dict[str, tp_DATA] = None
+    intonation_type: int = None
+    word_lengths: tp_DATA = None
+    synt_lengths: tp_DATA = None
+    lm_feat: tp_DATA = None
+    plbert_feat: tp_DATA = None
+    pad_token_id: int = 0
+    sil_token_id: int = 0
+
+    def __str__(self) -> str:
+        return self.sent.text_orig if self.sent else super().__str__()
 
 
 @dataclass(eq=False)
 class ProsodySSMLDataSample(DataSample):
-    temp_modifier: tp_DATA = None  # type: ignore
-    pitch_modifier: tp_DATA = None  # type: ignore
-    volume_modifier: tp_DATA = None  # type: ignore
+    temp_modifier: tp_DATA = None
+    pitch_modifier: tp_DATA = None
+    volume_modifier: tp_DATA = None
 
 
 @dataclass(eq=False)
 class TTSDataSample(SpectrogramDataSample, TextDataSample, ProsodySSMLDataSample):
-    word_timestamps: Timestamps = None  # type: ignore
-    phoneme_timestamps: tp.List[Timestamps] = None  # type: ignore
-    durations: tp_DATA = None  # type: ignore
-    invert_durations: tp_DATA = None  # type: ignore
-    transcription_by_frames: tp_DATA = None
-    aggregated: tp.Dict[str, tp_DATA] = None  # type: ignore
-    pauses_durations: torch.Tensor = None  # type: ignore
-
-    def __str__(self) -> str:
-        return self.sent.text_orig if self.sent else ""
+    word_timestamps: Timestamps = None
+    phoneme_timestamps: tp.List[Timestamps] = None
+    durations: tp_DATA = None
+    invert_durations: tp_DATA = None
+    transcription_id_by_frames: tp_DATA = None
+    aggregated: tp.Dict[str, tp_DATA] = None
+    pauses_durations: torch.Tensor = None
 
 
 @dataclass(eq=False)
 class PausesPredictionDataSample(TTSDataSample):
-    sil_mask: tp_DATA = None  # type: ignore
+    sil_mask: tp_DATA = None
 
 
 @dataclass(eq=False)
 class ProsodyPredictionDataSample(TTSDataSample):
-    attention_mask: tp_DATA = None  # type: ignore
-    input_ids: tp_DATA = None  # type: ignore
-    binary: tp_DATA = None  # type: ignore
-    category: tp_DATA = None  # type: ignore
-    pad_id: int = None  # type: ignore
-    lang: str = None  # type: ignore
-    word_ids: tp_DATA = None  # type: ignore
-    seed_by_words: tp.List[int] = None  # type: ignore
+    input_ids: tp_DATA = None
+    binary: tp_DATA = None
+    category: tp_DATA = None
+    pad_id: int = None
+    lang: str = None
+    word_ids: tp_DATA = None
+    seed_by_words: tp.List[int] = None
 
     def __len__(self) -> int:
         return self.input_ids.shape[0]

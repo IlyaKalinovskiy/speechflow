@@ -61,7 +61,9 @@ class AligningVisualisationCallback(Callback):
             random_idx = random.randint(0, batch_size - 1)
 
             spec_lens = inputs.output_lengths.detach().cpu().numpy().tolist()
-            phonemes = list(batch.collated_samples.extra_info["symbols"][random_idx])
+            phonemes = list(
+                batch.collated_samples.additional_fields["symbols"][random_idx]
+            )
             spectrogram = (
                 inputs.spectrogram[random_idx, : spec_lens[random_idx]]
                 .T.detach()

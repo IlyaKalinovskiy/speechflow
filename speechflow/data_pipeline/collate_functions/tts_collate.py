@@ -10,12 +10,13 @@ from speechflow.data_pipeline.collate_functions.spectrogram_collate import (
     SpectrogramCollate,
     SpectrogramCollateOutput,
 )
+from speechflow.data_pipeline.collate_functions.utils import collate_sequence
 from speechflow.data_pipeline.core.datasample import ToNumpy, ToTensor
 from speechflow.data_pipeline.datasample_processors.data_types import (
     ProsodySSMLDataSample,
     TTSDataSample,
 )
-from speechflow.training.utils.pad_utils import pad, pad_2d, sequence_collate
+from speechflow.training.utils.pad_utils import pad_1d, pad_2d
 
 __all__ = [
     "TTSCollate",
@@ -55,12 +56,12 @@ class LinguisticFeatures(ToTensor, ToNumpy):
 
     @staticmethod
     def collate(batch: tp.List[TTSDataSample]) -> "LinguisticFeatures":
-        pad_symb_id = batch[0].pad_symb_id
+        pad_token_id = batch[0].pad_token_id
         batch_feat = {}
         if batch[0].ling_feat is not None:
             for seq_name in batch[0].ling_feat.keys():
                 sequence = [sample.ling_feat.get(seq_name) for sample in batch]
-                sequence, input_lens = pad(sequence, pad_symb_id)
+                sequence, input_lens = pad_1d(sequence, pad_token_id)
 
                 if seq_name == "sil_mask":
                     sequence = sequence.bool()
@@ -71,27 +72,17 @@ class LinguisticFeatures(ToTensor, ToNumpy):
 
 
 @dataclass
-class TTSCollateOutput(SpectrogramCollateOutput):
-    transcription: Tensor = None
-    transcription_by_frames: Tensor = None
+class TTSCollateOutput(SpectrogramCollateOutput, TTSDataSample):
     transcription_lengths: Tensor = None
-    transcription_by_frames_lengths: Tensor = None
     ling_feat: LinguisticFeatures = None  # type: ignore
-    lm_feat: Tensor = None
-    durations: Tensor = None
-    invert_durations: Tensor = None
-    aggregated: tp.Dict[str, Tensor] = None  # type: ignore
-    synt_lengths: Tensor = None
+    lm_feat_lengths: Tensor = None
+    plbert_lengths: Tensor = None
     num_words: Tensor = None
-    word_lengths: Tensor = None
-    num_tokens: Tensor = None
+    num_synt: Tensor = None
     token_lengths: Tensor = None
 
     def __post_init__(self):
         super().__post_init__()
-
-        if self.aggregated is None:
-            self.aggregated = {}
 
 
 @dataclass
@@ -107,57 +98,51 @@ class TTSCollateOutputWithSSML(TTSCollateOutput):
 
 
 class TTSCollate(SpectrogramCollate):
-    def __call__(self, batch: tp.List[TTSDataSample]) -> TTSCollateOutput:  # type: ignore
-        spec_collated = super().__call__(batch)  # type: ignore
+    def collate(self, batch: tp.List[TTSDataSample]) -> TTSCollateOutput:  # type: ignore
+        spec_collated = super().collate(batch)  # type: ignore
         collated = TTSCollateOutput(**spec_collated.to_dict())  # type: ignore
-        multiple = self.multiple.get("spec")
 
-        pad_symb_id = batch[0].pad_symb_id
+        pad_token_id = batch[0].pad_token_id
+        spec_multiple = self.multiple_values.get("spectrogram")
 
-        transcription, input_lens = sequence_collate(batch, "transcription", pad_symb_id)
-        transcription_by_frames, frames_input_lens = sequence_collate(
-            batch, "transcription_by_frames", pad_symb_id
+        collated.transcription_id, collated.transcription_lengths = collate_sequence(
+            batch, "transcription_id", pad_token_id
         )
-        lm_feat, _ = sequence_collate(batch, "lm_feat")
-        durations, _ = sequence_collate(batch, "durations")
-        invert_durations, _ = sequence_collate(
-            batch, "invert_durations", multiple=multiple
+        collated.transcription_id_by_frames, _ = collate_sequence(
+            batch, "transcription_id_by_frames", pad_token_id, spec_multiple
         )
-        words_lens, num_words = sequence_collate(batch, "word_lengths", pad_symb_id)
-        syntagmas_lens, _ = sequence_collate(batch, "synt_lengths", pad_symb_id)
+        collated.lm_feat, collated.lm_feat_lengths = collate_sequence(batch, "lm_feat")
+        collated.plbert_feat, collated.plbert_lengths = collate_sequence(
+            batch, "plbert_feat"
+        )
+        collated.durations, _ = collate_sequence(batch, "durations")
+        collated.invert_durations, _ = collate_sequence(
+            batch, "invert_durations", multiple_values=spec_multiple
+        )
+        collated.word_lengths, collated.num_words = collate_sequence(
+            batch, "word_lengths", pad_token_id
+        )
+        collated.synt_lengths, collated.num_synt = collate_sequence(
+            batch, "synt_lengths", pad_token_id
+        )
 
+        collated.aggregated = {}
         if batch[0].aggregated is not None:
-            aggregated = {}
             for name in batch[0].aggregated.keys():
                 data = [sample.aggregated[name] for sample in batch]
                 pad_id = batch[0].get_param_val("mel_min_val") if "mel" in name else 0.0
-                aggregated[name], _ = (
-                    pad(data)
+                collated.aggregated[name], _ = (
+                    pad_1d(data)
                     if data[0].ndim == 1
-                    else pad_2d(data, pad_id, data[0].shape[1])
+                    else pad_2d(data, data[0].shape[1], pad_id)
                 )
-        else:
-            aggregated = {}
 
-        collated.transcription = transcription
-        collated.transcription_lengths = input_lens
-        collated.transcription_by_frames = transcription_by_frames
-        collated.transcription_by_frames_lengths = frames_input_lens
         collated.ling_feat = LinguisticFeatures.collate(batch)
-        collated.lm_feat = lm_feat
-        collated.durations = durations
-        collated.invert_durations = invert_durations
-        collated.aggregated = aggregated
-        collated.num_words = num_words
-        collated.word_lengths = words_lens
-        collated.num_tokens = input_lens
-        collated.token_lengths = input_lens
-        collated.synt_lengths = syntagmas_lens
         return collated
 
 
 class TTSCollateWithPrompt(TTSCollate):
-    def __call__(self, batch: tp.List[TTSDataSample]) -> TTSCollateOutputWithPrompt:  # type: ignore
+    def collate(self, batch: tp.List[TTSDataSample]) -> TTSCollateOutputWithPrompt:  # type: ignore
         idx_neighbor = [x.additional_fields["neighbor_idx"] for x in batch]
         idx_neighbor = torch.Tensor(idx_neighbor).long()
         idx_right: tp.Iterable = torch.where(idx_neighbor == torch.roll(idx_neighbor, 1))[0]  # type: ignore
@@ -165,8 +150,8 @@ class TTSCollateWithPrompt(TTSCollate):
 
         batch_prompt = [batch[n] for n in idx_left]
         batch_target = [batch[n] for n in idx_right]
-        batch_tts_collated_prompt = super().__call__(batch_prompt)
-        batch_tts_collated_target = super().__call__(batch_target)
+        batch_tts_collated_prompt = super().collate(batch_prompt)
+        batch_tts_collated_target = super().collate(batch_target)
 
         collated: TTSCollateOutputWithPrompt = TTSCollateOutputWithPrompt(
             **vars(batch_tts_collated_target), prompt=batch_tts_collated_prompt
@@ -176,21 +161,16 @@ class TTSCollateWithPrompt(TTSCollate):
 
 
 class TTSCollateWithSSML(TTSCollate):
-    def __call__(self, batch: tp.List[ProsodySSMLDataSample]) -> TTSCollateOutputWithSSML:  # type: ignore
-        tts_collated = super().__call__(batch)  # type: ignore
+    def collate(self, batch: tp.List[ProsodySSMLDataSample]) -> TTSCollateOutputWithSSML:  # type: ignore
+        tts_collated = super().collate(batch)  # type: ignore
         collated = TTSCollateOutputWithSSML(**tts_collated.to_dict())  # type: ignore
 
-        temp_modifier, _ = sequence_collate(batch, "temp_modifier", 1.0)
-        volume_modifier, _ = sequence_collate(batch, "volume_modifier", 1.0)
-        pitch_modifier, _ = sequence_collate(batch, "pitch_modifier", 1.0)
-
-        collated.temp_modifier = temp_modifier
-        collated.volume_modifier = volume_modifier
-        collated.pitch_modifier = pitch_modifier
+        collated.temp_modifier, _ = collate_sequence(batch, "temp_modifier", 1.0)
+        collated.volume_modifier, _ = collate_sequence(batch, "volume_modifier", 1.0)
+        collated.pitch_modifier, _ = collate_sequence(batch, "pitch_modifier", 1.0)
         return collated
 
 
 if __name__ == "__main__":
-
     print("num_integer_ling_features:", LinguisticFeatures.num_integer_features())
     print("num_float_ling_features:", LinguisticFeatures.num_float_features())

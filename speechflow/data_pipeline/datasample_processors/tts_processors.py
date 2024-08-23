@@ -18,7 +18,9 @@ from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing.
     detect_noise,
 )
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
-from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
+    TTSTextProcessor,
+)
 from speechflow.io import Timestamps
 from speechflow.logging import trace
 
@@ -31,7 +33,7 @@ __all__ = [
     "add_service_tokens",
     "aggregate_by_phoneme",
     "curvature_estimate_by_phoneme",
-    "phonemes_by_frames",
+    "transcription_by_frames",
     "reverse",
     "random_chunk",
     "ContoursExtractor",
@@ -68,7 +70,7 @@ def get_n_tokens(
         LOGGER.error(trace("get_n_tokens", e))
         return []
 
-    token.phonemes = [TextProcessor.sil]
+    token.phonemes = [TTSTextProcessor.sil]
     pause_tokens = [copy(token) for _ in range(num_tokens)]
 
     if breath_power is not None:
@@ -111,7 +113,7 @@ def add_pauses_from_text(
     pauses_with_punctuation: bool = False,
     pause_after_short_words: bool = False,
 ):
-    sil_symbol = TextProcessor.sil
+    sil_symbol = TTSTextProcessor.sil
     normal_pause = Token(sil_symbol)
     weak_pause = Token(sil_symbol)
     strong_pause = Token(sil_symbol)
@@ -312,10 +314,10 @@ def add_pauses_from_timestamps(
     use_pauses_from_asr: bool = False,
     check_phoneme_length: bool = False,
 ):
-    sil_symbol = TextProcessor.sil
+    sil_symbol = TTSTextProcessor.sil
 
     # add dummy EOS token
-    ds.sent.syntagmas[-1].tokens.append(Token(TextProcessor.eos))
+    ds.sent.syntagmas[-1].tokens.append(Token(TTSTextProcessor.eos))
     ds.word_timestamps.append([(ds.audio_chunk.duration - 9e-6, ds.audio_chunk.duration)])
     ds.phoneme_timestamps.append(
         Timestamps(
@@ -356,7 +358,7 @@ def add_pauses_from_timestamps(
                 asr_pause = float(token.asr_pause) if token.asr_pause is not None else 0
 
             if not _fp_eq(ts_word[0], prev_ts):
-                if token.text == TextProcessor.eos:
+                if token.text == TTSTextProcessor.eos:
                     diff = ds.audio_chunk.duration - prev_ts
                 else:
                     diff = ts_word[0] - prev_ts
@@ -382,7 +384,7 @@ def add_pauses_from_timestamps(
                     new_ts_ph = prev_ts + sil_ts * (1 if step is None else step)
                     new_ts_ph[-1][1] = ts_word[0]
 
-                    if token.text == TextProcessor.eos:
+                    if token.text == TTSTextProcessor.eos:
                         new_ts_word[-1] = ds.audio_chunk.duration
                         new_ts_ph[-1][1] = ds.audio_chunk.duration
 
@@ -403,7 +405,7 @@ def add_pauses_from_timestamps(
                             b = int(b * ds.audio_chunk.sr)
                             noise_level.append(detect_noise(ds.audio_chunk.waveform[a:b]))
                 else:
-                    if token.text == TextProcessor.eos:
+                    if token.text == TTSTextProcessor.eos:
                         ts_words_processed[-1][1] += diff
                         ts_phonemes_processed[-1][-1][1] += diff
                     elif ts_words_processed:
@@ -419,7 +421,7 @@ def add_pauses_from_timestamps(
             if ts_words_processed:
                 assert _fp_eq(ts_words_processed[-1][1], ts_word[0])
 
-            if token.text == TextProcessor.eos:
+            if token.text == TTSTextProcessor.eos:
                 break
 
             word_idx += 1
@@ -495,8 +497,8 @@ def calc_durations(
         elif spec_len > total_duration:
             raise ValueError(f"Size mismatch between mel and durations at {ds.file_path}")
 
-    if ds.symbols:
-        if durations.shape[0] != len(ds.symbols):
+    if ds.transcription_text:
+        if durations.shape[0] != len(ds.transcription_text):
             raise ValueError(
                 f"Number of instances mismatch between symbols and durations at {ds.file_path}"
             )
@@ -768,11 +770,11 @@ def add_gate_value(ds: TTSDataSample):
     optional={"audio_chunk", "word_timestamps", "phoneme_timestamps"},
 )
 def add_service_tokens(ds: TTSDataSample):
-    bos_token = Token(TextProcessor.bos)
-    bos_token.phonemes = (TextProcessor.bos,)
+    bos_token = Token(TTSTextProcessor.bos)
+    bos_token.phonemes = (TTSTextProcessor.bos,)
 
-    eos_token = Token(TextProcessor.eos)
-    eos_token.phonemes = (TextProcessor.eos,)
+    eos_token = Token(TTSTextProcessor.eos)
+    eos_token.phonemes = (TTSTextProcessor.eos,)
 
     synt_begin = ds.sent.syntagmas[0]
     synt_end = ds.sent.syntagmas[-1]
@@ -811,19 +813,16 @@ def add_service_tokens(ds: TTSDataSample):
 
 
 @PipeRegistry.registry(
-    inputs={"sent", "transcription", "durations"},
-    outputs={"transcription"},
+    inputs={"sent", "transcription_id", "durations"},
+    outputs={"transcription_id_by_frames"},
 )
-def phonemes_by_frames(ds: TTSDataSample):
-    transcription = ds.transcription
-    durations = ds.durations
+def transcription_by_frames(ds: TTSDataSample):
+    ext_transcription_id = []
+    for d, t in zip(ds.durations, ds.transcription_id):
+        ext_transcription_id += [t] * d
 
-    ext_transcription = []
-    for d, t in zip(durations, transcription):
-        ext_transcription += [t] * d
-
-    ds.transcription_by_frames = np.array(ext_transcription)
-    assert ds.magnitude.shape[0] == ds.transcription_by_frames.shape[0]
+    ds.transcription_id_by_frames = np.array(ext_transcription_id)
+    assert ds.magnitude.shape[0] == ds.transcription_id_by_frames.shape[0]
     return ds
 
 
@@ -835,7 +834,7 @@ def reverse(ds: TTSDataSample, p: float = 0.15):
     ds.magnitude = np.flipud(ds.magnitude).copy()
     ds.mel = np.flipud(ds.mel).copy()
 
-    ds.transcription = np.flipud(ds.transcription).copy()
+    ds.transcription_id = np.flipud(ds.transcription_id).copy()
 
     for k, v in ds.ling_feat.items():
         ds.ling_feat[k] = np.flipud(v).copy()
@@ -843,8 +842,8 @@ def reverse(ds: TTSDataSample, p: float = 0.15):
     if ds.ssl_feat is not None:
         ds.ssl_feat.encoder_feat = np.flipud(ds.ssl_feat.encoder_feat).copy()
 
-    if ds.symbols is not None:
-        ds.symbols = ds.symbols[::-1]
+    if ds.transcription_text is not None:
+        ds.transcription_text = ds.transcription_text[::-1]
 
     if ds.synt_lengths is not None:
         ds.synt_lengths = np.flipud(ds.synt_lengths).copy()
@@ -909,13 +908,13 @@ def random_chunk(ds: TTSDataSample, min_length: float = 2.0, max_length: float =
         if ds.mu_law_waveform is not None:
             ds.mu_law_waveform = ds.mu_law_waveform[int(begin_ts * sr) : int(end_ts * sr)]
 
-        if ds.transcription is not None:
-            if ds.transcription.shape[0] == ds.magnitude.shape[0]:
+        if ds.transcription_id is not None:
+            if ds.transcription_id.shape[0] == ds.magnitude.shape[0]:
                 a = int(begin_ts * sr / hop_len)
                 b = int(end_ts * sr / hop_len)
-                ds.transcription = ds.transcription[a : b + 1]
+                ds.transcription_id = ds.transcription_id[a : b + 1]
             else:
-                ds.transcription = ds.transcription[begin_token : end_token + 1]
+                ds.transcription_id = ds.transcription_id[begin_token : end_token + 1]
 
     if ds.audio_chunk.duration > max_length:
         raise ValueError(f"audio_chunk: {ds.audio_chunk.duration} ")
@@ -1007,7 +1006,7 @@ if __name__ == "__main__":
     _ds = add_pauses_from_text(_ds)
     print(_ds.sent.text)
 
-    text_processor = TextProcessor(lang=_lang)
+    text_processor = TTSTextProcessor(lang=_lang)
     _ds = text_processor.process(_ds)
-    print(_ds.transcription)
+    print(_ds.transcription_id)
     print("num_symbols_per_phoneme_token:", text_processor.num_symbols_per_phoneme_token)

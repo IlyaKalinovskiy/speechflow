@@ -43,9 +43,10 @@ preproc:
          energy, pitch, enhancement_energy, enhancement_pitch,
          average_by_time, norm,
          add_pauses_from_timestamps, text,
-         int_durations, calc_invert_durations, phonemes_by_frames, float_durations,
-         to_whisper, ssl_feat,
-         load_audio,
+         int_durations, calc_invert_durations, transcription_by_frames, float_durations,
+         # to_whisper,
+         ssl, pl_bert, timedim_interpolation,
+         # load_audio,
          trim, mu_law]
   pipe_cfg:
     load_audio:
@@ -135,7 +136,7 @@ preproc:
     to_whisper:
       type: SignalProcessor
       pipe: [whisper]
-    ssl_feat:
+    ssl:
       type: SSLProcessor
       ssl_type: Hubert
       ssl_params:
@@ -144,7 +145,12 @@ preproc:
         stream_mod:
           chunk_size: 6400
           context_size: [64000, 6550]
-      resize_from: mel
+    pl_bert:
+      type: MultilingualPLBert
+      from_ssl_tokens: True
+    timedim_interpolation:
+      features: [ssl_feat, plbert_feat]
+      shape_as: mel
     trim:
       type: SignalProcessor
       pipe: [trim]

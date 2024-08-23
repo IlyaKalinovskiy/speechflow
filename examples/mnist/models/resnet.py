@@ -283,5 +283,5 @@ class ResNet(BaseTorchModel):
         )
 
     def forward(self, input: MNISTForwardInput) -> MNISTForwardOutput:
-        logits = self._model(input.images)
+        logits = self._model(input.image)
         return MNISTForwardOutput(logits=logits)

@@ -21,7 +21,9 @@ from nlp.prosody_prediction.eval_interface import ProsodyPredictionInterface
 from speechflow.data_pipeline.core.components import PipelineComponents
 from speechflow.data_pipeline.datasample_processors import add_pauses_from_text
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
-from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
+    TTSTextProcessor,
+)
 from speechflow.io import check_path, tp_PATH
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.init import init_class_from_config, init_method_from_config
@@ -179,11 +181,11 @@ class TTSEvaluationInterface:
 
         self.lang = text_cfg.get("lang", "RU")
         if "alphabet" in tts_ckpt:
-            assert tts_ckpt["alphabet"] == TextProcessor(self.lang).alphabet
+            assert tts_ckpt["alphabet"] == TTSTextProcessor(self.lang).alphabet
         else:
             assert (
                 tts_ckpt["params"]["n_symbols"]
-                == TextProcessor(lang=self.lang).alphabet_size
+                == TTSTextProcessor(lang=self.lang).alphabet_size
             )
 
         data_cfg["collate"]["type"] = (
@@ -417,7 +419,7 @@ class TTSEvaluationInterface:
                 speaker_id=speaker_id,
             )
             pauses_durations = [
-                pauses_output.durations[i][pauses_output.sil_masks[i] > 0]
+                pauses_output.durations[i][pauses_output.sil_mask[i] > 0]
                 for i in range(pauses_output.durations.shape[0])
             ]
         else:
@@ -537,8 +539,8 @@ class TTSEvaluationInterface:
             sent = self.add_pauses_from_text(TTSDataSample(sent=sent)).sent
 
             if max_sentence_length and sent.num_phonemes > max_sentence_length:
-                pause = Token(TextProcessor.sil)
-                pause.phonemes = (TextProcessor.sil,)
+                pause = Token(TTSTextProcessor.sil)
+                pause.phonemes = (TTSTextProcessor.sil,)
                 new_tokens: tp.List[Token] = []
                 total_sent_length = 0
                 for token in sent.tokens + [None]:

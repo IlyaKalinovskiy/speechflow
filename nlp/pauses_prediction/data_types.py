@@ -23,7 +23,7 @@ class PausesPredictionInput(MovableToDevice, Detachable):
     ling_feat: LinguisticFeatures = None  # type: ignore
     durations: Tensor = None
     spectrogram: Tensor = None
-    sil_masks: Tensor = None
+    sil_mask: Tensor = None
     input_lengths: Tensor = None
     n_speakers: Tensor = None
     speaker_emb: Tensor = None
@@ -33,4 +33,4 @@ class PausesPredictionInput(MovableToDevice, Detachable):
 @dataclass
 class PausesPredictionOutput(MovableToDevice, Detachable):
     durations: Tensor = None
-    sil_masks: Tensor = None
+    sil_mask: Tensor = None

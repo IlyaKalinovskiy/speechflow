@@ -18,6 +18,7 @@ class ComputeBackend(enum.Enum):
     librosa = 3
     torchaudio = 4
     nvidia = 5
+    nemo = 6
 
 
 class BaseDSProcessor:

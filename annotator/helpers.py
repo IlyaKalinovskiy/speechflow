@@ -8,9 +8,11 @@ from multilingual_text_parser import Token
 from annotator.asr_services import OpenAIASR
 from annotator.audiobook_spliter import AudiobookSpliter
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
-from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
 from speechflow.data_pipeline.datasample_processors.tts_processors import (
     add_pauses_from_text,
+)
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
+    TTSTextProcessor,
 )
 
 
@@ -43,7 +45,7 @@ def forced_alignment(
             new_tokens.append(token)
             try:
                 if token.asr_pause and float(token.asr_pause) > 0:
-                    pause = Token(TextProcessor.sil)
+                    pause = Token(TTSTextProcessor.sil)
                     pause.meta["duration"] = float(token.asr_pause)
                     new_tokens.append(pause)
             except Exception:
@@ -56,19 +58,19 @@ def forced_alignment(
             next_word_ts = token.meta.get("next_word_ts")
 
             if prev_word_ts is None and token.meta["ts"][0] > 0:
-                pause = Token(TextProcessor.sil)
+                pause = Token(TTSTextProcessor.sil)
                 pause.meta["duration"] = token.meta["ts"][0]
                 new_tokens.append(pause)
 
             new_tokens.append(token)
 
             if next_word_ts is not None and next_word_ts[0] > token.meta["ts"][1]:
-                pause = Token(TextProcessor.sil)
+                pause = Token(TTSTextProcessor.sil)
                 pause.meta["duration"] = next_word_ts[0] - token.meta["ts"][1]
                 new_tokens.append(pause)
 
             if next_word_ts is None and token.meta["eos_ts"] > token.meta["ts"][1]:
-                pause = Token(TextProcessor.sil)
+                pause = Token(TTSTextProcessor.sil)
                 pause.meta["duration"] = token.meta["eos_ts"] - token.meta["ts"][1]
                 new_tokens.append(pause)
 
@@ -88,7 +90,7 @@ def forced_alignment(
         new_tokens = []
         for key, group_items in groupby(tts_ds.sent.tokens, key=lambda x: x.is_pause):
             if key:
-                pause = Token(TextProcessor.sil)
+                pause = Token(TTSTextProcessor.sil)
                 pause.meta["duration"] = 0.05 * sum([x.num_phonemes for x in group_items])
                 new_tokens.append(pause)
             else:

@@ -85,9 +85,13 @@ def init_class_from_config(
         init_keys = set(init_keys)
         if check_keys and "pipe" not in config_keys and not init_keys >= config_keys:
             unresolve_keys = init_keys.union(config_keys) - init_keys
-            raise ValueError(
-                f"Config for {cls.__name__} contains invalid or outdated parameters! {config_keys} -> {init_keys} | {unresolve_keys}"
-            )
+            if "kwargs" in init_keys:
+                config["kwargs"] = {arg: config[arg] for arg in unresolve_keys}
+            else:
+                raise ValueError(
+                    f"Config for {cls.__name__} contains invalid or outdated parameters! "
+                    f"{config_keys} -> {init_keys} | {unresolve_keys}"
+                )
 
     params = {arg: config[arg] for arg in init_params.keys() if arg in config}
 
@@ -95,6 +99,10 @@ def init_class_from_config(
     # for key, field in params.items():
     #     info = info.replace(key, f"{key}={field}")
     # LOGGER.info(f"Set params for {cls.__name__}({info})")
+
+    if "kwargs" in params:
+        kwargs = params.pop("kwargs")
+        params.update(kwargs)
 
     return functools.partial(cls, **params)
 
@@ -111,7 +119,7 @@ def lazy_initialization(func):
 
             for attr in none_attr_before:
                 if attr not in none_attr_after:
-                    attr_value = getattr(args[0], attr)
+                    attr_value = getattr(args[0], attr)  # type: ignore
                     del attr_value
                     setattr(args[0], attr, None)
 

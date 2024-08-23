@@ -10,6 +10,7 @@ from multiprocessing import current_process
 from pathlib import Path
 
 import numpy as np
+import torch
 import numpy.typing as npt
 
 from scipy import signal
@@ -27,7 +28,10 @@ from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing 
 from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing.praat_sound_effects import (
     PraatSoundEffects,
 )
-from speechflow.data_pipeline.datasample_processors.data_types import AudioDataSample
+from speechflow.data_pipeline.datasample_processors.data_types import (
+    AudioDataSample,
+    SSLFeatures,
+)
 from speechflow.data_pipeline.datasample_processors.tts_singletons import StatisticsRange
 from speechflow.io import AudioChunk, Config
 from speechflow.utils.fs import get_root_dir
@@ -38,6 +42,7 @@ __all__ = [
     "SSLProcessor",
     "ACProcessor",
     "monotonic_speech",
+    "timedim_interpolation",
 ]
 
 LOGGER = logging.getLogger("root")
@@ -177,12 +182,34 @@ class SignalProcessor(BaseAudioProcessor):
         return ds
 
     @staticmethod
-    def pad(ds: AudioDataSample, pad_size: float = 0.25) -> AudioDataSample:
+    def pad(
+        ds: AudioDataSample,
+        pad_size: tp.Union[float, tp.Tuple[float, float]] = 0.25,
+        mode: str = "constant",
+    ) -> AudioDataSample:
         data = ds.audio_chunk.waveform
-        n = int(pad_size * ds.audio_chunk.sr)
-        data = np.pad(data, (n, n), "constant", constant_values=(0, 0))
+        if isinstance(pad_size, float):
+            a = b = int(pad_size * ds.audio_chunk.sr)
+        else:
+            a = int(pad_size[0] * ds.audio_chunk.sr)
+            b = int(pad_size[1] * ds.audio_chunk.sr)
+
+        data = np.pad(data, (a, b), mode=mode, constant_values=(0, 0))  # type: ignore
         ds.audio_chunk.data = data
-        ds.audio_chunk.end += 2.0 * pad_size
+        ds.audio_chunk.end += a + b
+        return ds
+
+    @staticmethod
+    def multiple(
+        ds: AudioDataSample, value: int = 1, mode: str = "constant"
+    ) -> AudioDataSample:
+        data = ds.audio_chunk.waveform
+        pad_size = value - data.shape[0] % value
+        if pad_size == value:
+            pad_size = 0
+        data = np.pad(data, (0, pad_size), mode=mode, constant_values=0)  # type: ignore
+        ds.audio_chunk.data = data
+        ds.audio_chunk.end += pad_size / ds.audio_chunk.sr
         return ds
 
     @staticmethod
@@ -238,13 +265,13 @@ class SignalProcessor(BaseAudioProcessor):
             s = SignalProcessor._split_signal(s, bits)
 
         ds.mu_law_waveform = s
-        ds.bits = bits
+        ds.transform_params["bits"] = bits
         return ds
 
     @staticmethod
     def mu_law_decode(ds: AudioDataSample):
         mu_law = ds.mu_law_waveform
-        bits = ds.bits
+        bits = ds.transform_params.get("bits", 16)
         n_classes = 2 ** (bits // 2)
 
         if mu_law.ndim == 2:
@@ -265,11 +292,12 @@ class SignalProcessor(BaseAudioProcessor):
         return ds
 
     @staticmethod
-    def add_noise(ds: AudioDataSample):
+    def add_noise(ds: AudioDataSample, dither: float = 1.0e-5):
         noise = np.random.randn(*ds.audio_chunk.data.shape).astype(np.float32)
         if np.issubdtype(ds.audio_chunk.dtype, np.floating):
-            scale = np.float32(np.iinfo(np.int16).max)
-            noise *= 1 / scale
+            if dither is None:
+                dither = 1 / np.float32(np.iinfo(np.int16).max)
+            noise *= dither
         else:
             noise = noise.astype(np.int16)
         ds.audio_chunk.data += noise
@@ -342,14 +370,12 @@ class SSLProcessor(BaseAudioProcessor):
         self,
         ssl_type: str,
         ssl_params: Config = Config.empty(),
-        resize_from: tp.Optional[str] = None,
         use_precompute: bool = False,
         device: str = "cpu",
     ):
         super().__init__(device=device)
         self._ssl_cls = getattr(ssl_models, ssl_type)
         self._ssl_params = ssl_params
-        self._resize_from = resize_from
         self._ssl_model = None
         self._use_precompute = use_precompute
 
@@ -378,17 +404,6 @@ class SSLProcessor(BaseAudioProcessor):
                 precompute_path.write_bytes(pickle.dumps(ds.ssl_feat.cpu()))
         else:
             ds.ssl_feat = self._ssl_model(ds.audio_chunk)
-
-        if self._resize_from:
-            attr = getattr(ds, self._resize_from)
-            scale = (attr.shape[0] + 1) / ds.ssl_feat.encoder_feat.shape[0]
-            feat = ds.ssl_feat.encoder_feat.t().unsqueeze(0)
-            ds.ssl_feat.encoder_feat = torch_interpolate(feat, scale_factor=scale)
-            ds.ssl_feat.encoder_feat = ds.ssl_feat.encoder_feat.squeeze(0).t()
-            ds.ssl_feat.encoder_feat = ds.ssl_feat.encoder_feat[: attr.shape[0]]
-            assert (
-                ds.ssl_feat.encoder_feat.shape[0] == attr.shape[0]
-            ), f"shape mismatch {ds.ssl_feat.encoder_feat.shape[0]} != {attr.shape[0]}"
 
         return ds.to_numpy()
 
@@ -427,7 +442,7 @@ class ACProcessor(BaseAudioProcessor):
 
         if self._resynt:
             if ds.ac_feat.waveform is None:
-                feat = ds.ac_feat.encode.t().unsqueeze(0)
+                feat = ds.ac_feat.encode_feat.t().unsqueeze(0)
                 waveform = self._ac_model.decode(feat.to(self._ac_model.device))
                 waveform = waveform.squeeze().cpu().numpy()
             else:
@@ -479,6 +494,41 @@ def monotonic_speech(
     ds.audio_chunk.waveform = y[: len(x)].astype(np.float32)
     ds.transform_params["monotonic_speech"] = {}
     return ds
+
+
+@PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"ssl_feat", "pl_bert"})
+def timedim_interpolation(
+    ds: AudioDataSample, features: tp.Union[str, tp.List[str]], shape_as: str
+):
+    if isinstance(features, str):
+        features = [features]
+
+    def interpolate(_t, _scale, _max_len):
+        _t = _t.t().unsqueeze(0)
+        _t = torch_interpolate(_t, scale_factor=_scale)
+        _t = _t.squeeze(0).t()
+        return _t[:_max_len]
+
+    for name in features:
+        feat = getattr(ds, name)
+        attr = getattr(ds, shape_as)
+        if isinstance(feat, SSLFeatures):
+            t = torch.from_numpy(feat.encoder_feat)
+        else:
+            t = torch.from_numpy(feat)
+
+        scale = (attr.shape[0] + 1) / t.shape[0]
+        t = interpolate(t, scale, attr.shape[0])
+        assert (
+            t.shape[0] == attr.shape[0]
+        ), f"shape mismatch {t.shape[0]} != {attr.shape[0]}"
+
+        if isinstance(feat, SSLFeatures):
+            feat.encoder_feat = t
+        else:
+            setattr(ds, name, t)
+
+    return ds.to_numpy()
 
 
 if __name__ == "__main__":

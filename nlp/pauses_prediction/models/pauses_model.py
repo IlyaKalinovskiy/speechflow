@@ -38,9 +38,9 @@ class SimpleModel(EmbeddingCalculator):
         ling_feat = self.get_ling_feat(inputs)  # type: ignore
         speaker_emb = self.get_speaker_embedding(inputs)  # type: ignore
 
-        sil_masks = inputs.sil_masks
+        sil_mask = inputs.sil_mask
         ilens = inputs.input_lengths
-        _is_sil = (sil_masks > 0).unsqueeze(-1)
+        _is_sil = (sil_mask > 0).unsqueeze(-1)
 
         if ling_feat is not None:
             x = torch.cat([_is_sil, ling_feat], dim=2)
@@ -54,7 +54,7 @@ class SimpleModel(EmbeddingCalculator):
         predicted_durations = self.decoder(encoder_output)
 
         output = PausesPredictionOutput(
-            sil_masks=sil_masks,
+            sil_mask=sil_mask,
             durations=predicted_durations,
         )
 

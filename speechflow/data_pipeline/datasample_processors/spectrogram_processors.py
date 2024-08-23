@@ -42,11 +42,16 @@ from speechflow.data_pipeline.datasample_processors.data_types import (
 from speechflow.data_pipeline.datasample_processors.tts_singletons import StatisticsRange
 from speechflow.io import Config, Timestamps
 from speechflow.logging import trace
-from speechflow.utils.init import get_default_args, init_method_from_config
+from speechflow.utils.init import (
+    get_default_args,
+    init_method_from_config,
+    lazy_initialization,
+)
 
 __all__ = [
     "SpectralProcessor",
     "MelProcessor",
+    "NemoMelProcessor",
     "PitchProcessor",
     "LPCProcessor",
     "pitch_to_wavelet",
@@ -64,6 +69,15 @@ try:
 except ImportError as e:
     if current_process().name == "MainProcess":
         LOGGER.warning(f"torchaudio is not available: {e}")
+
+try:
+    from nemo.collections.asr.modules import (
+        AudioToMelSpectrogramPreprocessor,
+        AudioToSpectrogram,
+    )
+except ImportError as e:
+    if current_process().name == "MainProcess":
+        LOGGER.warning(f"NeMo is not available: {e}")
 
 
 def _fp_eq(a, b):
@@ -146,6 +160,16 @@ class SpectralProcessor(BaseSpectrogramProcessor):
             waveform = torch.from_numpy(waveform)
             stft = self.stft_module(waveform)
 
+        elif self.backend == ComputeBackend.nemo:
+            if self.stft_module is None:
+                self.stft_module = AudioToSpectrogram(
+                    fft_length=n_fft, hop_length=hop_len, power=1.0
+                )
+
+            waveform = torch.from_numpy(waveform).unsqueeze(0).unsqueeze(0)
+            stft, _ = self.stft_module(input=waveform)
+            stft = stft.squeeze(0).squeeze(0)
+
         else:
             raise NotImplementedError(
                 f"Computing stft not implemented for {self.backend} ComputeBackend."
@@ -181,6 +205,9 @@ class SpectralProcessor(BaseSpectrogramProcessor):
         elif self.backend == ComputeBackend.nvidia:
             ds.magnitude = torch.sqrt(torch.sum(stft**2, dim=2)).T
 
+        elif self.backend == ComputeBackend.nemo:
+            ds.magnitude = stft.T
+
         else:
             raise NotImplementedError(
                 f"Computing magnitude not implemented for {self.backend} ComputeBackend."
@@ -215,6 +242,7 @@ class SpectralProcessor(BaseSpectrogramProcessor):
         elif self.backend in [
             ComputeBackend.torchaudio,
             ComputeBackend.nvidia,
+            ComputeBackend.nemo,
         ]:
             ds.energy = torch.norm(ds.magnitude, dim=-1)
 
@@ -330,7 +358,7 @@ class MelProcessor(BaseSpectrogramProcessor):
 
     @PipeRegistry.registry(
         inputs={"magnitude"},
-        outputs={"mel", "precomputed_mel"},
+        outputs={"mel"},
     )
     def process(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
         return super().process(ds)
@@ -363,7 +391,6 @@ class MelProcessor(BaseSpectrogramProcessor):
                         full=False,
                     )
                 )
-                ds.precomputed_mel = ds.mel
             else:
                 load_mel = pickle.loads(synth_mel_path.read_bytes())
                 if load_mel.shape != ds.mel.shape:
@@ -376,9 +403,7 @@ class MelProcessor(BaseSpectrogramProcessor):
                     )
                     raise ValueError("Dimensions of the spectrum is not equal.")
 
-                ds.precomputed_mel = load_mel
-        else:
-            ds.precomputed_mel = ds.mel
+                ds.mel = load_mel
 
         return ds
 
@@ -616,6 +641,52 @@ class MelProcessor(BaseSpectrogramProcessor):
         return ds
 
 
+class NemoMelProcessor(BaseSpectrogramProcessor):
+    def __init__(
+        self,
+        sample_rate: int,
+        n_fft: int,
+        hop_len: int,
+        win_len: int,
+        n_mels: int,
+        **kwargs,
+    ):
+        super().__init__(
+            (self.__class__.__name__,),
+            self.get_config_from_locals(locals()),
+        )
+        window_size = win_len / sample_rate
+        window_stride = hop_len / sample_rate
+        features = n_mels
+        self._mel_cfg = self.get_config_from_locals(locals())[self.__class__.__name__]
+        self._mel_cfg.pop("win_len")
+        self._mel_cfg.pop("hop_len")
+        self._mel_cfg.pop("n_mels")
+        self._mel_cfg.pop("kwargs")
+        self._mel_cfg.update(kwargs)
+        self._mel_module = None
+
+    def init(self):
+        super().init()
+        self._mel_module = AudioToMelSpectrogramPreprocessor(**self._mel_cfg)
+        self._mel_module.eval()
+
+    @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"mel"})
+    @lazy_initialization
+    def process(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
+        return super().process(ds)
+
+    def __call__(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
+        waveform = ds.audio_chunk.waveform
+        waveform = torch.from_numpy(waveform).unsqueeze(0)
+        waveform_length = torch.LongTensor([waveform.shape[-1]])
+        mel, _ = self._mel_module.get_features(
+            input_signal=waveform, length=waveform_length
+        )
+        ds.mel = mel.squeeze(0).T
+        return ds.to_numpy()
+
+
 class PitchProcessor(BaseSpectrogramProcessor):
     def __init__(
         self,
@@ -623,8 +694,9 @@ class PitchProcessor(BaseSpectrogramProcessor):
         f0_min: float = 80,
         f0_max: float = 880,
         n_bins: int = 80,
-        model: str = "full",
-        batch_size: int = 1,
+        pyworld_frame_period: tp.Literal["default", "adaptive"] = "default",
+        torchcrepe_model: tp.Literal["full", "tiny"] = "full",
+        torchcrepe_batch_size: int = 1,
         device: str = "cpu",
     ):
         super().__init__(
@@ -636,8 +708,9 @@ class PitchProcessor(BaseSpectrogramProcessor):
         self.f0_min = f0_min
         self.f0_max = f0_max
         self.n_bins = n_bins
-        self.model = model
-        self.batch_size = batch_size
+        self.pyworld_frame_period = pyworld_frame_period
+        self.torchcrepe_model = torchcrepe_model
+        self.torchcrepe_batch_size = torchcrepe_batch_size
 
     @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"pitch"})
     def process(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
@@ -658,11 +731,17 @@ class PitchProcessor(BaseSpectrogramProcessor):
 
         if self.method == "pyworld":
             assert sample_rate >= 16000, "sample rate must be greater or equal 16KHz!"
+
+            if self.pyworld_frame_period == "default":
+                frame_period = pw.default_frame_period
+            else:
+                frame_period = 1000 * hop_len / sample_rate
+
             waveform = audio_chunk.astype(np.float64).waveform
             f0, _ = pw.dio(
                 waveform,
                 audio_chunk.sr,
-                frame_period=pw.default_frame_period,
+                frame_period=frame_period,
                 f0_floor=self.f0_min,
                 f0_ceil=self.f0_max,
             )
@@ -702,9 +781,9 @@ class PitchProcessor(BaseSpectrogramProcessor):
                     None,
                     self.f0_min,
                     self.f0_max,
-                    batch_size=self.batch_size,
+                    batch_size=self.torchcrepe_batch_size,
                     return_harmonicity=True,
-                    model=self.model,
+                    model=self.torchcrepe_model,
                     device=self.device,
                 )
             harmonicity = torchcrepe.filter.mean(harmonicity, 3)
@@ -1209,7 +1288,7 @@ def average_by_time(
     ds.averages = {}
     for attr in attributes:
         if attr == "rate":
-            ds.averages[attr] = len(ds.transcription) / ds.audio_chunk.duration
+            ds.averages[attr] = len(ds.transcription_id) / ds.audio_chunk.duration
             continue
 
         if not hasattr(ds, attr):
@@ -1235,6 +1314,138 @@ def average_by_time(
     return ds
 
 
+def __get_spec_proc(n_fft: int, hop_len: int, win_len: int, n_bins: int):
+    pipe = (
+        "magnitude",
+        "energy",
+        "spectral_flatness",
+        "spectral_tilt",
+        "spectral_envelope",
+    )
+    cfg = {
+        "magnitude": {
+            "n_fft": n_fft,
+            "hop_len": hop_len,
+            "win_len": win_len,
+        },
+        "spectral_envelope": {"n_bins": n_bins},
+    }
+    return SpectralProcessor(pipe, Config(cfg))
+
+
+def __get_mel_proc(n_mels: int):
+    pipe = (
+        "linear_to_mel",
+        "amp_to_db",
+        "normalize",
+    )
+    cfg = {
+        "linear_to_mel": {"n_mels": n_mels},
+    }
+    return MelProcessor(pipe, Config(cfg))
+
+
+def __get_nemo_mel_proc(
+    sample_rate: int, n_fft: int, hop_len: int, win_len: int, n_mels: int
+):
+    return NemoMelProcessor(
+        sample_rate=sample_rate,
+        n_fft=n_fft,
+        hop_len=hop_len,
+        win_len=win_len,
+        n_mels=n_mels,
+    )
+
+
+def __get_pitch_proc(method: str):
+    return PitchProcessor(method=method, pyworld_frame_period="default")
+
+
+def __get_lpc_proc(order: int):
+    pipe = ("lpc_from_mel",)
+    cfg = {"lpc_from_mel": {"order": order}}
+    return LPCProcessor(pipe, Config(cfg))
+
+
+def __plot2d(data, label, fig, ax, idx):
+    im = ax[idx].imshow(np.flip(data, axis=1).T)
+    divider = make_axes_locatable(ax[idx])
+    fig.colorbar(im, cax=divider.append_axes("right", size=0.25, pad=0.05))
+    ax[idx].set_xlabel(label)
+
+
+def __plot_spectrogram(audio_chunk, spec_proc, mel_proc):
+    ds = SpectrogramDataSample(audio_chunk=audio_chunk)
+    ds = spec_proc.process(ds)
+    ds = mel_proc.process(ds)
+
+    invert_ds = ds.copy()
+    invert_ds.magnitude = None
+    invert_ds = mel_proc.denormalize(invert_ds)
+    invert_ds = mel_proc.db_to_amp(invert_ds)
+    invert_ds = mel_proc.mel_to_linear(invert_ds)
+
+    fig1, ax1 = plt.subplots(2, 1, dpi=160, facecolor="w")
+    for idx, name in enumerate(["mel", "spectral_envelope"]):
+        __plot2d(getattr(ds, name), name, fig1, ax1, idx)
+
+    fig2, ax2 = plt.subplots(2, 1, dpi=160, facecolor="w")
+    for idx, item in enumerate([ds, invert_ds]):
+        __plot2d(item.magnitude, "magnitude", fig2, ax2, idx)
+
+    fig3, ax3 = plt.subplots(3, 1, dpi=160, facecolor="w")
+    __plot2d(ds.magnitude, "magnitude", fig3, ax3, 0)
+    __plot2d(invert_ds.mel, "mel", fig3, ax3, 1)
+    __plot2d(ds.mel, "normalize_mel", fig3, ax3, 2)
+
+
+def __plot_1d_features(audio_chunk, spec_proc, mel_proc, pitch_proc):
+    ds = SpectrogramDataSample(audio_chunk=audio_chunk)
+    ds = spec_proc.process(ds)
+    ds = mel_proc.process(ds)
+    ds = pitch_proc.process(ds)
+
+    fig, ax = plt.subplots(2, 1, dpi=160, facecolor="w")
+    __plot2d(ds.mel, "mel", fig, ax, 0)
+    __plot2d(ds.mel, "mel", fig, ax, 1)
+
+    x = np.arange(ds.mel.shape[0])
+    n_mels = ds.get_param_val("n_mels")
+
+    energy = n_mels - 1 - ds.energy
+    pitch = n_mels - 1 - ds.pitch / ds.pitch.max() * 60
+    spectral_flatness = n_mels - 1 - ds.spectral_flatness * 20
+    spectral_tilt = n_mels - 1 - ds.spectral_tilt * 40
+    ax[1].plot(x, energy, c="r", lw=1, label="energy")
+    ax[1].plot(x, spectral_flatness, c="b", lw=1, label="spectral_flatness")
+    ax[1].plot(x, spectral_tilt, c="y", lw=1, label="spectral_tilt")
+    ax[0].plot(x, pitch, c="indigo", lw=1, label="pitch")
+    ax[1].legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, fontsize="small")
+
+
+def __plot_2d_features(audio_chunk, spec_proc, mel_proc, pitch_proc, lpc_proc):
+    ds = SpectrogramDataSample(audio_chunk=audio_chunk)
+    ds = spec_proc.process(ds)
+    ds = mel_proc.process(ds)
+    ds = pitch_proc.process(ds)
+    ds = lpc_proc.process(ds)
+
+    fig, ax = plt.subplots(3, 1, dpi=160, facecolor="w")
+    for idx, name in enumerate(["mel", "pitch", "lpc_feat"]):
+        __plot2d(getattr(ds, name), name, fig, ax, idx)
+
+
+def __plot_nemo_features(audio_chunk, librosa_spec_proc, librosa_mel_proc, nemo_mel_proc):
+    librosa_ds = SpectrogramDataSample(audio_chunk=audio_chunk)
+    librosa_ds = librosa_spec_proc.process(librosa_ds)
+    librosa_ds = librosa_mel_proc.process(librosa_ds)
+    nemo_ds = nemo_mel_proc.process(librosa_ds.copy())
+
+    fig, ax = plt.subplots(2, 1, dpi=160, facecolor="w")
+    __plot2d(librosa_ds.mel, "librosa", fig, ax, 0)
+    __plot2d(nemo_ds.mel, "nemo", fig, ax, 1)
+
+
 if __name__ == "__main__":
     import matplotlib
     import matplotlib.pyplot as plt
@@ -1247,91 +1458,24 @@ if __name__ == "__main__":
     matplotlib.use("TkAgg")
 
     _file_path = get_root_dir() / "tests/data/test_audio.wav"
-    _audio_chunk = AudioChunk(file_path=_file_path).load(sr=22050).trim(end=3)
+    _audio_chunk = AudioChunk(file_path=_file_path).load(sr=22050).trim(end=8)
 
-    _n_mels = 80
+    _spec_proc = __get_spec_proc(1024, 256, 1024, 80)
+    _mel_proc = __get_mel_proc(80)
+    _pitch_proc_1 = __get_pitch_proc("pyworld")
+    _pitch_proc_2 = __get_pitch_proc("yingram")
+    _lpc_proc = __get_lpc_proc(100)
 
-    _pipe = (
-        "magnitude",
-        "energy",
-        "spectral_flatness",
-        "spectral_tilt",
-        "spectral_envelope",
+    __plot_spectrogram(_audio_chunk, _spec_proc, _mel_proc)
+    __plot_1d_features(_audio_chunk, _spec_proc, _mel_proc, _pitch_proc_1)
+    __plot_2d_features(_audio_chunk, _spec_proc, _mel_proc, _pitch_proc_2, _lpc_proc)
+
+    _audio_chunk = AudioChunk(file_path=_file_path).load(sr=16000).trim(end=8)
+    _librosa_spec_proc = __get_spec_proc(512, 160, 400, 80)
+    _librosa_mel_proc = __get_mel_proc(80)
+    _nemo_mel_proc = __get_nemo_mel_proc(_audio_chunk.sr, 512, 160, 400, 80)
+    __plot_nemo_features(
+        _audio_chunk, _librosa_spec_proc, _librosa_mel_proc, _nemo_mel_proc
     )
-    _cfg = {
-        "magnitude": {
-            "n_fft": 1024,
-            "hop_len": 256,
-            "win_len": 1024,
-        },
-        "spectral_envelope": {"n_bins": _n_mels},
-    }
-    sp_proc = SpectralProcessor(_pipe, Config(_cfg))
-
-    _pipe = (
-        "linear_to_mel",
-        "amp_to_db",
-        "normalize",
-    )
-    _cfg = {
-        "linear_to_mel": {"n_mels": _n_mels},
-    }
-    mel_proc = MelProcessor(_pipe, Config(_cfg))
-
-    pitch_proc = PitchProcessor(method="pyworld")
-
-    _pipe = ("lpc_from_mel",)
-    _cfg = {"lpc_from_mel": {"order": 100}}
-    lpc_proc = LPCProcessor(_pipe, Config(_cfg))
-
-    _ds = SpectrogramDataSample(audio_chunk=_audio_chunk)
-    _ds = sp_proc.process(_ds)
-    _ds = mel_proc.process(_ds)
-    _ds = pitch_proc.process(_ds)
-    _ds = lpc_proc.process(_ds)
-
-    invert_ds = _ds.copy()
-    invert_ds.magnitude = None
-    invert_ds = mel_proc.denormalize(invert_ds)
-    invert_ds = mel_proc.db_to_amp(invert_ds)
-    invert_ds = mel_proc.mel_to_linear(invert_ds)
-
-    T = min(_ds.mel.shape[0], 1000)
-
-    fig, ax = plt.subplots(2, 1, dpi=160, facecolor="w")  # type: ignore
-    for idx, name in enumerate(["mel", "spectral_envelope"]):
-        _data = getattr(_ds, name)
-        im = ax[idx].imshow(np.flip(_data[:T], axis=1).T)
-        divider = make_axes_locatable(ax[idx])
-        fig.colorbar(im, cax=divider.append_axes("right", size=0.25, pad=0.05))
-        ax[idx].set_xlabel(name)
-
-    x = np.arange(T)
-    _energy = _n_mels - 1 - _ds.energy[:T]
-    _pitch = _n_mels - 1 - _ds.pitch[:T] / _ds.pitch[:T].max() * 60
-    _spectral_flatness = _n_mels - 1 - _ds.spectral_flatness[:T] * 20
-    _spectral_tilt = _n_mels - 1 - _ds.spectral_tilt[:T] * 40
-    ax[0].plot(x, _energy, c="r", lw=1, label="energy")
-    ax[0].plot(x, _spectral_flatness, c="b", lw=1, label="spectral_flatness")
-    ax[0].plot(x, _spectral_tilt, c="y", lw=1, label="spectral_tilt")
-    ax[0].plot(x, _pitch, c="indigo", lw=1, label="pitch")
-    ax[0].legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, fontsize="small")
-
-    fig2, ax2 = plt.subplots(2, 1, dpi=160, facecolor="w")  # type: ignore
-    for idx, item in enumerate([_ds, invert_ds]):
-        im = ax2[idx].imshow(np.flip(item.magnitude[:T], axis=1).T)
-        divider = make_axes_locatable(ax2[idx])
-        fig2.colorbar(im, cax=divider.append_axes("right", size=0.25, pad=0.05))
-
-    pitch_proc = PitchProcessor(method="yingram")
-    _ds = pitch_proc.process(_ds)
-
-    for name in ["mel", "pitch", "lpc_feat"]:
-        _data = getattr(_ds, name)
-        fig, ax = plt.subplots(1, 1, dpi=160, facecolor="w")  # type: ignore
-        im = ax.imshow(np.flip(_data[:T], axis=1).T)
-        divider = make_axes_locatable(ax)
-        fig.colorbar(im, cax=divider.append_axes("right", size=0.25, pad=0.05))
-        ax.set_title(name)
 
     plt.show()

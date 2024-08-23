@@ -87,7 +87,7 @@ class GlowTTS(EmbeddingCalculator):
         )
 
         self.encoder = TextEncoder(
-            params.n_symbols,
+            params.alphabet_size,
             params.n_langs,
             params.n_symbols_per_token,
             params.encoder_embedding_dim,
@@ -276,7 +276,7 @@ class GlowTTS(EmbeddingCalculator):
                     attn_soft, inputs.input_lengths, inputs.output_lengths
                 )
                 aligning_path = attn_hard.squeeze(1)
-            except:
+            except Exception as e:
                 aligning_path = attn.squeeze(1).transpose(1, 2)
 
             additional_content = {

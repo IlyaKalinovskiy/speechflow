@@ -79,6 +79,9 @@ class DataLoader:
         return self
 
     def __next__(self) -> Batch:
+        if not self.non_stop and self._epoch_complete_event.is_set():
+            raise StopIteration
+
         return self.next_batch()
 
     def __del__(self):
@@ -288,6 +291,9 @@ class DataLoader:
 
             def __iter__(self):
                 return self
+
+            def __len__(self) -> int:
+                return int(self._dl.epoch_len)
 
             def __next__(self):
                 if self._dl._epoch_complete_event.is_set():

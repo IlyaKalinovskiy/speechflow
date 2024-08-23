@@ -42,9 +42,9 @@ preproc:
          speech_quality, spectrogram, melscale,
          pitch, enhancement_energy, enhancement_pitch,
          add_pauses_from_timestamps, add_service_tokens, text,
-         int_durations, calc_invert_durations, phonemes_by_frames, float_durations,
+         int_durations, calc_invert_durations, transcription_by_frames, float_durations,
          average_by_time, norm_1,
-         ssl_features,
+         ssl,
          trim, mu_law]
   pipe_cfg:
     load_audio:
@@ -119,7 +119,7 @@ preproc:
     float_durations:
       type: calc_durations
       as_int: False
-    ssl_features:
+    ssl:
       type: SSLProcessor
       ssl_type: { default: Wav2Vec, ml: WavLM }
       resize_from: mel

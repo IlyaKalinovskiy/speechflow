@@ -185,13 +185,10 @@ class TacoDecoder(Component):
         decoder_outputs = []
         decoder_context_outputs = []
 
-        imputer_masks = inputs.model_inputs.imputer_masks
-        smask = imputer_masks.get(self.params.target)
-
-        if not self.training and smask is not None and smask.shape[0] == 1:
-            group_mask = groupby(smask.tolist()[0])  # type: ignore
-        else:
+        if self.training:
             group_mask = [(True, [True] * memory.shape[0])]  # type: ignore
+        else:
+            group_mask = [(False, [False] * memory.shape[0])]  # type: ignore
 
         begin = 0
         for flag, mask in group_mask:
@@ -225,11 +222,7 @@ class TacoDecoder(Component):
                         self.dec_step.states,
                     )
 
-                    if smask is not None:  # train or inference as imputer
-                        frame = target[idx].clone()
-                        frame[smask[:, idx]] = next_frame[~smask[:, idx]]
-                    else:  # train or inference as tts
-                        frame = target[idx] if self.training else next_frame
+                    frame = target[idx] if self.training else next_frame
 
                     local_decoder_context_outputs.append(dec_context)
                     local_decoder_outputs.append(next_frame)

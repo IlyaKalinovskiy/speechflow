@@ -30,7 +30,7 @@ class VocoderForwardInput(TTSForwardInput):
         tts_input: TTSForwardInput, tts_output: TTSForwardOutput
     ) -> "VocoderForwardInput":
         voc_in = tts_input
-        voc_in.mel_spectrogram = tts_output.after_postnet_spectrogram
+        voc_in.spectrogram = tts_output.after_postnet_spectrogram
         voc_in.spectrogram_lengths = tts_output.spectrogram_lengths
         voc_in.energy = tts_output.variance_predictions.get("energy")
         voc_in.pitch = tts_output.variance_predictions.get("pitch")

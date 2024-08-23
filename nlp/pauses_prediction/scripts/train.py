@@ -14,7 +14,7 @@ ROOT = THIS_PATH.parents[3]
 sys.path.append(ROOT.as_posix())
 
 from nlp import pauses_prediction
-from speechflow.data_pipeline.datasample_processors import TextProcessor
+from speechflow.data_pipeline.datasample_processors import TTSTextProcessor
 from speechflow.data_server.helpers import init_data_loader_from_config
 from speechflow.data_server.loader import DataLoader
 from speechflow.logging import trace
@@ -40,7 +40,7 @@ def train(cfg: dict, data_loaders: tp.Dict[str, DataLoader]) -> str:
     batch_processor = init_class_from_config(batch_processor_cls, cfg["batch"])()
 
     lang = dl_train.client.find_info("lang")
-    cfg["model"]["params"]["n_symbols"] = TextProcessor(lang=lang).alphabet_size
+    cfg["model"]["params"]["n_symbols"] = TTSTextProcessor(lang=lang).alphabet_size
 
     speaker_id_handler = dl_train.client.find_info("SpeakerIDSetter")
     if speaker_id_handler is not None:

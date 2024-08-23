@@ -4,9 +4,11 @@ from multilingual_text_parser import Doc, Sentence, TextParser
 
 from speechflow.data_pipeline.core.registry import PipeRegistry
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
-from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
 from speechflow.data_pipeline.datasample_processors.tts_processors import (
     add_pauses_from_text,
+)
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
+    TTSTextProcessor,
 )
 from speechflow.utils.profiler import Profiler
 
@@ -101,7 +103,7 @@ if __name__ == "__main__":
     """
 
     text_parser = TextParser(lang="RU")
-    text_processor = TextProcessor(lang="RU", add_service_tokens=True)
+    text_processor = TTSTextProcessor(lang="RU", add_service_tokens=True)
 
     sentence = text_parser.process(Doc(text)).sents[0]
 
@@ -113,6 +115,6 @@ if __name__ == "__main__":
         _ds = add_prosody_modifiers(_ds)
 
     for x, p, v, t in zip(
-        _ds.symbols, _ds.pitch_modifier, _ds.volume_modifier, _ds.temp_modifier
+        _ds.transcription_text, _ds.pitch_modifier, _ds.volume_modifier, _ds.temp_modifier
     ):
         print(x, f"pitch: {p}", f"volume: {v}", f"temp: {t}")

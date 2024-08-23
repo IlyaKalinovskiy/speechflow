@@ -148,7 +148,7 @@ model:
           vp_output_dim: 128
           vp_params:
             base_encoder_type: StyleSpeech  # StyleSpeech, StyleTTS2
-            source: mel_spectrogram  # mel_spectrogram, ssl_feat
+            source: spectrogram  # spectrogram, ssl_feat
             source_dim: 80  # 80, 768
       aggregate_energy:
         predictor_type: TokenLevelPredictorWithDiscriminator

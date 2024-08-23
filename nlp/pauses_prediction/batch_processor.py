@@ -21,12 +21,12 @@ class PausesPredictionProcessor(BaseBatchProcessor):
     ]:
         collated: PausesPredictionCollateOutput = batch.collated_samples  # type: ignore
         _input: PausesPredictionInput = PausesPredictionInput(
-            transcription=collated.transcription,
+            transcription=collated.transcription_id,
             ling_feat=collated.ling_feat,
             durations=collated.durations,
-            sil_masks=collated.sil_masks,
+            sil_mask=collated.sil_mask,
             input_lengths=collated.transcription_lengths,
-            speaker_ids=collated.speaker_id,
+            speaker_ids=collated.speaker_ids,
         )
         _target: PausesPredictionTarget = PausesPredictionTarget(
             durations=collated.durations

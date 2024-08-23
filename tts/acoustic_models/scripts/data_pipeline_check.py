@@ -44,7 +44,10 @@ def main():
             sega.save(fpath, add_audio=True)
 
             plot_durations_and_signals(
-                ds.mel, ds.durations, ds.symbols, {"energy": ds.energy, "pitch": ds.pitch}
+                ds.mel,
+                ds.durations,
+                ds.transcription_text,
+                {"energy": ds.energy, "pitch": ds.pitch},
             )
 
 

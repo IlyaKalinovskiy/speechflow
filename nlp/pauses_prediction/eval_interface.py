@@ -82,7 +82,7 @@ class PausesPredictionInterface:
             collated: PausesPredictionCollateOutput = batch.collated_samples  # type: ignore
             seq_lens = collated.transcription_lengths
             for i in range(len(batch)):
-                if torch.sum(collated.sil_masks[i][1 : seq_lens[i] - 1]) == 0:  # type: ignore
+                if torch.sum(collated.sil_mask[i][1 : seq_lens[i] - 1]) == 0:  # type: ignore
                     trivial_sil = True
                     continue
                 else:
@@ -109,7 +109,7 @@ class PausesPredictionInterface:
         default_durations = torch.Tensor(default_durations)
 
         return PausesPredictionOutput(
-            sil_masks=collated.sil_masks,
+            sil_mask=collated.sil_mask,
             durations=default_durations.to(self.device),
         )
 

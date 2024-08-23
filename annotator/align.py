@@ -18,7 +18,9 @@ import numpy.typing as npt
 from tqdm import tqdm
 
 from speechflow.data_pipeline.core import DataPipeline
-from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
+    TTSTextProcessor,
+)
 from speechflow.data_pipeline.dataset_parsers import EasyDSParser
 from speechflow.data_server.helpers import LoaderParams, init_data_loader
 from speechflow.io import (
@@ -229,7 +231,7 @@ class Aligner:
 
         cfg_data["sampler"] = {"type": "SimpleSampler", "comb_by_len": True}
 
-        # todo: support legacy models
+        # TODO: support legacy models
         if "load_text_from_sega" not in cfg_data["preproc"]["pipe"]:
             cfg_data["preproc"]["pipe"].insert(1, "load_text_from_sega")
 
@@ -339,7 +341,7 @@ class Aligner:
         intervals = [
             interval
             for i, interval in enumerate(raw_intervals)
-            if not TextProcessor.is_service_symbol(symbols[i])
+            if not TTSTextProcessor.is_service_symbol(symbols[i])
         ]
         aligned_timestamps = Timestamps(np.asarray(intervals))
 
@@ -392,7 +394,7 @@ class Aligner:
                 if self._reverse_mode:
                     aligning_path = np.fliplr(aligning_path).copy()
                 lens = self._get_phonemes_lengths(aligning_path)
-                self._update_sega(s.file_path, s.audio_chunk, s.symbols, lens)
+                self._update_sega(s.file_path, s.audio_chunk, s.transcription_text, lens)
             except Exception as e:
                 LOGGER.error(f"error processing for {s.file_path}: {e}")
 

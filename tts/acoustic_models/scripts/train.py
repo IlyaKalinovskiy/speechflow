@@ -15,7 +15,7 @@ THIS_PATH = Path(__file__).absolute()
 ROOT = THIS_PATH.parents[3]
 sys.path.append(ROOT.as_posix())
 
-from speechflow.data_pipeline.datasample_processors import TextProcessor
+from speechflow.data_pipeline.datasample_processors import TTSTextProcessor
 from speechflow.data_server.helpers import init_data_loader_from_config
 from speechflow.data_server.loader import DataLoader
 from speechflow.io import Config, tp_PATH, tp_PATH_LIST
@@ -35,8 +35,8 @@ LOGGER = logging.getLogger("root")
 
 def update_model_config(cfg: Config, dl: DataLoader):
     lang = dl.client.find_info("lang", "RU")
-    text_proc = TextProcessor(lang=lang)
-    cfg["model"]["params"].n_symbols = text_proc.alphabet_size
+    text_proc = TTSTextProcessor(lang=lang)
+    cfg["model"]["params"].alphabet_size = text_proc.alphabet_size
     cfg["model"]["params"].n_symbols_per_token = text_proc.num_symbols_per_phoneme_token
 
     ds_stat = dl.client.find_info("DatasetStatistics")
@@ -85,9 +85,9 @@ def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
             dl_train.client.info["data_config"],
         )
 
-    if model_cfg.get("finetuning") is not None:
+    if model_cfg.get("finetune") is not None:
         model = prepare_finetuning(
-            model_cls, model_cfg["finetuning"], model_cfg["model"]["params"]
+            model_cls, model_cfg["finetune"], model_cfg["model"]["params"]
         )
     else:
         model = init_class_from_config(model_cls, model_cfg["model"]["params"])()

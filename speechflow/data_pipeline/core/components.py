@@ -249,6 +249,10 @@ class PipelineComponents:
     def subset_name(self):
         return self._subset_name
 
+    @property
+    def config(self):
+        return self._cfg.copy()
+
     def load_data(self, file_list, n_processes: int = 1):
         dataset = self.dataset_parser.read_datasamples(
             file_list=file_list,
@@ -590,7 +594,9 @@ class DataPipeline:
             temp = {}
             for name in self.subsets:
                 temp[name] = self[name].sampler
-                self[name].sampler = None
+                cfg = self[name].config.section("sampler")
+                sampler_cls = getattr(samplers, cfg["type"])
+                self[name].sampler = init_class_from_config(sampler_cls, cfg)()
 
             info["data_pipeline"] = Serialize.dump(self)
 
@@ -628,6 +634,9 @@ class DataPipeline:
 
         info.update({"singleton_handlers": singleton_handlers, "dataset": dataset})
         return info
+
+    def remove_pipeline(self, name: str):
+        self._pipelines.pop(name)
 
     @staticmethod
     def aggregate_info(

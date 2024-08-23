@@ -7,7 +7,7 @@ import torch
 
 from speechflow.data_pipeline.core import Batch, PipelineComponents
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
-from speechflow.data_pipeline.datasample_processors.text_processors import (
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
     Text,
     TextParser,
 )

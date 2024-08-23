@@ -6,7 +6,9 @@ import pytest
 from multilingual_text_parser import Doc, EmptyTextError, TextParser
 
 from speechflow.data_pipeline.datasample_processors.data_types import TextDataSample
-from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
+    TTSTextProcessor,
+)
 from speechflow.logging import trace
 from speechflow.logging.server import LoggingServer
 from speechflow.utils.fs import get_root_dir
@@ -46,7 +48,7 @@ def test_parse_book(
             device = "cpu"
 
         text_parser = TextParser(lang=lang, device=device, with_profiler=with_profiler)
-        text_proc = TextProcessor(lang=lang)
+        text_proc = TTSTextProcessor(lang=lang)
 
         for book in BOOK_NAME[lang]:
             book_path = get_root_dir() / "tests/data/texts" / book

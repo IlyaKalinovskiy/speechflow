@@ -18,5 +18,5 @@ class MNISTLoss(BaseCriterion):
         global_step: int = 0,
     ) -> tp.Dict[str, torch.Tensor]:
         output = F.log_softmax(output.logits, dim=1)
-        loss = F.nll_loss(output, target.labels)
+        loss = F.nll_loss(output, target.label)
         return {"NLLLoss": loss}

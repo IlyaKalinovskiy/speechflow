@@ -21,7 +21,7 @@ class EmbeddingCalculator(BaseTorchModel):
     def __init__(self, params: EmbeddingParams):
         super().__init__(params)
 
-        self.embedding = nn.Embedding(params.n_symbols, params.token_emb_dim)
+        self.embedding = nn.Embedding(params.alphabet_size, params.token_emb_dim)
         nn.init.orthogonal_(self.embedding.weight)
 
         if params.n_symbols_per_token > 1:
@@ -116,7 +116,9 @@ class EmbeddingCalculator(BaseTorchModel):
             for name, vales in params.averages.items():
                 self.averages[name] = VarianceEmbedding(**vales)
 
-    def get_token_embeddings(self, inputs: TTSForwardInput) -> tp.Optional[torch.Tensor]:
+    def get_transcription_embeddings(
+        self, inputs: TTSForwardInput
+    ) -> tp.Optional[torch.Tensor]:
         x = inputs.transcription
         if x is not None:
             if self.params.n_symbols_per_token == 1:

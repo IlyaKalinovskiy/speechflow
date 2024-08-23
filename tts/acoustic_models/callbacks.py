@@ -15,18 +15,20 @@ import pytorch_lightning as pl
 
 from pytorch_lightning import Callback
 
-from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
+    TTSTextProcessor,
+)
 from speechflow.utils.plotting import figure_to_ndarray, plot_1d, plot_spectrogram
 from tts.acoustic_models.interface.test_utterances_ru import UTTERANCE
 
-LOGGER = logging.getLogger()
+LOGGER = logging.getLogger("root")
 
 
 class TTSTrainingVisualizer(Callback):
     def __init__(
         self, lang: str = "RU", additional_plots: tp.Optional[tp.Tuple[str]] = None
     ):
-        self._text_parser = TextProcessor(lang=lang)
+        self._text_parser = TTSTextProcessor(lang=lang)
         self._additional_plots = additional_plots
 
     def on_validation_batch_end(
@@ -116,7 +118,7 @@ class TTSTrainingVisualizer(Callback):
                         )
 
         if "predicted_phonemes" in outputs.additional_content:
-            ph_target = targets.transcription[random_idx]
+            ph_target = targets.transcription_id[random_idx]
             if ph_target.ndim == 2:
                 ph_target = ph_target[:, 0]
 

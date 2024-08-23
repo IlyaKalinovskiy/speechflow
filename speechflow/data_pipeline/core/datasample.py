@@ -31,10 +31,10 @@ __all__ = [
 @dataclass
 class ToDict:
     def keys(self) -> tp.List[str]:
-        return list(self.to_dict().keys())
+        return [k for k in self.to_dict().keys() if not k.startswith("_")]
 
     def to_dict(self) -> tp.Dict:
-        return self.__dict__
+        return {k: v for k, v in self.__dict__.items() if not k.startswith("_")}
 
 
 @dataclass
@@ -258,7 +258,7 @@ class DataSample(ToDict, ToTensor, ToNumpy, Serialize):
         return sys.getsizeof(self)
 
     def __str__(self) -> str:
-        return self.file_path.as_posix() if self.file_path else ""
+        return self.file_path.as_posix() if self.file_path else self.label
 
     def __hash__(self) -> int:
         return hash(self.__uid)

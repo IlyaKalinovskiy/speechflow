@@ -17,7 +17,7 @@ from speechflow.utils.gpu import get_freer_gpu
 
 __all__ = ["train_arguments", "model_config_prepare"]
 
-LOGGER = logging.getLogger()
+LOGGER = logging.getLogger("root")
 
 
 def _gpu_allocation(devices: str) -> tp.Union[int, tp.MutableSequence[int]]:
@@ -174,15 +174,15 @@ def model_config_prepare(
 
     if (
         model_cfg["trainer"].get("resume_from_checkpoint") is not None
-        or "finetuning" in model_cfg
+        or "finetune" in model_cfg
     ):
         assert data_config_path
         try:
             assert model_config_path and data_config_path
             ckpt_path = model_cfg["trainer"].get("resume_from_checkpoint")
 
-            if "finetuning" in model_cfg:
-                ckpt_path = model_cfg["finetuning"].get("checkpoint")
+            if "finetune" in model_cfg:
+                ckpt_path = model_cfg["finetune"].get("ckpt_path")
 
             if isinstance(data_config_path, Path):
                 data_config_path = [data_config_path]
@@ -211,9 +211,12 @@ def model_config_prepare(
     else:
         model_cfg["trainer"].pop("finetune_epochs", None)
 
-    if "finetuning" in model_cfg:
-        ckpt_path = model_cfg["finetuning"].get("checkpoint")
-        _, cfg_model_temp = ExperimentSaver.load_configs_from_checkpoint(ckpt_path)
-        model_cfg["model"]["params"].update(cfg_model_temp["model"]["params"])
+    if "finetune" in model_cfg:
+        try:
+            ckpt_path = model_cfg["finetune"].get("ckpt_path")
+            _, cfg_model_temp = ExperimentSaver.load_configs_from_checkpoint(ckpt_path)
+            model_cfg["model"]["params"].update(cfg_model_temp["model"]["params"])
+        except KeyError as e:
+            LOGGER.error(trace("model_config_prepare", e))
 
     return model_cfg

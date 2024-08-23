@@ -12,7 +12,7 @@ from nlp.prosody_prediction.data_types import (
 )
 from speechflow.data_server.helpers import init_data_loader_from_config
 from speechflow.training.saver import ExperimentSaver
-from speechflow.training.utils.pad_utils import pad, pad_2d
+from speechflow.training.utils.pad_utils import pad_1d, pad_2d
 from speechflow.utils.init import init_class_from_config
 
 
@@ -43,12 +43,12 @@ def eval(data_loader, model, callback, batch_processor, log_to_file=True):
 
     if outputs_all.binary:
         outputs_all.binary, _ = pad_2d(outputs_all.binary, pad_val=0, n_channel=2)
-        targets_all.binary, _ = pad(targets_all.binary, pad_val=-100)
+        targets_all.binary, _ = pad_1d(targets_all.binary, pad_val=-100)
     if outputs_all.category:
         outputs_all.category, _ = pad_2d(
             outputs_all.category, pad_val=0, n_channel=outputs_all.category[0].shape[1]
         )
-        targets_all.category, _ = pad(targets_all.category, pad_val=-100)
+        targets_all.category, _ = pad_1d(targets_all.category, pad_val=-100)
 
     metrics, report = callback.compute_metrics(outputs_all, targets_all)
 

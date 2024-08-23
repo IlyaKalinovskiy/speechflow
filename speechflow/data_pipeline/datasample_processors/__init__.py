@@ -14,6 +14,6 @@ from speechflow.data_pipeline.datasample_processors.image_processors import *
 from speechflow.data_pipeline.datasample_processors.spectrogram_processors import *
 from speechflow.data_pipeline.datasample_processors.speech_quality import *
 from speechflow.data_pipeline.datasample_processors.ssml_processors import *
-from speechflow.data_pipeline.datasample_processors.text_processors import *
 from speechflow.data_pipeline.datasample_processors.tts_processors import *
 from speechflow.data_pipeline.datasample_processors.tts_singletons import *
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import *

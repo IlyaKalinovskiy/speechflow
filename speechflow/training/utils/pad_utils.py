@@ -6,11 +6,13 @@ import torch
 
 from torch import Tensor
 
-__all__ = ["pad", "pad_2d", "get_mask_from_lengths2", "sequence_collate"]
+__all__ = ["pad_1d", "pad_2d", "get_mask_from_lengths2"]
 
 
-def pad(
-    sequences: tp.List[Tensor], pad_val: tp.Union[int, float] = 0, multiple: int = None
+def pad_1d(
+    sequences: tp.List[Tensor],
+    pad_val: tp.Union[int, float] = 0,
+    multiple: tp.Optional[int] = None,
 ):
     lens = [len(x) for x in sequences]
     index, max_len = max(enumerate(lens), key=itemgetter(1))
@@ -18,6 +20,8 @@ def pad(
 
     if multiple is not None:
         pad_len = multiple - max_len % multiple
+        if pad_len == multiple:
+            pad_len = 0
     else:
         pad_len = 0
 
@@ -30,15 +34,15 @@ def pad(
     for i, s in enumerate(sequences):
         tensor_to_fill[i, : lens[i]] = s
 
-    lens[index] += pad_len
+    # lens[index] += pad_len
     return tensor_to_fill, lens
 
 
 def pad_2d(
     sequences: tp.List[Tensor],
+    n_channel: int,
     pad_val: tp.Union[int, float] = 0,
-    n_channel: int = 80,
-    multiple: int = None,
+    multiple: tp.Optional[int] = None,
 ):
     lens = [len(x) for x in sequences]
     index, max_len = max(enumerate(lens), key=itemgetter(1))
@@ -46,6 +50,8 @@ def pad_2d(
 
     if multiple is not None:
         pad_len = multiple - max_len % multiple
+        if pad_len == multiple:
+            pad_len = 0
     else:
         pad_len = 0
 
@@ -58,7 +64,7 @@ def pad_2d(
     for i, s in enumerate(sequences):
         tensor_to_fill[i, : lens[i], :] = s
 
-    lens[index] += pad_len
+    # lens[index] += pad_len
     return tensor_to_fill, torch.LongTensor(lens)
 
 
@@ -89,25 +95,3 @@ def get_mask_from_lengths2(lengths_tensor: Tensor) -> Tensor:
     ids = torch.tensor(range(0, max_len), dtype=torch.int64, device=lengths_tensor.device)
     mask = ids < lengths_tensor.unsqueeze(1)
     return mask  # type: ignore
-
-
-def sequence_collate(
-    batch: tp.List[tp.Any],
-    attr_name: str,
-    pad_id: tp.Union[int, float] = 0,
-    multiple: int = None,
-):
-    if getattr(batch[0], attr_name) is not None:
-        seq = [getattr(sample, attr_name) for sample in batch]
-        if getattr(batch[0], attr_name).ndim == 1:
-            seq, seq_lens = pad(seq, pad_val=pad_id, multiple=multiple)
-        else:
-            seq, seq_lens = pad_2d(
-                seq, n_channel=seq[0].shape[1], pad_val=pad_id, multiple=multiple
-            )
-        seq_lens = torch.LongTensor(seq_lens)
-    else:
-        seq = None
-        seq_lens = None
-
-    return seq, seq_lens

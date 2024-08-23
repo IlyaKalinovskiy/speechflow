@@ -217,7 +217,7 @@ class VocoderEvaluationInterface(VocoderLoader):
             collated.speech_quality_emb = collated.speech_quality_emb * 0 + 5
 
             _input = VocoderForwardInput(
-                mel_spectrogram=collated.mel_spectrogram,
+                spectrogram=collated.mel_spectrogram,
                 spectrogram_lengths=collated.spectrogram_lengths,
                 ssl_feat=collated.ssl_feat,
                 ssl_feat_lengths=collated.ssl_feat_lengths,
@@ -262,7 +262,9 @@ if __name__ == "__main__":
         from tqdm import tqdm
 
         root_dir = Path("/data3/i.kalinovskiy")
-        voc_path = root_dir / "vocos_checkpoint_epoch=22_step=575000_val_loss=10.0199.ckpt"
+        voc_path = (
+            root_dir / "vocos_checkpoint_epoch=22_step=575000_val_loss=10.0199.ckpt"
+        )
         test_files = root_dir / "eng_spontan/wav_16k"
         result_path = root_dir / "eng_spontan/result"
         ref_file = root_dir / "4922.wav"

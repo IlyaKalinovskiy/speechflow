@@ -39,7 +39,7 @@ parser:
 preproc:
   pipe: [load_audio, load_text_from_sega,
          voice_bio_speechbrain, store_bio_emb, voice_bio_wespeaker, mean_bio_embedding,
-         speech_quality, spectrogram, melscale, ssl_features,
+         speech_quality, spectrogram, melscale, ssl,
          trim, mu_law]
   pipe_cfg:
     load_audio:
@@ -82,7 +82,7 @@ preproc:
           n_mels: 80
           f_min: 0
           f_max: 8000
-    ssl_features:
+    ssl:
       type: SSLProcessor
       ssl_type: { default: Wav2Vec, ml: WavLM }
       resize_from: mel

@@ -22,9 +22,9 @@ class PausesPredictionLoss(nn.Module):
 
         predicted_durations = output.durations.squeeze(-1)
         target_durations = target.durations.float()
-        sil_masks = output.sil_masks
+        sil_mask = output.sil_mask
 
-        _is_sil = sil_masks > 0
+        _is_sil = sil_mask > 0
         predicted_sil = predicted_durations.masked_select(_is_sil)
         target_sil = target_durations.masked_select(_is_sil)
 

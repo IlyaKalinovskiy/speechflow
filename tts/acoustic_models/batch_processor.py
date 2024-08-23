@@ -48,11 +48,11 @@ class TTSBatchProcessor(BaseBatchProcessor):
         _input: TTSForwardInput = init_class_from_config(
             TTSForwardInput, collated.to_dict(), check_keys=False
         )(
-            batch_tag=batch_tag,
-            batch_idx=batch_idx,
-            global_step=global_step,
             waveform=collated.mu_law_waveform,
-            aggregate_mel=collated.aggregated.get("mel"),
+            waveform_lengths=collated.mu_law_waveform_lengths,
+            transcription=collated.transcription_id,
+            transcription_by_frames=collated.transcription_id_by_frames,
+            linear_spectrogram=collated.magnitude,
             aggregate_energy=collated.aggregated.get("energy"),
             aggregate_spectral_flatness=collated.aggregated.get("spectral_flatness"),
             aggregate_spectral_envelope=collated.aggregated.get("spectral_envelope"),
@@ -63,26 +63,20 @@ class TTSBatchProcessor(BaseBatchProcessor):
             additional_inputs=collated.additional_fields,
             input_lengths=collated.transcription_lengths,
             output_lengths=collated.spectrogram_lengths,
+            batch_tag=batch_tag,
+            batch_idx=batch_idx,
+            global_step=global_step,
         )
 
         _target: TTSTarget = init_class_from_config(
             TTSTarget, collated.to_dict(), check_keys=False
         )(
+            transcription=collated.transcription_id,
+            input_lengths=collated.transcription_lengths,
+            output_lengths=collated.spectrogram_lengths,
             batch_tag=batch_tag,
             batch_idx=batch_idx,
             global_step=global_step,
-            spectrogram=collated.mel_spectrogram,
-            aggregate_mel=collated.aggregated.get("mel"),
-            aggregate_energy=collated.aggregated.get("energy"),
-            aggregate_spectral_flatness=collated.aggregated.get("spectral_flatness"),
-            aggregate_spectral_envelope=collated.aggregated.get("spectral_envelope"),
-            aggregate_pitch=collated.aggregated.get("pitch"),
-            aggregate_curv_energy=collated.aggregated.get("curv_energy"),
-            aggregate_curv_pitch=collated.aggregated.get("curv_pitch"),
-            prosody=collated.aggregated.get("pitch_contour"),
-            additional_inputs=collated.additional_fields,
-            input_lengths=collated.transcription_lengths,
-            output_lengths=collated.spectrogram_lengths,
         )
 
         return _input.to(self.device), _target.to(self.device)

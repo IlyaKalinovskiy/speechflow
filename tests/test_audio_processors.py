@@ -119,7 +119,7 @@ def test_spectrogram(n: int = 1, visualize: bool = False):
     # assert abs(np.sum(lds.mel) - torch.sum(tds.mel)) < 1e-2
 
     for method in ["pyworld", "torchcrepe"]:
-        pitch_proc = PitchProcessor(method=method, model="tiny")
+        pitch_proc = PitchProcessor(method=method, torchcrepe_model="tiny")
         lds = pitch_proc.process(lds)
         tds = pitch_proc.process(tds)
         with Profiler(f"pitch {method}"):

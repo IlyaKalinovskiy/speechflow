@@ -93,7 +93,7 @@ class AdditionalModules(Component):
                 self.inverse_phoneme_proj[name] = nn.ModuleList()
                 for _ in range(params.n_symbols_per_token):
                     self.inverse_phoneme_proj[name].append(
-                        InverseGradPhonemePredictor(emb_size, params.n_symbols)
+                        InverseGradPhonemePredictor(emb_size, params.alphabet_size)
                     )
 
         if params.addm_apply_token_classifier:
@@ -103,7 +103,9 @@ class AdditionalModules(Component):
                     emb_size = self.components_output_dim[name]()
                 self.phoneme_proj[name] = nn.ModuleList()
                 for _ in range(params.n_symbols_per_token):
-                    self.phoneme_proj[name].append(Regression(emb_size, params.n_symbols))
+                    self.phoneme_proj[name].append(
+                        Regression(emb_size, params.alphabet_size)
+                    )
 
     @property
     def output_dim(self):

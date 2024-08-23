@@ -14,7 +14,9 @@ from speechflow.data_pipeline.core import Batch, PipelineComponents
 from speechflow.data_pipeline.datasample_processors.data_types import (
     ProsodyPredictionDataSample,
 )
-from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
+    TTSTextProcessor,
+)
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.fs import get_module_dir
 from speechflow.utils.init import init_class_from_config
@@ -81,11 +83,11 @@ class ProsodyPredictionInterface:
         self._lang = lang
 
         self.service_tokens = (
-            TextProcessor.pad,
-            TextProcessor.bos,
-            TextProcessor.eos,
-            TextProcessor.sil,
-            TextProcessor.unk,
+            TTSTextProcessor.pad,
+            TTSTextProcessor.bos,
+            TTSTextProcessor.eos,
+            TTSTextProcessor.sil,
+            TTSTextProcessor.unk,
         )
 
     @torch.inference_mode()

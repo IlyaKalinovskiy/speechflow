@@ -58,6 +58,7 @@ class DumpProcessor:
         mode: str = "file_path",
         fields: tp.Optional[tp.Union[str, tp.List[str]]] = None,
         functions: tp.Optional[tp.Union[str, tp.List[str]]] = None,
+        track_broken_samples: bool = False,
         skip_samples_without_dump: bool = False,
         update_functions: tp.Optional[tp.Union[str, tp.List[str]]] = None,
     ):
@@ -70,6 +71,7 @@ class DumpProcessor:
         self.data_root = data_root
         self.folder_path = folder_path
         self.mode = mode
+        self.track_broken_samples = track_broken_samples
         self.skip_samples_without_dump = skip_samples_without_dump
 
         (self.folder_path / "files").mkdir(parents=True, exist_ok=True)
@@ -99,8 +101,11 @@ class DumpProcessor:
             if func not in self.preproc_functions:
                 self.preproc_functions.append(func)
 
-        self.skip_flist_path = self.folder_path / "skip_samples.txt"
-        self.skip_samples = self._load_skip_samples(self.skip_flist_path)
+        if track_broken_samples:
+            self.skip_flist_path = self.folder_path / "skip_samples.txt"
+            self.skip_samples = self._load_skip_samples(self.skip_flist_path)
+        else:
+            self.skip_samples = []
 
         self.preproc_functions_storage: tp.Dict = {}
 
@@ -277,10 +282,11 @@ class DumpProcessor:
         self.clear_storage()
 
     def skip(self, sample: DataSample):
-        path = self._get_sample_path(sample)
-        with codecs.open(self.skip_flist_path.as_posix(), "a", "utf-8") as f:
-            f.write(f"{path}\n")
-        self.skip_samples = self._load_skip_samples(self.skip_flist_path)
+        if self.track_broken_samples:
+            path = self._get_sample_path(sample)
+            with codecs.open(self.skip_flist_path.as_posix(), "a", "utf-8") as f:
+                f.write(f"{path}\n")
+            self.skip_samples = self._load_skip_samples(self.skip_flist_path)
 
     def update_storage(
         self,

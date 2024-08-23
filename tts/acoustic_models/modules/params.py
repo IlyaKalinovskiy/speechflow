@@ -19,9 +19,7 @@ __all__ = [
 ]
 
 tp_TEXT_FEATURES = tp.Literal["transcription", "lm_feat"]
-tp_AUDIO_FEATURES = tp.Literal[
-    "waveform", "linear_spectrogram", "mel_spectrogram", "ssl_feat", "ac_feat"
-]
+tp_AUDIO_FEATURES = tp.Literal["waveform", "spectrogram", "ssl_feat", "ac_feat"]
 tp_BIOMETRIC_MODELS = tp.Literal["resemblyzer", "speechbrain", "wespeaker"]
 
 
@@ -29,10 +27,10 @@ class EmbeddingParams(BaseTorchModelParams):
     """Embedding component parameters."""
 
     input: tp.Union[tp_TEXT_FEATURES, tp_AUDIO_FEATURES] = "transcription"
-    target: tp_AUDIO_FEATURES = "mel_spectrogram"
+    target: tp_AUDIO_FEATURES = "spectrogram"
 
     # Transcription embeddings parameters
-    n_symbols: int = Field(ge=1, default=1)
+    alphabet_size: int = Field(ge=1, default=1)
     n_symbols_per_token: int = Field(ge=1, default=1)
     token_emb_dim: int = 256
 

@@ -11,7 +11,7 @@ THIS_PATH = Path(__file__).absolute()
 ROOT = THIS_PATH.parents[3]
 sys.path.append(ROOT.as_posix())
 
-from speechflow.data_pipeline.datasample_processors import TextProcessor
+from speechflow.data_pipeline.datasample_processors import TTSTextProcessor
 from speechflow.data_server.helpers import init_data_loader_from_config
 from speechflow.data_server.loader import DataLoader
 from speechflow.io import Config
@@ -38,8 +38,8 @@ def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]):
     batch_processor = init_class_from_config(batch_processor_cls, model_cfg["batch"])()
 
     lang = dl_train.client.find_info("lang")
-    text_proc = TextProcessor(lang=lang)
-    model_cfg["model"]["params"].n_symbols = text_proc.alphabet_size
+    text_proc = TTSTextProcessor(lang=lang)
+    model_cfg["model"]["params"].alphabet_size = text_proc.alphabet_size
     model_cfg["model"][
         "params"
     ].n_symbols_per_token = text_proc.num_symbols_per_phoneme_token

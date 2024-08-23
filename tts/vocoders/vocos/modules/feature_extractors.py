@@ -6,10 +6,11 @@ import torchaudio
 from torch import nn
 from torch.nn import functional as F
 
-from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
+    TTSTextProcessor,
+)
 from speechflow.training.losses.vae_loss import VAELoss
 from speechflow.training.utils.tensor_utils import get_mask_from_lengths
-from tts.acoustic_models.batch_processor import TTSBatchProcessor
 from tts.acoustic_models.modules import TTS_ENCODERS
 from tts.acoustic_models.modules.additional_modules import (
     AdditionalModules,
@@ -118,12 +119,14 @@ class AudioFeatures(FeatureExtractor):
         pitch_interval: tp.Tuple[float, float] = (0, 850),
         average_energy_interval: tp.Tuple[float, float] = (0, 150),
         average_pitch_interval: tp.Tuple[float, float] = (0, 850),
+        plbert_emb_dim: int = 768,
         use_lang_emb: bool = False,
         use_speaker_emb: bool = False,
         use_speech_quality_emb: bool = False,
         use_style: bool = False,
         use_energy: bool = False,
         use_pitch: bool = False,
+        use_plbert: bool = False,
         use_ssl_adjustment: bool = False,
         use_vq: bool = False,
         use_averages: bool = False,
@@ -147,8 +150,6 @@ class AudioFeatures(FeatureExtractor):
                 return style_emb_dim
             else:
                 raise NotImplementedError(f"feat_name '{feat_name}' is not supported")
-
-        self.tts_bp = TTSBatchProcessor()
 
         self.input_feat_type = input_feat_type
         self.style_feat_type = style_feat_type
@@ -293,6 +294,9 @@ class AudioFeatures(FeatureExtractor):
         else:
             self.pitch_predictor = None
 
+        if use_plbert:
+            self.plbert_proj = nn.Linear(plbert_emb_dim, in_dim)
+
         # ----- init 1d source-filter encoder -----
 
         if use_energy or use_pitch:
@@ -327,9 +331,9 @@ class AudioFeatures(FeatureExtractor):
         # ----- init additional modules -----
 
         if use_auxiliary_classification_loss:
-            text_proc = TextProcessor(lang="MULTILANG")
+            text_proc = TTSTextProcessor(lang="MULTILANG")
             addm_params = AdditionalModulesParams()
-            addm_params.n_symbols = text_proc.alphabet_size
+            addm_params.alphabet_size = text_proc.alphabet_size
             addm_params.n_symbols_per_token = text_proc.num_symbols_per_phoneme_token
             addm_params.n_speakers = n_speakers
             addm_params.speaker_emb_dim = speaker_emb_dim
@@ -371,7 +375,7 @@ class AudioFeatures(FeatureExtractor):
         if self.input_feat_type == "linear_spec":
             return inputs.linear_spectrogram, inputs.spectrogram_lengths
         elif self.input_feat_type == "mel_spec":
-            return inputs.mel_spectrogram, inputs.spectrogram_lengths
+            return inputs.spectrogram, inputs.spectrogram_lengths
         elif self.input_feat_type == "ssl_feat":
             return inputs.ssl_feat, inputs.ssl_feat_lengths
 
@@ -404,7 +408,7 @@ class AudioFeatures(FeatureExtractor):
         if self.style_feat_type == "linear_spec":
             source, source_lengths = inputs.linear_spectrogram, inputs.spectrogram_lengths
         elif self.style_feat_type == "mel_spec":
-            source, source_lengths = inputs.mel_spectrogram, inputs.spectrogram_lengths
+            source, source_lengths = inputs.spectrogram, inputs.spectrogram_lengths
         elif self.style_feat_type == "ssl_feat":
             source, source_lengths = inputs.ssl_feat, inputs.ssl_feat_lengths
         elif self.style_feat_type == "speaker_emb":
@@ -510,6 +514,9 @@ class AudioFeatures(FeatureExtractor):
             inputs.energy = inputs.energy * re[:, 2:3] + re[:, 0:1]
             inputs.pitch = inputs.pitch * rp[:, 2:3] + rp[:, 0:1]
 
+        if self.plbert_proj is not None:
+            x += self.plbert_proj(inputs.plbert_feat)
+
         enc_input = ComponentInput(content=x, content_lengths=x_lens, model_inputs=inputs)
         enc_output = self.encoder(enc_input)
         x = enc_output.content
@@ -532,7 +539,7 @@ class AudioFeatures(FeatureExtractor):
             )
             mel_predict = self.mel_predictor(enc_input).content[0]
             losses["auxiliary_mel_loss"] = 0.1 * F.mse_loss(
-                mel_predict, inputs.mel_spectrogram
+                mel_predict, inputs.spectrogram
             )
 
         if "spec_chunk" in inputs.additional_inputs:

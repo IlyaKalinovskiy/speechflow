@@ -22,9 +22,9 @@ from nlp.prosody_prediction.data_types import (
     ProsodyPredictionTarget,
 )
 from speechflow.data_server.loader import DataLoader
-from speechflow.training.utils.pad_utils import pad, pad_2d
+from speechflow.training.utils.pad_utils import pad_1d, pad_2d
 
-LOGGER = logging.getLogger()
+LOGGER = logging.getLogger("root")
 
 __all__ = ["ProsodyCallback"]
 
@@ -75,14 +75,14 @@ class ProsodyCallback(Callback):
 
         if outputs_all.binary:
             outputs_all.binary, _ = pad_2d(outputs_all.binary, pad_val=0, n_channel=2)
-            targets_all.binary, _ = pad(targets_all.binary, pad_val=-100)
+            targets_all.binary, _ = pad_1d(targets_all.binary, pad_val=-100)
         if outputs_all.category:
             outputs_all.category, _ = pad_2d(
                 outputs_all.category,
                 pad_val=0,
                 n_channel=outputs_all.category[0].shape[1],
             )
-            targets_all.category, _ = pad(targets_all.category, pad_val=-100)
+            targets_all.category, _ = pad_1d(targets_all.category, pad_val=-100)
 
         metrics, reports = self.compute_metrics(outputs_all, targets_all)
         for name in self.names:
@@ -214,7 +214,7 @@ class ProsodyCallback(Callback):
                     result[
                         "tokens"
                     ] += f"| {self._tokenizer.decode(inputs[sample_idx][token_idx])} "
-                    result["sep"] += f"| ---- "
+                    result["sep"] += "| ---- "
                     for name in self.names:
                         label = predictions[name][sample_idx][token_idx]
                         if name == "binary":
@@ -222,11 +222,11 @@ class ProsodyCallback(Callback):
                         else:
                             label_idx = label.argmax(-1)
                             result[
-                                f"pred_category_prob"
+                                "pred_category_prob"
                             ] += f"| {round(label[label_idx].item(), 2)} "
-                            result[f"pred_category_label"] += f"| {label_idx} "
+                            result["pred_category_label"] += f"| {label_idx} "
                             result[
-                                f"targets_category"
+                                "targets_category"
                             ] += f"| {targets[name][sample_idx][token_idx]} "
 
             result["tokens"] += "|"
