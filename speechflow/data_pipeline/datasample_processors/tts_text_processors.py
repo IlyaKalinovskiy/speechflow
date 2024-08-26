@@ -884,8 +884,12 @@ class MultilingualPLBert(BaseDSProcessor):
                         phonemes_with_punct.append(symbol)
 
         assert len(phonemes) == 0
-        phonemes_to_id = torch.LongTensor(self._preproc("".join(phonemes_with_punct)))
-        feat = self._pl_bert(phonemes_to_id.unsqueeze(0)).last_hidden_state.squeeze(0)
+        phonemes_to_id = torch.LongTensor(self._preproc("".join(phonemes_with_punct))).to(
+            self.device
+        )
+        feat = (
+            self._pl_bert(phonemes_to_id.unsqueeze(0)).last_hidden_state.squeeze(0).cpu()
+        )
 
         i = 0
         zeros = torch.zeros((1, feat.shape[-1]))
@@ -904,9 +908,9 @@ class MultilingualPLBert(BaseDSProcessor):
     @torch.inference_mode()
     def _get_from_ssl_tokens(self, ds: tp.Union[TextDataSample, AudioDataSample]):
         phonemes = ds.ssl_feat.tokens
-        phonemes_to_id = torch.LongTensor(self._preproc(phonemes))
+        phonemes_to_id = torch.LongTensor(self._preproc(phonemes)).to(self.device)
         feat = self._pl_bert(phonemes_to_id.unsqueeze(0)).last_hidden_state.squeeze(0)
-        ds.plbert_feat = feat
+        ds.plbert_feat = feat.cpu()
         return ds
 
     @PipeRegistry.registry(inputs={"sent", "transcription_text"}, outputs={"plbert_feat"})

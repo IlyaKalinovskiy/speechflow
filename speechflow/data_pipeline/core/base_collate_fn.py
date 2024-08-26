@@ -30,30 +30,32 @@ class BaseCollateOutput(DataSample, MovableToDevice, Pinnable, Detachable):
             return "|".join([x for x in self.label])
 
     def to_relative_lengths(self) -> "BaseCollateOutput":
-        for k in self.all_keys():
-            if hasattr(self, f"{k}_lengths"):
-                field = getattr(self, k)
-                field_lengths = getattr(self, f"{k}_lengths")
+        for k in self.keys():
+            if k.endswith("_lengths"):
+                field = None
+                field_lengths = getattr(self, k)
+                if field_lengths is None:
+                    continue
+
+                t_name = k.replace("_lengths", "", 1)
+                for t in self.keys():
+                    if t == t_name:
+                        field = getattr(self, t)
+                        break
+                else:
+                    for t in self.keys():
+                        if t.startswith(t_name):
+                            field = getattr(self, t)
+                            if isinstance(field, torch.Tensor):
+                                break
+
                 if (
-                    field_lengths is not None
+                    field is not None
+                    and field_lengths is not None
                     and field.ndim >= 2
                     and field_lengths.max() > 1
                 ):
-                    setattr(self, f"{k}_lengths", field_lengths / field.shape[1])
-
-        return self
-
-    def to_absolute_lengths(self) -> "BaseCollateOutput":
-        for k in self.all_keys():
-            if hasattr(self, f"{k}_lengths"):
-                field = getattr(self, k)
-                field_lengths = getattr(self, f"{k}_lengths")
-                if (
-                    field_lengths is not None
-                    and field.ndim >= 2
-                    and field_lengths.max() <= 1
-                ):
-                    setattr(self, f"{k}_lengths", field_lengths * field.shape[1])
+                    setattr(self, k, field_lengths / field.shape[1])
 
         return self
 
