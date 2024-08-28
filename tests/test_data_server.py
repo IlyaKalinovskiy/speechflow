@@ -38,7 +38,7 @@ def test_server(
             loader = list(loaders.values())[0]
             label_counter: dict = {}
             for i in tqdm(range(num_epoch * len(loader))):
-                batch = next(loader)
+                batch = loader.next_batch()
                 print(i)
                 for sample in batch.data_samples:
                     label = f"L_{sample.label}"

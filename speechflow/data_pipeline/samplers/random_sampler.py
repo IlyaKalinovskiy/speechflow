@@ -19,9 +19,13 @@ class RandomSampler(SimpleSampler):
     def __init__(
         self,
         comb_by_len: bool = False,
-        is_use_neighbors: bool = False,
+        use_neighbors: bool = False,
+        use_dynamic_batch: bool = False,
+        max_batch_length: int = 100,
     ):
-        super().__init__(comb_by_len, is_use_neighbors)
+        super().__init__(comb_by_len, use_neighbors)
+        self._use_dynamic_batch = use_dynamic_batch
+        self._max_batch_length = max_batch_length
         self._total_samples = 0
 
     def set_dataset(self, data: Dataset):
@@ -47,5 +51,15 @@ class RandomSampler(SimpleSampler):
             chunk = self.add_neighbors(chunk=chunk)
         else:
             chunk = super().sampling(batch_size)
+
+        if self._use_dynamic_batch:
+            new_chunk = []
+            chunk_len = 0
+            for item in reversed(chunk):
+                if item is None or chunk_len + len(item) < self._max_batch_length:
+                    new_chunk.append(item)
+                    chunk_len += len(item)
+
+            chunk = new_chunk[::-1]
 
         return chunk

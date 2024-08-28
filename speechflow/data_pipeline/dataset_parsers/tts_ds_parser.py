@@ -36,7 +36,7 @@ class TTSDSParser(BaseDSParser):
     ):
         super().__init__(
             preproc_fn,
-            input_fields={"file_path", "sega", "label"},
+            input_fields={"file_path", "label", "sega"},
             memory_bound=memory_bound,
             chunk_size=chunk_size,
             raise_on_converter_exc=raise_on_converter_exc,

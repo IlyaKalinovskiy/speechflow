@@ -101,6 +101,7 @@ class EmbeddingCalculator(BaseTorchModel):
         self.projections: tp.Dict[str, tp.Callable] = {}
         for feat_name in [
             "lm_feat",
+            "plbert_feat",
             "linear_spectrogram",
             "mel_spectrogram",
             "ssl_feat",
@@ -218,6 +219,9 @@ class EmbeddingCalculator(BaseTorchModel):
 
     def get_lm_feat(self, inputs: TTSForwardInput) -> tp.Optional[torch.Tensor]:
         return self._get_features(inputs, "lm_feat")
+
+    def get_plbert_feat(self, inputs: TTSForwardInput) -> tp.Optional[torch.Tensor]:
+        return self._get_features(inputs, "plbert_feat")
 
     def get_linear_spectrogram(
         self, inputs: TTSForwardInput

@@ -26,21 +26,24 @@ class FillingSampler(RandomSampler):
     def __init__(
         self,
         fields_to_compute_weight: tp.List[str],
-        chunks_ratio: tp.Optional[tp.List] = None,
-        comb_by_len: bool = False,
-        is_use_neighbors: bool = False,
         epoch_size: int = 1000,
+        comb_by_len: bool = False,
+        use_neighbors: bool = False,
+        use_dynamic_batch: bool = False,
+        max_batch_length: int = 100,
+        chunks_ratio: tp.Optional[tp.List] = None,
         filter_tags: tp.Optional[tp.List] = None,
     ):
-        super().__init__(comb_by_len, is_use_neighbors)
+        super().__init__(comb_by_len, use_neighbors, use_dynamic_batch, max_batch_length)
         self._fields_to_compute_weight = fields_to_compute_weight
         self._chunks_ratio = chunks_ratio
         self._epoch_size_w = epoch_size
+        self._num_labels = 0
 
         self._chunks_size = None
         self._probs = None
         self._matrix = None  # matrix with frequencies of size (n_samples, n_classes)
-        self.filter_tag = [] if filter_tags is None else filter_tags
+        self._filter_tag = [] if filter_tags is None else filter_tags
 
     def set_dataset(self, data: Dataset):
         super().set_dataset(data)
@@ -58,13 +61,13 @@ class FillingSampler(RandomSampler):
             tag.item()
             for sample in samples
             for tag in sample
-            if tag not in self.filter_tag
+            if tag not in self._filter_tag
         ]
         self.unique_labels = np.unique(np.array(all_tags))
 
         N = len(samples)  # number of documents
-        self.num_labels = self.unique_labels.shape[0]  # number of terms
-        weights = np.zeros((N, self.num_labels))  # matrix frequencies
+        self._num_labels = self.unique_labels.shape[0]  # number of terms
+        weights = np.zeros((N, self._num_labels))  # matrix frequencies
         for idx, sample in enumerate(samples):
             weights = self.compute_freqs(idx, sample, weights)
         self._matrix = weights
@@ -74,7 +77,7 @@ class FillingSampler(RandomSampler):
     ) -> npt.NDArray:
         tags, tag_weight = np.unique(sample, return_counts=True)
         for i, tag in enumerate(tags):
-            if tag not in self.filter_tag:
+            if tag not in self._filter_tag:
                 if len(weights.shape) == 1:
                     weights[np.where(self.unique_labels == tag)[0][0]] += tag_weight[i]
                 else:
@@ -91,7 +94,7 @@ class FillingSampler(RandomSampler):
 
         # first, randomly init 0.25 of epoch
         field = self._fields_to_compute_weight[0]
-        label_counts = np.zeros(self.num_labels)
+        label_counts = np.zeros(self._num_labels)
         self._current_data = list(
             np.random.choice(self._data, self._chunks_size // 4, False)
         )

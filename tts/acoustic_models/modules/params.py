@@ -50,7 +50,9 @@ class EmbeddingParams(BaseTorchModelParams):
 
     # LM features parameters
     lm_feat_dim: int = 1024
-    lm_feat_proj_dim: int = 1024
+    lm_feat_proj_dim: int = 256
+    plbert_feat_dim: int = 768
+    plbert_feat_proj_dim: int = 256
 
     # spectrogram parameters
     linear_spectrogram_dim: int = 513

@@ -557,7 +557,7 @@ def calc_invert_durations(ds: TTSDataSample, token_level: bool = False):
 @PipeRegistry.registry(inputs={"durations"}, outputs={"aggregate"})
 def aggregate_by_phoneme(
     ds: TTSDataSample,
-    attributes: tp.Union[tp.List[str], str],
+    attributes: tp.Union[str, tp.List[str]],
     agg: str = "mean",
 ):
     """Apply aggregation function to TTSDataSample attribute in time domain.
@@ -669,7 +669,7 @@ def aggregate_by_phoneme(
 @PipeRegistry.registry(inputs={"durations"}, outputs={"aggregate"})
 def curvature_estimate_by_phoneme(
     ds: TTSDataSample,
-    attributes: tp.Union[tp.List[str], str],
+    attributes: tp.Union[str, tp.List[str]],
 ):
     """Apply curvature estimate function to TTSDataSample attribute in time domain.
 

@@ -37,6 +37,7 @@ class EmbeddingComponent(Component):
     def forward_step(self, inputs: TTSForwardInput) -> ComponentOutput:  # type: ignore
         transcription = self.emb_calculator.get_transcription_embeddings(inputs)
         lm_feat = self.emb_calculator.get_lm_feat(inputs)
+        plbert_feat = self.emb_calculator.get_plbert_feat(inputs)
         linear_spectrogram = self.emb_calculator.get_linear_spectrogram(inputs)
         mel_spectrogram = self.emb_calculator.get_mel_spectrogram(inputs)
         ssl_feat = self.emb_calculator.get_ssl_feat(inputs)
@@ -80,6 +81,7 @@ class EmbeddingComponent(Component):
             transcription=transcription,
             ling_feat=ling_feat,
             lm_feat=lm_feat,
+            plbert_feat=plbert_feat,
             lang_emb=lang_emb,
             speaker_emb=speaker_emb,
             biometric_emb=biometric_emb,

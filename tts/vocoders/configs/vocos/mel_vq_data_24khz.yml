@@ -44,7 +44,7 @@ preproc:
          add_pauses_from_timestamps, add_service_tokens, text,
          int_durations, calc_invert_durations, transcription_by_frames, float_durations,
          average_by_time, norm_1,
-         ssl,
+         ssl, timedim_interpolation,
          trim, mu_law]
   pipe_cfg:
     load_audio:
@@ -122,7 +122,9 @@ preproc:
     ssl:
       type: SSLProcessor
       ssl_type: { default: Wav2Vec, ml: WavLM }
-      resize_from: mel
+    timedim_interpolation:
+      features: ssl_feat
+      shape_as: mel
     trim:
       type: SignalProcessor
       pipe: [trim]

@@ -1262,7 +1262,7 @@ def normalize(
 )
 def average_by_time(
     ds: SpectrogramDataSample,
-    attributes: tp.Union[tp.List[str], str],
+    attributes: tp.Union[str, tp.List[str]],
     use_quantile: bool = False,
     quantile: float = 0.05,
     min_val: float = 1e-2,

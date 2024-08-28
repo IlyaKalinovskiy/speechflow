@@ -56,7 +56,7 @@ class DatasetItem:
 class Dataset:
     def __init__(self, data: tp.Optional[tp.Iterable] = None, use_serialize: bool = True):
         self._samples: tp.List[tp.Any] = []
-        self._is_use_serialize = use_serialize
+        self._use_serialize = use_serialize
         self._readonly_mode: bool = False
         self._mem_save = str_to_bool(env.get("MEMORY_SAVE", "False"))
 
@@ -108,7 +108,7 @@ class Dataset:
             meta["filepath"] = self._find_filepath(obj)
 
         try:
-            if self._is_use_serialize:
+            if self._use_serialize:
                 if not self._mem_save and hasattr(obj, "serialize"):
                     obj = obj.serialize(**kwargs)
                 elif obj.__class__.__name__ != "bytes":
@@ -121,7 +121,7 @@ class Dataset:
             return item.cache, item.meta
 
         obj = item.data
-        if not self._is_use_serialize:
+        if not self._use_serialize:
             return obj, item.meta
 
         try:

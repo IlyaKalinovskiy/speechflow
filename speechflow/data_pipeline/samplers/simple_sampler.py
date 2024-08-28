@@ -27,11 +27,11 @@ class SimpleSampler(AbstractDataSampler):
     def __init__(
         self,
         comb_by_len: bool = False,
-        is_use_neighbors: bool = False,
+        use_neighbors: bool = False,
     ):
         super().__init__()
         self._comb_by_len = comb_by_len
-        self._is_use_neighbors = is_use_neighbors
+        self._use_neighbors = use_neighbors
 
         self._data: Dataset = None  # type: ignore
         self._dataset_size = None
@@ -54,7 +54,7 @@ class SimpleSampler(AbstractDataSampler):
         self._data = data
         self._current_data = data
 
-        if self._is_use_neighbors:
+        if self._use_neighbors:
             self.parse_neghbors()
 
         LOGGER.info(trace(self, message=f"Dataset size: {self._dataset_size}"))
@@ -106,7 +106,7 @@ class SimpleSampler(AbstractDataSampler):
         return ds
 
     def add_neighbors(self, chunk: tp.List[DataSample]) -> tp.List[DataSample]:
-        if not self._is_use_neighbors:
+        if not self._use_neighbors:
             return chunk
 
         chunk_new = []
