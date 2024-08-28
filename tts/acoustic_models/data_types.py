@@ -48,7 +48,6 @@ class TTSForwardInput(TrainData):
     lm_feat: Tensor = None
     lm_feat_lengths: Tensor = None
     plbert_feat: Tensor = None
-    plbert_feat_lengths: Tensor = None
     spectrogram: Tensor = None
     spectrogram_lengths: Tensor = None
     linear_spectrogram: Tensor = None

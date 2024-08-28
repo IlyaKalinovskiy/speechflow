@@ -37,34 +37,27 @@ class BaseDSProcessor:
         self.components = {}
         self.transform_params = {}
         for step_name in self.pipe:
-            if step_name != self.__class__.__name__:
-                method = getattr(self, step_name)
-                method_params = self.pipe_cfg.get(step_name, {})
-            else:
-                method = getattr(self, "__call__")
-                method_params = {}
+            method = getattr(self, step_name)
+            method_params = self.pipe_cfg.get(step_name, {})
 
             handler = init_method_from_config(method, method_params)
             self.components[step_name] = handler
 
-            if method.__name__ != "__call__":
-                params = copy(handler.keywords)
-            else:
-                params = {}
+            params = copy(handler.keywords)
 
             params.update(method_params)
             self.transform_params[step_name] = copy(params)  # type: ignore
 
     @staticmethod
-    def get_config_from_locals(local: dict) -> Config:
-        child_class = local.pop("self")
-        if not hasattr(child_class, "__call__"):
-            raise RuntimeError("Processor must have method __call__.")
-        if get_default_args(child_class.__call__):
-            raise RuntimeError("Method __call__ should not default arguments.")
+    def get_config_from_locals(local: tp.Dict[str, tp.Any]) -> Config:
+        args = {k: v for k, v in local.items() if not k.startswith("_") and k != "self"}
+        return Config(args)
 
-        args = {k: v for k, v in local.items() if not k.startswith("_")}
-        return Config({child_class.__class__.__name__: args})
+    def logging_transform_params(self, params: tp.Dict[str, tp.Any]):
+        params = {
+            k: v for k, v in params.items() if not k.startswith("_") and k != "self"
+        }
+        self.transform_params.update({self.__class__.__name__: params})
 
     def init(self):
         if "DEVICE" in os.environ:

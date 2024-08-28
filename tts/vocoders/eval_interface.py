@@ -15,7 +15,7 @@ from speechflow.data_pipeline.core import PipelineComponents
 from speechflow.data_pipeline.datasample_processors import SignalProcessor
 from speechflow.data_pipeline.datasample_processors.data_types import (
     AudioDataSample,
-    SpectrogramDataSample,
+    TTSDataSample,
 )
 from speechflow.io import AudioChunk, Config, check_path, tp_PATH
 from speechflow.training.saver import ExperimentSaver
@@ -55,11 +55,10 @@ class VocoderLoader:
         self.data_cfg, model_cfg = ExperimentSaver.load_configs_from_checkpoint(
             checkpoint
         )
-        self.data_cfg["collate"]["type"] = "SpectrogramCollate"
 
         self.pipe = self._load_data_pipeline(self.data_cfg)
         self.pipe_for_reference = self.pipe.with_ignored_handlers(
-            ignored_data_handlers={"SSLProcessor"}
+            ignored_data_handlers={"SSLProcessor", "MultilingualPLBert"}
         )
         self.lang_id_map = checkpoint.get("lang_id_map", {})
         self.speaker_id_map = checkpoint.get("speaker_id_map", {})
@@ -108,7 +107,7 @@ class VocoderLoader:
         }
         try:
             model.load_state_dict(state_dict)
-        except:
+        except Exception:
             state_dict = {k.replace("lstms.", "rnns."): v for k, v in state_dict.items()}
             model.load_state_dict(state_dict)
 
@@ -196,13 +195,13 @@ class VocoderEvaluationInterface(VocoderLoader):
         audio_chunk = (
             AudioChunk(file_path=wav_path).load(sr=self.sample_rate).volume(1.25)
         )
-        ds = SpectrogramDataSample(audio_chunk=audio_chunk)
+        ds = TTSDataSample(audio_chunk=audio_chunk)
         batch = self.pipe.datasample_to_batch([ds])
         collated: SpectrogramCollateOutput = batch.collated_samples  # type: ignore
 
         if ref_wav_path is not None:
             ref_audio_chunk = AudioChunk(file_path=ref_wav_path).load(sr=self.sample_rate)
-            ref_ds = SpectrogramDataSample(audio_chunk=ref_audio_chunk)
+            ref_ds = TTSDataSample(audio_chunk=ref_audio_chunk)
             ref_batch = self.pipe_for_reference.datasample_to_batch([ref_ds])
             ref_collated: SpectrogramCollateOutput = ref_batch.collated_samples  # type: ignore
             collated.speaker_emb = ref_collated.speaker_emb
@@ -217,10 +216,11 @@ class VocoderEvaluationInterface(VocoderLoader):
             collated.speech_quality_emb = collated.speech_quality_emb * 0 + 5
 
             _input = VocoderForwardInput(
-                spectrogram=collated.mel_spectrogram,
+                spectrogram=collated.spectrogram,
                 spectrogram_lengths=collated.spectrogram_lengths,
                 ssl_feat=collated.ssl_feat,
                 ssl_feat_lengths=collated.ssl_feat_lengths,
+                plbert_feat=collated.plbert_feat,
                 speaker_emb=collated.speaker_emb,
                 speaker_emb_mean=collated.speaker_emb,
                 # energy=collated.energy,

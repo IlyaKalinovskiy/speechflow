@@ -140,6 +140,8 @@ class VoiceBiometricProcessor(BaseDSProcessor):
     @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"speaker_emb"})
     @lazy_initialization
     def process(self, ds: AudioDataSample) -> AudioDataSample:
+        ds = super().process(ds)
+
         assert np.issubdtype(
             ds.audio_chunk.dtype, np.floating
         ), "Audio data must be floating-point!"

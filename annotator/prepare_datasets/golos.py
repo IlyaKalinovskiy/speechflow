@@ -39,7 +39,7 @@ def text_preprocessing(meta: dict, folder: Path):
     wav_path = folder / meta["audio_filepath"]
     text = meta["text"]
 
-    assert wav_path.exists(), RuntimeError("wav file not found!")
+    assert wav_path.exists(), FileNotFoundError(f"File {wav_path.as_posix()} not found!")
     text_path = wav_path.with_suffix(".txt")
 
     return wav_path, text_path, text

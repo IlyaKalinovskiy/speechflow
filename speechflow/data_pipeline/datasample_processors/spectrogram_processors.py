@@ -2,8 +2,7 @@ import pickle
 import random
 import typing as tp
 import logging
-
-from multiprocessing import current_process
+import multiprocessing as mp
 
 import numpy as np
 import torch
@@ -67,7 +66,7 @@ try:
     from torchaudio import functional as F
     from torchaudio import sox_effects, transforms
 except ImportError as e:
-    if current_process().name == "MainProcess":
+    if mp.current_process().name == "MainProcess":
         LOGGER.warning(f"torchaudio is not available: {e}")
 
 try:
@@ -76,7 +75,7 @@ try:
         AudioToSpectrogram,
     )
 except ImportError as e:
-    if current_process().name == "MainProcess":
+    if mp.current_process().name == "MainProcess":
         LOGGER.warning(f"NeMo is not available: {e}")
 
 
@@ -85,12 +84,13 @@ def _fp_eq(a, b):
 
 
 class BaseSpectrogramProcessor(BaseDSProcessor):
-    def process(self, ds: SpectrogramDataSample):
+    def process(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
         if ds.audio_chunk and not ds.audio_chunk.empty:
             assert np.issubdtype(
                 ds.audio_chunk.waveform.dtype, np.floating
             ), "Audio data must be floating-point!"
 
+        assert ds.audio_chunk.waveform.max() > 5.0e-3, "Sound is very quiet!"
         return super().process(ds)
 
 
@@ -356,10 +356,7 @@ class MelProcessor(BaseSpectrogramProcessor):
         self.mel_module: tp.Optional[nvidia_stft.Linear2Mel] = None
         self.inv_mel_basis: tp.Optional[npt.NDArray] = None
 
-    @PipeRegistry.registry(
-        inputs={"magnitude"},
-        outputs={"mel"},
-    )
+    @PipeRegistry.registry(inputs={"magnitude"}, outputs={"mel"})
     def process(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
         return super().process(ds)
 
@@ -651,20 +648,18 @@ class NemoMelProcessor(BaseSpectrogramProcessor):
         n_mels: int,
         **kwargs,
     ):
-        super().__init__(
-            (self.__class__.__name__,),
-            self.get_config_from_locals(locals()),
-        )
+        super().__init__()
         window_size = win_len / sample_rate
         window_stride = hop_len / sample_rate
         features = n_mels
-        self._mel_cfg = self.get_config_from_locals(locals())[self.__class__.__name__]
+        self._mel_cfg = self.get_config_from_locals(locals())
         self._mel_cfg.pop("win_len")
         self._mel_cfg.pop("hop_len")
         self._mel_cfg.pop("n_mels")
         self._mel_cfg.pop("kwargs")
         self._mel_cfg.update(kwargs)
         self._mel_module = None
+        self.logging_transform_params(locals())
 
     def init(self):
         super().init()
@@ -674,9 +669,8 @@ class NemoMelProcessor(BaseSpectrogramProcessor):
     @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"mel"})
     @lazy_initialization
     def process(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
-        return super().process(ds)
+        ds = super().process(ds)
 
-    def __call__(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
         waveform = ds.audio_chunk.waveform
         waveform = torch.from_numpy(waveform).unsqueeze(0)
         waveform_length = torch.LongTensor([waveform.shape[-1]])
@@ -699,11 +693,7 @@ class PitchProcessor(BaseSpectrogramProcessor):
         torchcrepe_batch_size: int = 1,
         device: str = "cpu",
     ):
-        super().__init__(
-            (self.__class__.__name__,),
-            self.get_config_from_locals(locals()),
-            device=device,
-        )
+        super().__init__(device=device)
         self.method = method
         self.f0_min = f0_min
         self.f0_max = f0_max
@@ -711,14 +701,11 @@ class PitchProcessor(BaseSpectrogramProcessor):
         self.pyworld_frame_period = pyworld_frame_period
         self.torchcrepe_model = torchcrepe_model
         self.torchcrepe_batch_size = torchcrepe_batch_size
+        self.logging_transform_params(locals())
 
     @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"pitch"})
     def process(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
-        return super().process(ds)
-
-    def __call__(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
-        audio_chunk = ds.audio_chunk
-        assert audio_chunk.waveform.max() > 5.0e-3, "Sound is very quiet!"
+        ds = super().process(ds)
 
         if ds.audio_chunk.sr != 16000 and self.method in ["yin", "torchcrepe"]:
             audio_chunk = ds.audio_chunk.resample(16000)
@@ -1420,6 +1407,8 @@ def __plot_1d_features(audio_chunk, spec_proc, mel_proc, pitch_proc):
     ax[1].plot(x, spectral_flatness, c="b", lw=1, label="spectral_flatness")
     ax[1].plot(x, spectral_tilt, c="y", lw=1, label="spectral_tilt")
     ax[0].plot(x, pitch, c="indigo", lw=1, label="pitch")
+
+    ax[0].legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, fontsize="small")
     ax[1].legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, fontsize="small")
 
 

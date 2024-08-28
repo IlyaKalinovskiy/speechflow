@@ -91,6 +91,7 @@ class TTSTextProcessor(BaseDSProcessor):
         ignore_ling_feat: tp.Optional[tp.List[str]] = None,
     ):
         super().__init__()
+        self.logging_transform_params(locals())
 
         text_parser = TextParser(lang=lang, cfg={"pipe": []})
 
@@ -169,6 +170,8 @@ class TTSTextProcessor(BaseDSProcessor):
         inputs={"sent"}, outputs={"transcription_text", "transcription_id", "ling_feat"}
     )
     def process(self, ds: TextDataSample) -> TextDataSample:
+        ds = super().process(ds)
+
         if self.lang != "MULTILANG" and ds.sent.lang != self.lang:
             raise RuntimeError(
                 f"The TextParser does not match the sentence {ds.sent.lang} language."
@@ -731,6 +734,7 @@ class LMProcessor(BaseDSProcessor):
         self._by_transcription = by_transcription
         self._lm_model = None
         self._tokenizer = None
+        self.logging_transform_params(locals())
 
     def init(self):
         super().init()
@@ -747,6 +751,8 @@ class LMProcessor(BaseDSProcessor):
     @PipeRegistry.registry(inputs={"sent", "transcription_text"}, outputs={"lm_feat"})
     @lazy_initialization
     def process(self, ds: TextDataSample) -> TextDataSample:
+        ds = super().process(ds)
+
         if self.lang != "MULTILANG" and ds.sent.lang != self.lang:
             raise RuntimeError(
                 f"The LMProcessor does not match the sentence {ds.sent.lang} language."
@@ -819,6 +825,7 @@ class MultilingualPLBert(BaseDSProcessor):
         self._ckpt_path = self._model_dir / "step_1100000.t7"
         self._pl_bert = None
         self._preproc = None
+        self.logging_transform_params(locals())
 
         if not self._ckpt_path.exists():
             raise FileNotFoundError(
@@ -913,9 +920,11 @@ class MultilingualPLBert(BaseDSProcessor):
         ds.plbert_feat = feat.cpu()
         return ds
 
-    @PipeRegistry.registry(inputs={"sent", "transcription_text"}, outputs={"plbert_feat"})
+    @PipeRegistry.registry(outputs={"plbert_feat"})
     @lazy_initialization
     def process(self, ds: TextDataSample) -> TextDataSample:
+        ds = super().process(ds)
+
         if self._from_ssl_tokens:
             ds = self._get_from_ssl_tokens(ds)
         else:

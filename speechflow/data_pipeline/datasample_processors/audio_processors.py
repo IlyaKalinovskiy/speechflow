@@ -5,8 +5,8 @@ import typing as tp
 import logging
 import tempfile
 import subprocess as sp
+import multiprocessing as mp
 
-from multiprocessing import current_process
 from pathlib import Path
 
 import numpy as np
@@ -50,19 +50,19 @@ LOGGER = logging.getLogger("root")
 try:
     import pyworld as pw
 except ImportError as e:
-    if current_process().name == "MainProcess":
+    if mp.current_process().name == "MainProcess":
         LOGGER.warning(f"pyworld is not available: {e}")
 
 try:
     from torchaudio import functional as F
     from torchaudio import sox_effects, transforms
 except ImportError as e:
-    if current_process().name == "MainProcess":
+    if mp.current_process().name == "MainProcess":
         LOGGER.warning(f"torchaudio is not available: {e}")
 
 
 class BaseAudioProcessor(BaseDSProcessor):
-    def process(self, ds: tp.Union[AudioDataSample, tp.Any]):
+    def process(self, ds: tp.Union[AudioDataSample, tp.Any]) -> AudioDataSample:
         if ds.audio_chunk and not ds.audio_chunk.empty:
             assert np.issubdtype(
                 ds.audio_chunk.waveform.dtype, np.floating
@@ -378,6 +378,7 @@ class SSLProcessor(BaseAudioProcessor):
         self._ssl_params = ssl_params
         self._ssl_model = None
         self._use_precompute = use_precompute
+        self.logging_transform_params(locals())
 
     def init(self):
         super().init()
@@ -421,6 +422,7 @@ class ACProcessor(BaseAudioProcessor):
         self._ac_params = ac_params
         self._resynt = resynt
         self._ac_model = None
+        self.logging_transform_params(locals())
 
     def init(self):
         super().init()
@@ -429,10 +431,7 @@ class ACProcessor(BaseAudioProcessor):
             self._ac_cls, self._ac_params, check_keys=False
         )()
 
-    @PipeRegistry.registry(
-        inputs={"audio_chunk"},
-        outputs={"ac_feat"},
-    )
+    @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"ac_feat"})
     @lazy_initialization
     def process(self, ds: tp.Union[AudioDataSample, tp.Any]) -> AudioDataSample:
         ds = super().process(ds)
@@ -492,7 +491,7 @@ def monotonic_speech(
 
     assert len(y) >= len(x)
     ds.audio_chunk.waveform = y[: len(x)].astype(np.float32)
-    ds.transform_params["monotonic_speech"] = {}
+    ds.transform_params[monotonic_speech.__name__] = {}
     return ds
 
 
@@ -510,8 +509,12 @@ def timedim_interpolation(
         return _t[:_max_len]
 
     for name in features:
+        if not hasattr(ds, name) or getattr(ds, name) is None:
+            continue
+
         feat = getattr(ds, name)
         attr = getattr(ds, shape_as)
+
         if isinstance(feat, SSLFeatures):
             t = torch.from_numpy(feat.encoder_feat)
         else:
@@ -528,6 +531,7 @@ def timedim_interpolation(
         else:
             setattr(ds, name, t)
 
+    ds.transform_params[timedim_interpolation.__name__] = {"shape_as": shape_as}
     return ds.to_numpy()
 
 

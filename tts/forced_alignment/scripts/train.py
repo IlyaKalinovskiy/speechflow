@@ -64,7 +64,7 @@ def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]):
     if "init_from" in model_cfg["model"]:
         ckpt_path = Path(model_cfg["model"]["init_from"].get("ckpt_path", ""))
         if not ckpt_path.exists():
-            raise FileNotFoundError(f"Checkpoint {ckpt_path.as_posix()} is not found")
+            raise FileNotFoundError(f"Checkpoint {ckpt_path.as_posix()} not found")
 
         LOGGER.warning(f"Loading {ckpt_path.as_posix()}")
         ckpt = ExperimentSaver.load_checkpoint(ckpt_path)

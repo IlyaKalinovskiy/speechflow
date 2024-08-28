@@ -15,9 +15,11 @@ class ImageProcessor(BaseDSProcessor):
         super().__init__()
 
     @PipeRegistry.registry(inputs={"file_path"}, outputs={"image"})
-    def process(self, ds: ImageDataSample):
+    def process(self, ds: ImageDataSample) -> ImageDataSample:
         """Returns processed data."""
         from torchvision import transforms
+
+        ds = super().process(ds)
 
         pil_img = Image.open(ds.file_path)
         pil_to_tensor = transforms.ToTensor()(pil_img).unsqueeze_(0)

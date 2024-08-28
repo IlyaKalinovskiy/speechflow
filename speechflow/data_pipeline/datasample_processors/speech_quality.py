@@ -56,6 +56,8 @@ class SpeechQualityAssessment(BaseDSProcessor):
                 f"but got model_type={model_type}!"
             )
 
+        self.logging_transform_params(locals())
+
     def init(self):
         super().init()
         if self._model_type.startswith("cdpam"):
@@ -75,6 +77,8 @@ class SpeechQualityAssessment(BaseDSProcessor):
     @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"speech_quality_emb"})
     @lazy_initialization
     def process(self, ds: AudioDataSample) -> AudioDataSample:
+        ds = super().process(ds)
+
         assert np.issubdtype(
             ds.audio_chunk.dtype, np.floating
         ), "Audio data must be floating-point!"

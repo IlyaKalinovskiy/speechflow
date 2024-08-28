@@ -11,6 +11,7 @@ from speechflow.data_pipeline.datasample_processors.audio_processors import *
 from speechflow.data_pipeline.datasample_processors.auxiliary import *
 from speechflow.data_pipeline.datasample_processors.biometric_processors import *
 from speechflow.data_pipeline.datasample_processors.image_processors import *
+from speechflow.data_pipeline.datasample_processors.spectrogram_augmentation import *
 from speechflow.data_pipeline.datasample_processors.spectrogram_processors import *
 from speechflow.data_pipeline.datasample_processors.speech_quality import *
 from speechflow.data_pipeline.datasample_processors.ssml_processors import *

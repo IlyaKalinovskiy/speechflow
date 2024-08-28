@@ -1,9 +1,8 @@
 import random
 import typing as tp
 import logging
+import multiprocessing as mp
 
-from functools import wraps
-from multiprocessing import current_process
 from pathlib import Path
 
 import numpy as np
@@ -20,17 +19,12 @@ from speechflow.data_pipeline.core.base_ds_processor import (
     ComputeBackend,
 )
 from speechflow.data_pipeline.core.registry import PipeRegistry
-from speechflow.data_pipeline.datasample_processors.data_types import (
-    AudioDataSample,
-    SpectrogramDataSample,
-)
+from speechflow.data_pipeline.datasample_processors.data_types import AudioDataSample
+from speechflow.data_pipeline.datasample_processors.utils import check_probability
 from speechflow.io import AudioChunk, Config
 from speechflow.utils.fs import get_root_dir
 
-__all__ = [
-    "WaveAugProcessor",
-    "SpecAugProcessor",
-]
+__all__ = ["WaveAugProcessor"]
 
 LOGGER = logging.getLogger("root")
 
@@ -38,32 +32,8 @@ try:
     from torchaudio import functional as F
     from torchaudio import sox_effects, transforms
 except ImportError as e:
-    if current_process().name == "MainProcess":
+    if mp.current_process().name == "MainProcess":
         LOGGER.warning(f"torchaudio is not available: {e}")
-
-
-def check_probability(method: tp.Callable) -> tp.Callable:
-    """Decorator for applying augmentation with probability.
-
-    Probability must be in range [0, 1].
-
-    """
-
-    @wraps(method)
-    def use_augmentation(*args, **kwargs) -> AudioDataSample:
-        p = kwargs.get("p", 1.0)
-        if (p < 0) or (p > 1):
-            raise ValueError(f"probability of applying aug p must be in [0, 1]. Got {p}.")
-
-        if random.random() > p:
-            return kwargs["ds"]
-
-        if len(args) == 0:
-            return method(**kwargs)
-        else:
-            return method(args[0], **kwargs)
-
-    return use_augmentation
 
 
 class WaveAugProcessor(BaseDSProcessor):
@@ -106,7 +76,7 @@ class WaveAugProcessor(BaseDSProcessor):
         if not np.isfinite(ds.audio_chunk.waveform).all():
             ds.audio_chunk = tmp_audio_chunk
 
-        return ds
+        return ds.to_numpy()
 
     @staticmethod
     def _get_random_curve(
@@ -593,54 +563,6 @@ class WaveAugProcessor(BaseDSProcessor):
         y = fix_length(y, size=len(x))
 
         ds.audio_chunk.waveform = y.astype(np.float32)
-        return ds
-
-
-class SpecAugProcessor(WaveAugProcessor):
-    @PipeRegistry.registry(inputs={"magnitude", "mel"}, outputs={"magnitude", "mel"})
-    def process(self, ds: AudioDataSample) -> AudioDataSample:
-        ds.transform_params.update(self.transform_params)
-
-        if random.random() > self.p:
-            return ds
-
-        handlers = list(self.components.values())
-        if self.shuffle:
-            random.shuffle(handlers)
-
-        for handler in handlers:
-            if hasattr(handler, "keywords"):
-                p = handler.keywords.get("p", 1.0)  # type: ignore
-                ds = handler(ds=ds, p=p)
-            else:
-                raise NotImplementedError()
-
-        return ds
-
-    @check_probability
-    def blur(
-        self, ds: SpectrogramDataSample, radius: int = (1, 3, 5), sigma=None, *kwargs
-    ):
-        from scipy.ndimage.filters import gaussian_filter
-
-        if sigma is None:
-            sigma = 0.75 * random.random()
-
-        if isinstance(radius, tp.Iterable):
-            r = np.random.choice(radius)
-        else:
-            r = radius
-
-        ds.mel = gaussian_filter(ds.mel, sigma=sigma, radius=r)
-        return ds
-
-    @check_probability
-    def noise(self, ds: SpectrogramDataSample, var: float = 1.0, scale=None, *kwargs):
-        if scale is None:
-            scale = 0.2 * random.random()
-
-        mel_noise = ds.mel + scale * np.random.normal(0, var, ds.mel.shape)
-        ds.mel = mel_noise.astype(np.float32)
         return ds
 
 
