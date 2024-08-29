@@ -34,7 +34,7 @@ sdk_data = [path.relative_to("speechflow").as_posix() for path in flist]
 
 setup(
     name="speechflow",
-    version=f"{about['__version__']}-compiled",
+    version=f"{about['__version__']}",
     description="Library for experiments with tts-related pipelines.",
     packages=packages,
     python_requires=">=3.8",
