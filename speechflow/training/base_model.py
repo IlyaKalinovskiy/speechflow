@@ -23,6 +23,12 @@ class BaseTorchModelParams(pydantic.BaseModel):
     def __getitem__(self, key: str):
         return self.__dict__[key]
 
+    def __setitem__(self, key, value):
+        self.__dict__[key] = value
+
+    def __contains__(self, key):
+        return key in self.__dict__
+
     def model_post_init(self, __context: Any) -> None:
         pass
 
@@ -41,10 +47,10 @@ class BaseTorchModelParams(pydantic.BaseModel):
     def init_from_config(
         cls, cfg: tp.Union[tp.MutableMapping, Config], strict_init: bool = True
     ):
+        cfg = cls.check_deprecated_params_recursive(cfg)
+
         if isinstance(cfg, Config):
             cfg = cfg.to_dict()
-
-        cfg = cls.check_deprecated_params_recursive(cfg)
 
         params = cls()
         for key in list(cfg.keys()):
@@ -84,12 +90,19 @@ class BaseTorchModelParams(pydantic.BaseModel):
     def copy(self, *args, **kwargs):
         return super().copy(*args, **kwargs, deep=True)
 
+    def pop(self, key):
+        value = self[key]
+        del self.__dict__[key]
+        return value
+
     @staticmethod
     def check_deprecated_params(cfg: dict) -> dict:
         return cfg
 
     @classmethod
-    def check_deprecated_params_recursive(cls, cfg: dict) -> dict:
+    def check_deprecated_params_recursive(
+        cls, cfg: tp.MutableMapping
+    ) -> tp.MutableMapping:
         base = cls.__bases__
         for b in base:
             if hasattr(b, "check_deprecated_params_recursive"):

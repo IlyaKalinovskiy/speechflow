@@ -72,7 +72,7 @@ def init_singleton_handlers_from_config(
             config = cfg_handlers.section(class_name)
             config.setdefault("data_subset_name", data_subset_name)
             cls = getattr(datasample_processors, class_name)
-            handlers[class_name] = init_class_from_config(cls, config)(data_cfg=cfg)
+            handlers[class_name] = init_class_from_config(cls, config)(cfg_data=cfg)
 
     return handlers
 

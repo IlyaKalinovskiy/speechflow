@@ -259,9 +259,9 @@ class DataLoader:
                 log_to_file(trace(self, message=message))
                 Profiler.sleep(1.0)
 
-            if sleep > 0 and sleep % 15 == 0 and self.non_stop:
+            if sleep > 0 and sleep % 12 == 0 and self.non_stop:
                 self.abort_processing()
-            elif sleep > 300:
+            elif sleep > 60:
                 raise RuntimeError(
                     f"DataServer stopped responding for {self.subset_name} DataLoader!"
                 )

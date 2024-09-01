@@ -132,7 +132,7 @@ class TTSEvaluationInterface:
         env["DEVICE"] = device
 
         tts_ckpt = ExperimentSaver.load_checkpoint(tts_ckpt_path)
-        data_cfg, cfg_model = ExperimentSaver.load_configs_from_checkpoint(tts_ckpt)
+        cfg_data, cfg_model = ExperimentSaver.load_configs_from_checkpoint(tts_ckpt)
 
         version_check(
             multilingual_text_parser, tts_ckpt["versions"]["libs"]["text_parser"]
@@ -155,15 +155,15 @@ class TTSEvaluationInterface:
         self.model.to(self.device)
 
         # update data config
-        data_cfg["processor"].pop("dump", None)
+        cfg_data["processor"].pop("dump", None)
 
-        pauses_from_ts_cfg = data_cfg["preproc"]["pipe_cfg"].get(
+        pauses_from_ts_cfg = cfg_data["preproc"]["pipe_cfg"].get(
             "add_pauses_from_timestamps", {}
         )
         pause_step = pauses_from_ts_cfg.get("step", 0.05)
 
-        data_cfg["preproc"]["pipe"].insert(0, "add_pauses_from_text")
-        data_cfg["preproc"]["pipe_cfg"]["add_pauses_from_text"] = {
+        cfg_data["preproc"]["pipe"].insert(0, "add_pauses_from_text")
+        cfg_data["preproc"]["pipe_cfg"]["add_pauses_from_text"] = {
             "level": "syntagmas",
             "num_symbols": 1 if pauses_ckpt_path else DEFAULT_SIL_TOKENS_NUM,
             "pause_from_punct_map": {
@@ -174,9 +174,9 @@ class TTSEvaluationInterface:
             },
             "step": pause_step,
         }
-        data_cfg["preproc"]["pipe"].append("add_prosody_modifiers")
+        cfg_data["preproc"]["pipe"].append("add_prosody_modifiers")
 
-        text_cfg = data_cfg["preproc"]["pipe_cfg"].get("text", {})
+        text_cfg = cfg_data["preproc"]["pipe_cfg"].get("text", {})
         text_cfg["add_service_tokens"] = True
 
         self.lang = text_cfg.get("lang", "RU")
@@ -188,15 +188,15 @@ class TTSEvaluationInterface:
                 == TTSTextProcessor(lang=self.lang).alphabet_size
             )
 
-        data_cfg["collate"]["type"] = (
+        cfg_data["collate"]["type"] = (
             "TTSCollateWithSSML"
-            if "TTSCollate" in data_cfg["collate"]["type"]
-            else data_cfg["collate"]["type"]
+            if "TTSCollate" in cfg_data["collate"]["type"]
+            else cfg_data["collate"]["type"]
         )
 
         # init singleton handlers
 
-        singleton_handlers = data_cfg.section("singleton_handlers", mutable=True)
+        singleton_handlers = cfg_data.section("singleton_handlers", mutable=True)
 
         self.speaker_id_setter = singleton_handlers.get("SpeakerIDSetter")
         self.speaker_id_setter["resume_from_checkpoint"] = None
@@ -250,11 +250,11 @@ class TTSEvaluationInterface:
             self.averages = None
 
         # init data pipeline
-        self.pipeline = PipelineComponents(data_cfg, "test")
-        self.sample_rate = data_cfg.section("preproc").find_field(
+        self.pipeline = PipelineComponents(cfg_data, "test")
+        self.sample_rate = cfg_data.section("preproc").find_field(
             "sample_rate", default_value=24000
         )
-        self.hop_len = data_cfg.section("preproc").find_field("hop_len")
+        self.hop_len = cfg_data.section("preproc").find_field("hop_len")
 
         ignored_fields = {
             "word_timestamps",
@@ -290,7 +290,7 @@ class TTSEvaluationInterface:
         ]
 
         self.add_pauses_from_text = init_method_from_config(
-            add_pauses_from_text, data_cfg["preproc"]["pipe_cfg"]["add_pauses_from_text"]
+            add_pauses_from_text, cfg_data["preproc"]["pipe_cfg"]["add_pauses_from_text"]
         )
         self.text_parser = {}
 
@@ -308,7 +308,7 @@ class TTSEvaluationInterface:
         self.batch_processor.device = self.device
 
         if prosody_ckpt_path is not None:
-            if "_prosody" not in data_cfg["file_search"]["ext"]:
+            if "_prosody" not in cfg_data["file_search"]["ext"]:
                 LOGGER.warning("Current TTS model not support of prosody model!")
                 self.prosody_ckpt_path = self.prosody_interface = None
             else:

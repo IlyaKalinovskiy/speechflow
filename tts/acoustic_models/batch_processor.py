@@ -121,7 +121,9 @@ class TTSBatchProcessorWithSSML(TTSBatchProcessor):
     ) -> (TTSForwardInputWithSSML, TTSTarget, tp.List[DataSample]):
         collated: TTSCollateOutputWithSSML = batch.collated_samples  # type: ignore
         if not isinstance(collated, TTSCollateOutputWithSSML):
-            LOGGER.info(trace(self, message="collated is not TTSCollateOutputWithSSML"))
+            LOGGER.info(
+                trace(self, message="collated is not TTSCollateOutputWithSSML type")
+            )
 
         _input, _target, data_samples = super().__call__(batch)
 

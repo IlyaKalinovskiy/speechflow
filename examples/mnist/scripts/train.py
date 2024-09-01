@@ -23,35 +23,35 @@ from speechflow.utils.profiler import Profiler
 LOGGER = logging.getLogger("root")
 
 
-def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
-    experiment_path = Path(model_cfg["experiment_path"])
+def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
+    experiment_path = Path(cfg_model["experiment_path"])
 
     # set seed
-    seed_everything(model_cfg.get("seed"))
+    seed_everything(cfg_model.get("seed"))
 
     dl_train, dl_valid = data_loaders.values()
 
     # initialize batch processor
-    batch_processor_cls = getattr(mnist, model_cfg["batch"]["type"])
-    batch_processor = init_class_from_config(batch_processor_cls, model_cfg["batch"])()
+    batch_processor_cls = getattr(mnist, cfg_model["batch"]["type"])
+    batch_processor = init_class_from_config(batch_processor_cls, cfg_model["batch"])()
 
     # create dnn model
-    model_cls = getattr(mnist, model_cfg["model"]["type"])
-    model = init_class_from_config(model_cls, model_cfg["model"]["params"])()
+    model_cls = getattr(mnist, cfg_model["model"]["type"])
+    model = init_class_from_config(model_cls, cfg_model["model"]["params"])()
 
     # create criterion
-    criterion_cls = getattr(mnist, model_cfg["loss"]["type"])
-    criterion = init_class_from_config(criterion_cls, model_cfg["loss"])()
+    criterion_cls = getattr(mnist, cfg_model["loss"]["type"])
+    criterion = init_class_from_config(criterion_cls, cfg_model["loss"])()
 
     # create optimizer
-    optimizer = init_class_from_config(Optimizer, model_cfg["optimizer"])(model=model)
+    optimizer = init_class_from_config(Optimizer, cfg_model["optimizer"])(model=model)
 
     # create experiment saver
     saver = ExperimentSaver(
         expr_path=experiment_path,
         additional_files={
             "data.yml": dl_train.client.info["data_config_raw"],
-            "model.yml": model_cfg.raw_file,
+            "model.yml": cfg_model.raw_file,
         },
     )
 
@@ -68,13 +68,13 @@ def train(model_cfg: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
     callbacks = [
         LearningRateMonitor(logging_interval="epoch"),
         AccuracyCallback(dl_valid),
-        saver.get_checkpoint_callback(cfg=model_cfg["checkpoint"]),
+        saver.get_checkpoint_callback(cfg=cfg_model["checkpoint"]),
     ]
 
-    ckpt_path = model_cfg["trainer"].pop("resume_from_checkpoint", None)
+    ckpt_path = cfg_model["trainer"].pop("resume_from_checkpoint", None)
 
     # create trainer
-    trainer = init_class_from_config(pl.Trainer, model_cfg["trainer"])(
+    trainer = init_class_from_config(pl.Trainer, cfg_model["trainer"])(
         default_root_dir=experiment_path, callbacks=callbacks
     )
 
@@ -94,7 +94,7 @@ def main(
     data_server_address: tp.Optional[str] = None,
     expr_suffix: tp.Optional[str] = None,
 ) -> str:
-    model_cfg = model_config_prepare(
+    cfg_model = model_config_prepare(
         model_config_path=model_config_path,
         data_config_path=data_config_path,
         value_select=value_select,
@@ -102,7 +102,7 @@ def main(
         expr_suffix=expr_suffix,
     )
 
-    with LoggingServer.ctx(model_cfg["experiment_path"]):
+    with LoggingServer.ctx(cfg_model["experiment_path"]):
         with init_data_loader_from_config(
             model_config_path=model_config_path,
             data_config_path=data_config_path,
@@ -110,7 +110,7 @@ def main(
             server_addr=data_server_address,
         ) as data_loaders:
             try:
-                return train(model_cfg=model_cfg, data_loaders=data_loaders)
+                return train(cfg_model=cfg_model, data_loaders=data_loaders)
             except Exception as e:
                 LOGGER.error(trace("main", e))
                 raise e

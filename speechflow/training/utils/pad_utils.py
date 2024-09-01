@@ -35,7 +35,7 @@ def pad_1d(
         tensor_to_fill[i, : lens[i]] = s
 
     # lens[index] += pad_len
-    return tensor_to_fill, lens
+    return tensor_to_fill, torch.LongTensor(lens)
 
 
 def pad_2d(

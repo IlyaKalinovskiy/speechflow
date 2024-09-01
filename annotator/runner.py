@@ -173,8 +173,8 @@ def _run_subprocess(
 
 
 def _update_fa_configs(
-    model_cfg_name: str,
-    data_cfg_name: str,
+    cfg_model_name: str,
+    cfg_data_name: str,
     lang: str,
     output_dir: Path,
     langs_filter: tp.Optional[tp.List[str]],
@@ -197,39 +197,39 @@ def _update_fa_configs(
 
     lang_dir = lang if langs_filter is None else "_".join(langs_filter)
 
-    model_config_path = root / configs_dir / model_cfg_name
-    data_config_path = root / configs_dir / data_cfg_name
-    if not model_config_path.exists() or not data_config_path.exists():
+    cfg_model_path = root / configs_dir / cfg_model_name
+    cfg_data_path = root / configs_dir / cfg_data_name
+    if not cfg_model_path.exists() or not cfg_data_path.exists():
         raise FileNotFoundError("Configs for forced alignment model not found!")
 
     # update model config
-    model_cfg = Config.create_from_file(model_config_path)
+    cfg_model = Config.create_from_file(cfg_model_path)
 
-    if not Path(model_cfg["dirs"].get("logging", "")).is_absolute():
-        model_cfg["dirs"]["logging"] = (
-            (output_dir / "forced_alignment" / lang_dir / model_cfg["dirs"]["logging"])
+    if not Path(cfg_model["dirs"].get("logging", "")).is_absolute():
+        cfg_model["dirs"]["logging"] = (
+            (output_dir / "forced_alignment" / lang_dir / cfg_model["dirs"]["logging"])
             .absolute()
             .as_posix()
         )
-    model_cfg["trainer"]["accelerator"] = "gpu"
-    model_cfg["trainer"]["devices"] = [get_freer_gpu()]
+    cfg_model["trainer"]["accelerator"] = "gpu"
+    cfg_model["trainer"]["devices"] = [get_freer_gpu()]
     if batch_size:
-        model_cfg["data_loaders"]["batch_size"] = batch_size
+        cfg_model["data_loaders"]["batch_size"] = batch_size
     if max_epochs:
-        model_cfg["trainer"]["max_epochs"] = max_epochs
+        cfg_model["trainer"]["max_epochs"] = max_epochs
     if experiment_path:
-        model_cfg["trainer"]["resume_from_checkpoint"] = experiment_path.as_posix()
+        cfg_model["trainer"]["resume_from_checkpoint"] = experiment_path.as_posix()
     if finetune_model:
         assert finetune_model.exists()
-        model_cfg["model"]["init_from"] = {"ckpt_path": finetune_model.as_posix()}
+        cfg_model["model"]["init_from"] = {"ckpt_path": finetune_model.as_posix()}
     if n_gpus == 0:
-        model_cfg["model"]["params"]["speaker_biometric_model"] = "resemblyzer"
+        cfg_model["model"]["params"]["speaker_biometric_model"] = "resemblyzer"
 
-    model_config_path = output_dir / "forced_alignment" / lang_dir / model_cfg_name
-    model_cfg.to_file(model_config_path)
+    cfg_model_path = output_dir / "forced_alignment" / lang_dir / cfg_model_name
+    cfg_model.to_file(cfg_model_path)
 
     # update data config
-    config_data = Config.create_from_file(data_config_path)
+    config_data = Config.create_from_file(cfg_data_path)
 
     config_data["dirs"]["data_root"] = output_dir.as_posix()
 
@@ -263,10 +263,10 @@ def _update_fa_configs(
     if use_reverse_mode:
         config_data["preproc"]["pipe"].append("reverse")
 
-    data_config_path = output_dir / "forced_alignment" / lang_dir / data_cfg_name
-    config_data.to_file(data_config_path)
+    cfg_data_path = output_dir / "forced_alignment" / lang_dir / cfg_data_name
+    config_data.to_file(cfg_data_path)
 
-    return model_config_path, data_config_path
+    return cfg_model_path, cfg_data_path
 
 
 def _run_fa(**kwargs) -> Path:
@@ -689,7 +689,7 @@ def main(
                 if pretrained_models and stage <= len(pretrained_models):
                     experiment_path = pretrained_models[stage - 1]
                 else:
-                    model_config_path, data_config_path = _update_fa_configs(
+                    cfg_model_path, cfg_data_path = _update_fa_configs(
                         f"model_stage{stage}.yml",
                         f"data_stage{stage}.yml",
                         lang=lang,
@@ -708,8 +708,8 @@ def main(
                         finetune_model=finetune_model,
                     )
                     experiment_path = _run_fa(
-                        model_config_path=model_config_path,
-                        data_config_path=data_config_path,
+                        cfg_model_path=cfg_model_path,
+                        cfg_data_path=cfg_data_path,
                         expr_suffix="all_speakers",
                     )
 

@@ -296,6 +296,8 @@ class AudioFeatures(FeatureExtractor):
 
         if use_plbert:
             self.plbert_proj = nn.Linear(plbert_emb_dim, in_dim)
+        else:
+            self.plbert_proj = None
 
         # ----- init 1d source-filter encoder -----
 

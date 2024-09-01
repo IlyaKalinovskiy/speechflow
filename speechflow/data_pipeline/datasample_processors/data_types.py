@@ -65,9 +65,9 @@ class AudioCodecFeatures(ToTensor, ToNumpy, MovableToDevice):
 class AudioDataSample(DataSample):
     audio_chunk: AudioChunk = None
     lang: str = None
-    lang_id: int = None
+    lang_id: tp_DATA = None
     speaker_name: str = None
-    speaker_id: int = 0
+    speaker_id: tp_DATA = 0
     speaker_emb: tp_DATA = None
     speaker_emb_mean: tp_DATA = None
     speech_quality_emb: tp_DATA = None

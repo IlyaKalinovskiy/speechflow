@@ -100,7 +100,7 @@ def main(
     data_server_address: tp.Optional[str] = None,
     expr_suffix: tp.Optional[str] = None,
 ) -> str:
-    model_cfg = model_config_prepare(
+    cfg_model = model_config_prepare(
         model_config_path=model_config_path,
         data_config_path=data_config_path,
         value_select=value_select,
@@ -108,7 +108,7 @@ def main(
         expr_suffix=expr_suffix,
     )
 
-    with LoggingServer.ctx(model_cfg["experiment_path"]):
+    with LoggingServer.ctx(cfg_model["experiment_path"]):
         with init_data_loader_from_config(
             model_config_path=model_config_path,
             data_config_path=data_config_path,
@@ -116,7 +116,7 @@ def main(
             server_addr=data_server_address,
         ) as data_loaders:
             try:
-                return train(cfg=model_cfg, data_loaders=data_loaders)
+                return train(cfg=cfg_model, data_loaders=data_loaders)
             except Exception as e:
                 LOGGER.error(trace("main", e))
                 raise e

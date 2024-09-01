@@ -636,14 +636,10 @@ class TTSTextProcessor(BaseDSProcessor):
             bos_token.phonemes = (TTSTextProcessor.bos,)
             eos_token = Token(TTSTextProcessor.eos)
             eos_token.phonemes = (TTSTextProcessor.eos,)
-            sentence.transcription_text = (
-                [bos_token] + sentence.transcription_text + [eos_token]
-            )
+            sentence.tokens = [bos_token] + sentence.tokens + [eos_token]
 
             syntagmas = sentence.syntagmas
-            syntagmas[0].transcription_text = [bos_token] + syntagmas[
-                0
-            ].transcription_text
+            syntagmas[0].tokens = [bos_token] + syntagmas[0].tokens
             syntagmas[-1].tokens = syntagmas[-1].tokens + [eos_token]
             sentence.syntagmas = syntagmas
         else:
@@ -837,9 +833,9 @@ class MultilingualPLBert(BaseDSProcessor):
     def init(self):
         super().init()
 
-        model_cfg = yaml_load_from_file(self._cfg_path)
-        model_cfg = AlbertConfig(**model_cfg["model_params"])
-        self._pl_bert = AlbertModel(model_cfg)
+        cfg_model = yaml_load_from_file(self._cfg_path)
+        cfg_model = AlbertConfig(**cfg_model["model_params"])
+        self._pl_bert = AlbertModel(cfg_model)
 
         ckpt = torch.load(self._ckpt_path, map_location="cpu")
         state_dict = dict(ckpt["net"])

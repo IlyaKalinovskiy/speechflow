@@ -90,7 +90,7 @@ class SpectrogramCollate(AudioCollate):
             if mag_spec_lens is None:
                 mag_spec_lens = lens
             if mag_spec_lens is not None and lens is not None:
-                assert (mag_spec_lens == torch.LongTensor(lens)).all()
+                assert (mag_spec_lens == lens).all()
 
         if collated.mel is not None:
             collated.spectrogram = collated.mel

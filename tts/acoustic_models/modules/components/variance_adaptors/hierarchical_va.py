@@ -59,6 +59,9 @@ class HierarchicalVarianceAdaptor(Component):
 
             if isinstance(predictor_cls, tuple):
                 predictor_cls, predictor_param_cls = predictor_cls
+                predictor_params = predictor_param_cls.check_deprecated_params(
+                    predictor_params
+                )
             else:
                 predictor_param_cls = None
 

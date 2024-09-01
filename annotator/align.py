@@ -234,6 +234,8 @@ class Aligner:
         # TODO: support legacy models
         if "load_text_from_sega" not in cfg_data["preproc"]["pipe"]:
             cfg_data["preproc"]["pipe"].insert(1, "load_text_from_sega")
+        if "symbols" in cfg_data.collate.additional_fields:
+            cfg_data.collate.additional_fields.remove("symbols")
 
         return (
             cfg_data,
