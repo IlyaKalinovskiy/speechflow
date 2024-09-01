@@ -6,6 +6,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from os import environ as env
 
+import torch
+import torch.distributed as dist
+
 from speechflow.data_pipeline.core import Batch, DataPipeline, DataSample
 from speechflow.data_server.client import DataClient
 from speechflow.data_server.loader import DataLoader
@@ -14,6 +17,7 @@ from speechflow.data_server.proxy import Proxy
 from speechflow.data_server.server import DataServer
 from speechflow.io import Config, check_path, tp_PATH, tp_PATH_LIST
 from speechflow.logging import track_process
+from speechflow.training.utils.tensor_utils import string_to_tensor, tensor_to_string
 from speechflow.utils.gpu import get_freer_gpu
 from speechflow.utils.init import init_class_from_config
 
@@ -39,7 +43,6 @@ class LoaderParams:
     prefetch_on_gpu: bool = False
     min_prefetch_factor: int = 50
     max_prefetch_factor: int = 150
-    ddp_reduce_factor: int = 1
 
     def to_dict(self) -> tp.Dict[str, tp.Any]:
         return self.__dict__
@@ -75,22 +78,55 @@ def init_data_loader(
     n_gpus: tp.Union[int, tp.List[int]] = 0,
     flist_by_subsets: tp.Optional[tp.Dict[str, tp.List[str]]] = None,
 ) -> tp.Generator[tp.Dict[str, DataLoader], None, None]:
-    if flist_by_subsets is not None:
-        data_pipeline.set_file_list(flist_by_subsets)
+    if torch.cuda.is_available():
+        device = f"cuda:{torch.cuda.current_device()}"
+    else:
+        device = "cpu"
 
-    server = DataServer(
-        data_pipeline=data_pipeline, n_processes=n_processes, n_gpus=n_gpus
-    )
-    server.start()
+    if dist.is_initialized() and dist.get_rank() != 0:
+        dist.barrier()
 
-    workers = WorkerPool(server_addr=server.address, n_processes=n_processes)
-    workers.start()
+    servers = []
+    workers = []
+    if not dist.is_initialized() or dist.get_rank() == 0:
+        if flist_by_subsets is not None:
+            data_pipeline.set_file_list(flist_by_subsets)
+
+        servers.append(
+            DataServer(
+                data_pipeline=data_pipeline,
+                n_processes=n_processes,
+                n_gpus=n_gpus,
+                synchronize_loaders=dist.is_initialized(),
+            )
+        )
+        servers[0].start()
+
+        workers.append(
+            WorkerPool(server_addr=servers[0].address, n_processes=n_processes)
+        )
+        workers[0].start()
+
+    if dist.is_initialized():
+        if dist.get_rank() == 0:
+            t = string_to_tensor(servers[0].address, device, 16)
+            dist.barrier()
+        else:
+            t = torch.zeros(16, dtype=torch.int8).to(device)
+
+        dist.broadcast(t, src=0)
+        server_addr = tensor_to_string(t)
+    else:
+        server_addr = servers[0].address
+
+    if not server_addr:
+        raise ValueError("Address of DataServer is not set!")
 
     data_loaders = {}
     try:
         for name in data_pipeline.subsets:
             loader = init_class_from_config(DataLoader, loader_params.to_config())(
-                server_addr=server.address,
+                server_addr=server_addr,
                 subset_name=name,
             )
             data_loaders[name] = loader
@@ -105,7 +141,10 @@ def init_data_loader(
         raise e
 
     finally:
-        _finish_component([server], [workers], None, data_loaders)
+        if dist.is_initialized():
+            dist.barrier()
+
+        _finish_component(servers, workers, None, data_loaders)
 
 
 @contextmanager
@@ -118,6 +157,10 @@ def init_data_loader_from_config(
     proxy_class: tp.Optional[Proxy] = None,
     server_addr: tp.Optional[str] = None,
 ) -> tp.Generator[tp.Dict[str, DataLoader], None, None]:
+    if dist.is_initialized():
+        raise RuntimeError(
+            "This method not supported inside the DDP process, use the 'init_data_loader' method."
+        )
 
     if loader_params is None and model_config_path is None:
         raise ValueError("DataLoader params not set")

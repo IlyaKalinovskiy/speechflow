@@ -2,6 +2,8 @@ import random
 import typing as tp
 import logging
 
+from copy import deepcopy
+
 import torch
 
 from tqdm import tqdm
@@ -28,10 +30,14 @@ class SimpleSampler(AbstractDataSampler):
         self,
         comb_by_len: bool = False,
         use_neighbors: bool = False,
+        use_dynamic_batch: bool = False,
+        max_batch_length: int = 100,
     ):
         super().__init__()
         self._comb_by_len = comb_by_len
         self._use_neighbors = use_neighbors
+        self._use_dynamic_batch = use_dynamic_batch
+        self._max_batch_length = max_batch_length
 
         self._data: Dataset = None  # type: ignore
         self._dataset_size = None
@@ -147,19 +153,50 @@ class SimpleSampler(AbstractDataSampler):
     def fill_epoch(self):
         pass
 
-    def sampling(self, batch_size: int) -> tp.List[DataSample]:
-        self._is_last_batch = False
-
+    def _get_samples(self, batch_size: int) -> tp.List[DataSample]:
         if self._current_idx + batch_size >= self._epoch_size:
             # "None" is signals about the last batch
             chunk = self._current_data[self._current_idx :] + [None]  # type: ignore
             self._is_last_batch = True
-            self._current_idx = 0
-            self.fill_epoch()
         else:
             chunk = self._current_data[self._current_idx : self._current_idx + batch_size]
             self._current_idx += batch_size
+        return chunk
+
+    def sampling(self, batch_size: int) -> tp.List[DataSample]:
+        self._is_last_batch = False
+
+        if self._use_dynamic_batch:
+            chunk = []
+            chunk_len = 0
+            for _ in range(batch_size):
+                for item in self._get_samples(1):
+                    chunk.append(item)
+                    if item is not None:
+                        chunk_len += len(item)
+                if self._is_last_batch or chunk_len > self._max_batch_length:
+                    break
+        else:
+            chunk = self._get_samples(batch_size)
+
+        if self._is_last_batch:
+            self._current_idx = 0
+            self.fill_epoch()
 
         chunk = self.add_neighbors(chunk)
-
         return chunk
+
+    def clone(self):
+        data = self._data
+        current_data = self._current_data
+        self._data = None
+        self._current_data = None
+
+        sampler = deepcopy(self)
+
+        self._data = data
+        self._current_data = current_data
+        sampler._data = data
+        sampler._current_data = current_data
+
+        return sampler

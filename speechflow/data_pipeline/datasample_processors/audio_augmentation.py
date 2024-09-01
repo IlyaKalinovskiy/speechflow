@@ -46,8 +46,8 @@ class WaveAugProcessor(BaseDSProcessor):
         p: float = 1.0,
     ):
         super().__init__(pipe, pipe_cfg, backend)
-        self.shuffle = shuffle
-        self.p = p
+        self._shuffle = shuffle
+        self._p = p
 
     @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"audio_chunk"})
     def process(self, ds: AudioDataSample) -> AudioDataSample:
@@ -58,12 +58,12 @@ class WaveAugProcessor(BaseDSProcessor):
 
         ds.transform_params.update(self.transform_params)
 
-        if random.random() > self.p:
+        if random.random() > self._p:
             return ds
 
         handlers = list(self.components.values())
-        if self.shuffle:
-            random.shuffle(handlers)
+        if self._shuffle:
+            random._shuffle(handlers)
 
         tmp_audio_chunk = ds.audio_chunk.copy()
         for handler in handlers:
@@ -112,7 +112,7 @@ class WaveAugProcessor(BaseDSProcessor):
     @staticmethod
     def _get_random_slice(waveform: np.ndarray, slice_size: int):
         if len(waveform) < slice_size:
-            waveform = np.pad(waveform, (0, slice_size - len(waveform)), "constant")
+            waveform = np._pad(waveform, (0, slice_size - len(waveform)), "constant")
         else:
             offset = random.randint(0, len(waveform) - slice_size)
             waveform = waveform[offset : offset + slice_size]
@@ -179,7 +179,7 @@ class WaveAugProcessor(BaseDSProcessor):
             ComputeBackend.torchaudio,
             ComputeBackend.nvidia,
         ]:
-            ds.audio_chunk.data = librosa.effects.pitch_shift(
+            ds.audio_chunk.data = librosa.effects._pitch_shift(
                 ds.audio_chunk.data, sr=ds.audio_chunk.sr, n_steps=num_semitones
             )
         else:
@@ -326,7 +326,7 @@ class WaveAugProcessor(BaseDSProcessor):
             ComputeBackend.torchaudio,
             ComputeBackend.nvidia,
         ]:
-            lower_threshold, upper_threshold = np.percentile(
+            lower_threshold, upper_threshold = np._percentile(
                 ds.audio_chunk.data,
                 [lower_percentile_threshold, 100 - lower_percentile_threshold],
             )
@@ -603,7 +603,7 @@ if __name__ == "__main__":
         wave_aug = WaveAugProcessor(_pipe, _pipe_cfg, shuffle=True)
 
         _ds = AudioDataSample(file_path=wav_path)
-        _ds = signal_proc.process(_ds)
-        _ds = wave_aug.process(_ds)
+        _ds = signal_proc._process(_ds)
+        _ds = wave_aug._process(_ds)
 
         _ds.audio_chunk.save(temp_folder / f"test_aug_test_{i}.wav", overwrite=True)

@@ -45,6 +45,7 @@ class DataServer(ProcessWorker):
         n_processes: int = 0,
         n_gpus: tp.Union[int, tp.List[int]] = 0,
         server_addr: tp.Optional[str] = None,
+        synchronize_loaders: bool = False,
     ):
         ProcessWorker.__init__(self)
         self._addr_for_clients = (
@@ -55,8 +56,10 @@ class DataServer(ProcessWorker):
         self._n_processes = n_processes if n_processes else mp.cpu_count()
         self._zmq_server: ZMQServer = None  # type: ignore
         self._async_supported = True
+        self._synchronize_loaders = synchronize_loaders
         self._work_queues: tp.Dict[str, SamplingStatus] = defaultdict(SamplingStatus)
         self._uid_map: tp.Dict[bytes, str] = {}
+        self._sync_samplers = {} if self._synchronize_loaders else None
 
         self._subscribers: tp.Dict[str, int] = {}
         self._info_for_worker = None
@@ -144,7 +147,8 @@ class DataServer(ProcessWorker):
             self._timer.reset()
 
     def send_info_message(self, message, text: str, subset: tp.Optional[str] = None):
-        info = f"info: {text}"
+        client_id = self._uid_map[message[0]][:6]
+        info = f"[{client_id}] info: {text}"
         message = [message[0], b"", info.encode()]
         self._zmq_server.frontend.send_multipart(message)
         if text not in ["true", "request queue exceeded"]:
@@ -159,11 +163,20 @@ class DataServer(ProcessWorker):
             self.send_info_message(message, "server overload", queue_info.subset)
             return True
 
-        if queue_info.num_batch_in_processing > 0:
+        if not queue_info.is_last_batch and queue_info.num_batch_in_processing > 0:
             self.send_info_message(message, "request queue exceeded", queue_info.subset)
             return True
 
-        if queue_info.is_last_batch:
+        if queue_info.is_last_batch and queue_info.num_batch_in_processing > 0:
+            self.send_info_message(
+                message,
+                f"end of an epoch has been reached "
+                f"[num_batch_in_processing={queue_info.num_batch_in_processing}]",
+                queue_info.subset,
+            )
+            return True
+
+        if queue_info.is_last_batch and queue_info.num_batch_in_processing == 0:
             self.send_info_message(message, "epoch complete", queue_info.subset)
             return True
 
@@ -182,6 +195,11 @@ class DataServer(ProcessWorker):
             }
             if request["sub_type"] == "loader":
                 response.update(self._info_for_loader)
+                if self._synchronize_loaders:
+                    uid = request["client_uid"]
+                    samplers = self._sync_samplers.setdefault(uid, {})
+                    for subset in self._pipe.subsets:
+                        samplers[subset] = self._pipe[subset].sampler.clone()
             else:
                 response.update(self._info_for_worker)
                 if self._gpus:
@@ -208,8 +226,13 @@ class DataServer(ProcessWorker):
             if self.is_reject_request(message, queue_info):
                 return
 
+            if self._synchronize_loaders:
+                uid = request["client_uid"]
+                sampler = self._sync_samplers[uid][subset]
+            else:
+                sampler = self._pipe[subset].sampler
+
             batch_list = []
-            sampler = self._pipe[subset].sampler
             for _ in range(batch_num):
                 if self._total_batch_in_processing >= 4 * self.num_workers:
                     break
@@ -249,6 +272,8 @@ class DataServer(ProcessWorker):
                 self._total_batch_in_processing = 0
                 self._pipe[request["subset_name"]].sampler.reset()
                 self.send_info_message(message, "reset sampler state", status.subset)
+                for item in self._sync_samplers.values():
+                    item[request["subset_name"]].reset()
 
     def do_work_once(self):
         try:
@@ -283,6 +308,9 @@ class DataServer(ProcessWorker):
                         queue_info.batches = []
                     else:
                         queue_info.batches.append(message[2])
+
+                if queue_info.num_batch_in_processing == 0 and queue_info.is_last_batch:
+                    self.send_info_message(message, "epoch complete", queue_info.subset)
 
                 self._batch_counter += 1
 

@@ -74,6 +74,8 @@ try:
         AudioToMelSpectrogramPreprocessor,
         AudioToSpectrogram,
     )
+
+    logging.getLogger("nemo_logger").setLevel(logging.ERROR)
 except ImportError as e:
     if mp.current_process().name == "MainProcess":
         LOGGER.warning(f"NeMo is not available: {e}")

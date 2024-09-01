@@ -21,6 +21,8 @@ LOGGER = logging.getLogger("root")
 
 try:
     from nemo.collections.asr.modules import SpectrogramAugmentation
+
+    logging.getLogger("nemo_logger").setLevel(logging.ERROR)
 except ImportError as e:
     if mp.current_process().name == "MainProcess":
         LOGGER.warning(f"NeMo is not available: {e}")
@@ -39,11 +41,11 @@ class SpecAugProcessor(WaveAugProcessor):
     def process(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
         ds = super().process(ds)
 
-        if random.random() > self.p:
+        if random.random() > self._p:
             return ds
 
         handlers = list(self.components.values())
-        if self.shuffle:
+        if self._shuffle:
             random.shuffle(handlers)
 
         for handler in handlers:
@@ -83,12 +85,13 @@ class SpecAugProcessor(WaveAugProcessor):
 
 
 class NemoSpecAugProcessor(BaseDSProcessor):
-    def __init__(self, attributes: tp.Union[str, tp.List[str]], **kwargs):
+    def __init__(self, attributes: tp.Union[str, tp.List[str]], p: float = 1.0, **kwargs):
         super().__init__()
         self._spec_aug_cfg = self.get_config_from_locals(locals())
-        self._nemo_spec_aug = None
         self._atts = [attributes] if isinstance(attributes, str) else attributes
+        self._p = p
         self.logging_transform_params(locals())
+        self._nemo_spec_aug = None
 
     def init(self):
         super().init()
@@ -99,6 +102,8 @@ class NemoSpecAugProcessor(BaseDSProcessor):
     @lazy_initialization
     def process(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
         ds = super().process(ds)
+        if random.random() > self._p:
+            return ds
 
         for attr in self._atts:
             field = getattr(ds, attr)

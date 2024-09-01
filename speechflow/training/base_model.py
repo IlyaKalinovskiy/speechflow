@@ -110,6 +110,10 @@ class BaseTorchModel(torch.nn.Module):
         self.initial_params = copy.deepcopy(params)
         self._register_load_state_dict_pre_hook(self.load_params)
 
+    @property
+    def name(self) -> str:
+        return self.__class__.__name__
+
     def get_params(
         self, as_dict: bool = True, after_init: bool = False
     ) -> tp.Union[dict, BaseTorchModelParams]:

@@ -23,9 +23,7 @@ class RandomSampler(SimpleSampler):
         use_dynamic_batch: bool = False,
         max_batch_length: int = 100,
     ):
-        super().__init__(comb_by_len, use_neighbors)
-        self._use_dynamic_batch = use_dynamic_batch
-        self._max_batch_length = max_batch_length
+        super().__init__(comb_by_len, use_neighbors, use_dynamic_batch, max_batch_length)
         self._total_samples = 0
 
     def set_dataset(self, data: Dataset):
@@ -56,9 +54,14 @@ class RandomSampler(SimpleSampler):
             new_chunk = []
             chunk_len = 0
             for item in reversed(chunk):
-                if item is None or chunk_len + len(item) < self._max_batch_length:
+                if (
+                    item is None
+                    or len(new_chunk) == 0
+                    or chunk_len + len(item) < self._max_batch_length
+                ):
                     new_chunk.append(item)
-                    chunk_len += len(item)
+                    if item is not None:
+                        chunk_len += len(item)
 
             chunk = new_chunk[::-1]
 

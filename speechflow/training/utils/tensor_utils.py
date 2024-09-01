@@ -276,3 +276,15 @@ def get_sinusoid_encoding_table(n_position, d_hid, padding_idx=None):
         sinusoid_table[padding_idx] = 0.0
 
     return torch.FloatTensor(sinusoid_table)
+
+
+def string_to_tensor(data: str, device: str, tensor_size: int = 16) -> torch.Tensor:
+    assert len(data) < tensor_size
+    t = torch.frombuffer(data.encode(), dtype=torch.int8)
+    t = F.pad(t, (tensor_size - len(data), 0), value=-1)
+    return t.to(device)
+
+
+def tensor_to_string(data: torch.Tensor) -> str:
+    b = data.cpu().numpy()
+    return b[b > 0].tobytes().decode()

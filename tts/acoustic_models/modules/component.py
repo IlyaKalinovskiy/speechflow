@@ -12,7 +12,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from speechflow.training.base_model import BaseTorchModelParams
-from speechflow.training.utils.profiler import gpu_profiler
+from speechflow.training.utils.gpu_profiler import gpu_profiler
 from speechflow.training.utils.tensor_utils import (
     get_lengths_from_mask,
     get_mask_from_lengths,

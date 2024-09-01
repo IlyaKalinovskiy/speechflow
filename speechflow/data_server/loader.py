@@ -33,17 +33,17 @@ class DataLoader:
         prefetch_on_gpu: bool = False,
         min_prefetch_factor: int = 50,
         max_prefetch_factor: int = 150,
-        ddp_reduce_factor: int = 1,
     ):
         self._info_client = DataClient(server_addr)
         self._data_client = DataClient(
             server_addr, sub_type="loader", uid=self._info_client.uid
         )
+        self._uid = self._info_client.uid[:6]
         self._request_task = Thread(target=self._batch_request)
         self._receive_tasks = [Thread(target=self._batch_receive) for _ in range(2)]
 
         if subset_name not in self._data_client.info["subsets"]:
-            raise ValueError(f"subset {subset_name} not provided by data server!")
+            raise KeyError(f"subset {subset_name} not provided by data server!")
 
         self.subset_name = subset_name
         self.batch_size = batch_size
@@ -64,9 +64,6 @@ class DataLoader:
         else:
             self.epoch_len = math.ceil(self.epoch_size / batch_size)
 
-        assert ddp_reduce_factor > 0
-        self.epoch_len = math.ceil(self.epoch_len / ddp_reduce_factor)
-
         self._stop_event = Event()
         self._epoch_complete_event = Event()
         self._batch_queue: tp.Deque = deque()
@@ -79,9 +76,6 @@ class DataLoader:
         return self
 
     def __next__(self) -> Batch:
-        if not self.non_stop and self._epoch_complete_event.is_set():
-            raise StopIteration
-
         return self.next_batch()
 
     def __del__(self):
@@ -120,11 +114,24 @@ class DataLoader:
 
         return init_class_from_config(DataLoader, cfg)()
 
+    def _send_info_message(self, text: str):
+        self._info_client.send({"message": text, "subset_name": self.subset_name})
+        log_to_file(trace(self, self.subset_name, message=f"[{self._uid}]: {text}"))
+
+    def _is_stop_iteration(self):
+        if not self.non_stop and self._epoch_complete_event.is_set():
+            log_to_file(
+                trace(
+                    self, message=f"[{self._uid}]: stop iteration for {self.subset_name}"
+                )
+            )
+            raise StopIteration
+
     def _batch_request(self):
         while not self._stop_event.is_set():
             try:
                 free_slots = self.prefetch_factor - len(self._batch_queue)
-                if free_slots < self.prefetch_factor // 4:
+                if free_slots <= self.prefetch_factor // 4:
                     continue
 
                 if self._async_supported:
@@ -139,9 +146,8 @@ class DataLoader:
                     response = [b"info: true"]
 
                 for _bytes in response:
-                    if _bytes.startswith(b"info: true") or _bytes.startswith(
-                        b"info: epoch complete"
-                    ):
+
+                    def request_batch():
                         message = {
                             "message": "batch",
                             "subset_name": self.subset_name,
@@ -149,6 +155,15 @@ class DataLoader:
                             "batch_num": free_slots,
                         }
                         self._data_client.send(message)
+
+                    if self.non_stop and (
+                        b"epoch complete" in _bytes or b"end of an epoch" in _bytes
+                    ):
+                        self._send_info_message("receiving_completed")
+                        self._epoch_complete_event.clear()
+                        request_batch()
+                    elif b"true" in _bytes:
+                        request_batch()
 
             except KeyboardInterrupt:
                 LOGGER.error(trace(self, "Interrupt received, stopping ..."))
@@ -170,10 +185,10 @@ class DataLoader:
                 batch_list = []
                 is_epoch_complete = False
                 for _bytes in response:
-                    if _bytes.startswith(b"info: epoch complete"):
+                    if b"epoch complete" in _bytes:
                         is_epoch_complete = True
                         continue
-                    elif _bytes == b"" or _bytes.startswith(b"info:"):
+                    elif _bytes == b"" or b"info:" in _bytes:
                         continue
                     else:
                         batch_list.append(_bytes)
@@ -201,12 +216,7 @@ class DataLoader:
                         self._batch_queue.append(batch)
 
                 if is_epoch_complete:
-                    if self.non_stop or len(self._batch_queue) == 0:
-                        self._data_client.send({"message": "receiving_completed"})
-                        self._epoch_complete_event.set()
-                        log_to_file(
-                            trace(self, self.subset_name, message="epoch_complete")
-                        )
+                    self._epoch_complete_event.set()
 
             except KeyboardInterrupt:
                 LOGGER.error(trace(self, "Interrupt received, stopping ..."))
@@ -234,8 +244,10 @@ class DataLoader:
     def next_batch(self, sleep: float = 0) -> Batch:
         if len(self._batch_queue) == 0:
             assert self._request_task.is_alive(), "DataLoader has not been started!"
+            self._is_stop_iteration()
+
             if sleep > 1:
-                LOGGER.warning(
+                log_to_file(
                     trace(self, self.subset_name, message="Batches receive too slowly!")
                 )
                 Profiler.sleep(sleep)
@@ -243,15 +255,11 @@ class DataLoader:
                 self.prefetch_factor = int(
                     min(self.prefetch_factor * 1.2, self.max_prefetch_factor)
                 )
-                log_to_file(
-                    trace(
-                        self,
-                        message=f"increase prefetch factor for {self.subset_name}: {self.prefetch_factor}",
-                    )
-                )
+                message = f"[{self._uid}]: increase prefetch factor for {self.subset_name}: {self.prefetch_factor}"
+                log_to_file(trace(self, message=message))
                 Profiler.sleep(1.0)
 
-            if sleep > 0 and sleep % 15 == 0:
+            if sleep > 0 and sleep % 15 == 0 and self.non_stop:
                 self.abort_processing()
             elif sleep > 300:
                 raise RuntimeError(
@@ -270,17 +278,14 @@ class DataLoader:
         return batch
 
     def abort_processing(self):
-        self._data_client.send(
-            {"message": "abort_processing", "subset_name": self.subset_name}
-        )
-        LOGGER.warning(trace(self, self.subset_name, message="abort_processing"))
+        self._send_info_message("abort_processing")
 
     def reset(self):
         self._batch_queue.clear()
         self._epoch_complete_event.clear()
-        self._data_client.send({"message": "reset", "subset_name": self.subset_name})
+        self._send_info_message("reset")
         self.prefetch_factor = self.min_prefetch_factor
-        LOGGER.warning(trace(self, self.subset_name, message="reset"))
+        log_to_file(trace(self, self.subset_name, message="reset"))
 
     def get_epoch_iterator(self) -> tp.Iterator[Batch]:
         self.reset()
@@ -288,6 +293,8 @@ class DataLoader:
         class EpochIterator:
             def __init__(self, dl: "DataLoader"):
                 self._dl = dl
+                self._is_non_stop = self._dl.non_stop
+                self._dl.non_stop = False
 
             def __iter__(self):
                 return self
@@ -296,16 +303,10 @@ class DataLoader:
                 return int(self._dl.epoch_len)
 
             def __next__(self):
-                if self._dl._epoch_complete_event.is_set():
-                    self._dl._epoch_complete_event.clear()
-                    log_to_file(
-                        trace(
-                            self._dl, message=f"stop iteration for {self._dl.subset_name}"
-                        )
-                    )
-                    raise StopIteration
-
-                return next(self._dl)
+                try:
+                    return next(self._dl)
+                finally:
+                    self._dl.non_stop = self._is_non_stop
 
         return EpochIterator(self)
 
