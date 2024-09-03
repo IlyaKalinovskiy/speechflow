@@ -12,6 +12,7 @@ batch:
 
 data_loaders:
   batch_size: { default: 8, debug: 2 }
+  epoch_len: { train: 10000, test: ~ }
   min_batch_size: 2
   min_prefetch_factor: { default: 50, debug: 1 }
   max_prefetch_factor: { default: 150, debug: 1 }
@@ -66,6 +67,7 @@ model:
         style_encoder_type: SimpleStyle
         style_feat_type: style_emb
         style_emb_dim: 192
+        style_use_gmvae: true
         use_lang_emb: false
         use_speaker_emb: true
         use_speech_quality_emb: true
@@ -75,7 +77,7 @@ model:
         use_plbert: true
         use_averages: true
         use_range: false
-        use_vq: true
+        use_vq: false
         vq_num_quantizers: 1
         vq_codebook_size: 256
         use_auxiliary_classification_loss: true

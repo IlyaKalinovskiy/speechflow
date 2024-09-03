@@ -475,6 +475,9 @@ class AudioFeatures(FeatureExtractor):
         else:
             vq_output = ComponentInput.empty()
 
+        if self.plbert_proj is not None:
+            x = x + self.plbert_proj(inputs.plbert_feat)
+
         if self.energy_predictor is not None:
             e_output, e_content, e_losses = self.energy_predictor(
                 x=x,
@@ -515,9 +518,6 @@ class AudioFeatures(FeatureExtractor):
 
             inputs.energy = inputs.energy * re[:, 2:3] + re[:, 0:1]
             inputs.pitch = inputs.pitch * rp[:, 2:3] + rp[:, 0:1]
-
-        if self.plbert_proj is not None:
-            x = x + self.plbert_proj(inputs.plbert_feat)
 
         enc_input = ComponentInput(content=x, content_lengths=x_lens, model_inputs=inputs)
         enc_output = self.encoder(enc_input)
