@@ -47,16 +47,18 @@ class AudioChunk:
     def __post_init__(self):
         if self.file_path is not None:
             self.file_path = Path(self.file_path)
-            assert self.file_path.exists() or self.data is not None, "wav file not found!"
+            assert (
+                self.file_path.exists() or self.data is not None
+            ), "audio file not found!"
         else:
-            assert self.waveform is not None, "wave data not set!"
+            assert self.waveform is not None, "waveform data not set!"
 
         self._set_end()
 
     def _set_end(self):
         if self.end is None:
             if self.waveform is None:
-                assert self.file_path, "wav_path not set!"
+                assert self.file_path, "file path not set!"
                 try:
                     self.sr = int(librosa.get_samplerate(path=self.file_path.as_posix()))
                     if LIBROSA_VERSION[1] <= 9:
@@ -241,7 +243,7 @@ class AudioChunk:
         assert begin < end
 
         if inplace:
-            assert not self.is_trim, "wave is already trimmed!"
+            assert not self.is_trim, "waveform is already trimmed!"
             self.begin = 0
             self.end = (end - begin) / self.sr
             self.data = self.data[begin:end]

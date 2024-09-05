@@ -464,7 +464,7 @@ class HierarchicalVarianceAdaptor(Component):
 
         for name, prediction in variance_predictions.items():
             embeddings, variance = self._postprocessing_variance(
-                name, prediction, targets.get(name), model_inputs.ranges
+                name, prediction, targets.get(name), model_inputs
             )
             variance_embeddings[name] = embeddings
             variance_content[name].update({f"{name}_postprocessed": variance})
@@ -494,25 +494,27 @@ class HierarchicalVarianceAdaptor(Component):
         name,
         prediction,
         target,
-        ranges,
+        model_inputs,
     ):
-        variance_params = self.va_variance_params
-        if self.training and variance_params[name].use_target and target is not None:
+        variance_params = self.va_variance_params[name]
+        ranges = model_inputs.ranges
+
+        if self.training and variance_params.use_target and target is not None:
             variance = target
         else:
             variance = (
-                prediction.detach() if variance_params[name].detach_output else prediction
+                prediction.detach() if variance_params.detach_output else prediction
             )
 
-        if variance_params[name].denormalize:
+        if variance_params.denormalize:
             range_name = name
-            if variance_params[name].target is not None:
-                range_name = variance_params[name].target
+            if variance_params.target is not None:
+                range_name = variance_params.target
 
             range_name = range_name.replace("aggregate_", "")
             variance = variance * ranges[range_name][:, 2:3] + ranges[range_name][:, 0:1]
 
-        if variance_params[name].as_embedding:
+        if variance_params.as_embedding:
             embedding_builder = self.embeddings[name]
             variance_emb = embedding_builder(variance)
         else:
@@ -590,7 +592,7 @@ class HierarchicalVarianceAdaptor(Component):
 
         return content, content_lengths, attention_weights
 
-    def forward_step(self, inputs: EncoderOutput) -> VarianceAdaptorOutput:  # type: ignore
+    def forward_step(self, inputs: EncoderOutput, **kwargs) -> VarianceAdaptorOutput:  # type: ignore
         x_duration, x_adaptor = self._get_content(inputs)
         x_duration_length, x_adaptor_length = self._get_content_lengths(inputs)
         targets = self._get_targets(inputs, self.va_variances, self.va_variance_params)
@@ -602,6 +604,7 @@ class HierarchicalVarianceAdaptor(Component):
             x_adaptor_length,
             targets,
             inputs.model_inputs,
+            **kwargs,
         )
 
         (
@@ -616,6 +619,7 @@ class HierarchicalVarianceAdaptor(Component):
             x_adaptor_length,
             targets,
             inputs.model_inputs,
+            **kwargs,
         )
 
         if dura_prediction is not None:
