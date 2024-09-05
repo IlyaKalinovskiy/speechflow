@@ -108,7 +108,7 @@ preproc:
       attributes: [energy, pitch]
       normalize_by: speaker
     aggregate_by_phoneme:
-      attributes: [energy, pitch, mel]
+      attributes: [energy, pitch]
       agg: mean
     curvature_estimate_by_phoneme:
       attributes: [energy, pitch]

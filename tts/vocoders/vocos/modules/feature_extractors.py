@@ -11,6 +11,8 @@ from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
 )
 from speechflow.training.losses.vae_loss import VAELoss
 from speechflow.training.utils.tensor_utils import get_mask_from_lengths
+from tts.acoustic_models.data_types import TTSForwardOutput
+from tts.acoustic_models.models.tts_model import ParallelTTSModel, ParallelTTSParams
 from tts.acoustic_models.modules import TTS_ENCODERS
 from tts.acoustic_models.modules.additional_modules import (
     AdditionalModules,
@@ -34,6 +36,8 @@ from tts.acoustic_models.modules.components.variance_predictors import (
 from tts.acoustic_models.modules.data_types import ComponentInput
 from tts.vocoders.data_types import VocoderForwardInput
 from tts.vocoders.vocos.utils.tensor_utils import safe_log
+
+__all__ = ["MelSpectrogramFeatures", "AudioFeatures", "TTSFeatures"]
 
 
 class FeatureExtractor(nn.Module):
@@ -554,3 +558,40 @@ class AudioFeatures(FeatureExtractor):
             output = x
 
         return output.transpose(1, -1), losses, additional_content
+
+
+class TTSFeatures(FeatureExtractor):
+    def __init__(
+        self,
+        tts_cfg: tp.MutableMapping,
+        output_dim: int = 256,
+    ):
+        super().__init__()
+        self._tts = ParallelTTSModel(tts_cfg)
+
+    def forward(self, inputs: VocoderForwardInput, **kwargs):
+        outputs: TTSForwardOutput = self._tts(inputs)
+
+        target_spec = inputs.spectrogram
+        losses = outputs.additional_losses
+
+        if isinstance(outputs.spectrogram, list):
+            for idx, predict_spec in enumerate(outputs.spectrogram):
+                if predict_spec.shape[-1] == target_spec.shape[-1]:
+                    losses[f"spec_loss_{idx}"] = F.l1_loss(predict_spec, target_spec)
+
+            x = outputs.spectrogram[-1]
+        else:
+            losses["spec_loss"] = F.l1_loss(outputs.spectrogram, target_spec)
+            x = outputs.spectrogram
+
+        if "spec_chunk" in inputs.additional_inputs:
+            chunk = []
+            for i, (a, b) in enumerate(inputs.additional_inputs["spec_chunk"]):
+                chunk.append(x[i, a:b, :])
+
+            output = torch.stack(chunk)
+        else:
+            output = x
+
+        return output.transpose(1, -1), losses, {}

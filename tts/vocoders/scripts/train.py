@@ -14,6 +14,9 @@ THIS_PATH = Path(__file__).absolute()
 ROOT = THIS_PATH.parents[3]
 sys.path.append(ROOT.as_posix())
 
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
+    TTSTextProcessor,
+)
 from speechflow.data_server.helpers import init_data_loader_from_config
 from speechflow.data_server.loader import DataLoader
 from speechflow.io import Config, tp_PATH, tp_PATH_LIST
@@ -92,8 +95,20 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         pl_engine_cls = getattr(vocos, expr_name)
 
         feat_cfg = cfg_model["model"].feature_extractor
-        feat_cfg.init_args.n_langs = speaker_id_handler.n_langs
-        feat_cfg.init_args.n_speakers = speaker_id_handler.n_speakers
+
+        if feat_cfg.class_name == "TTSFeatures":
+            lang = dl_train.client.find_info("lang", "RU")
+            text_proc = TTSTextProcessor(lang=lang)
+            feat_cfg.init_args["tts_cfg"].alphabet_size = text_proc.alphabet_size
+            feat_cfg.init_args[
+                "tts_cfg"
+            ].n_symbols_per_token = text_proc.num_symbols_per_phoneme_token
+            feat_cfg.init_args["tts_cfg"].n_langs = speaker_id_handler.n_langs
+            feat_cfg.init_args["tts_cfg"].n_speakers = speaker_id_handler.n_speakers
+        else:
+            feat_cfg.init_args.n_langs = speaker_id_handler.n_langs
+            feat_cfg.init_args.n_speakers = speaker_id_handler.n_speakers
+
         feat_cls = getattr(vocos, feat_cfg.class_name)
         feat = init_class_from_config(feat_cls, feat_cfg.init_args)()
 

@@ -161,9 +161,6 @@ preproc:
     mu_law:
       type: SignalProcessor
       pipe: [mu_law_encode]
-      pipe_cfg:
-        mu_law_encode:
-          bits: 16
 
 singleton_handlers:
   handlers: [SpeakerIDSetter]

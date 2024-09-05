@@ -104,7 +104,10 @@ class ComponentInput:
 
     def stack_content(self):
         if isinstance(self.content, list):
-            return torch.stack(self.content)
+            try:
+                return torch.stack(self.content)
+            except RuntimeError:
+                return self.content
         else:
             return self.content.unsqueeze(0)
 

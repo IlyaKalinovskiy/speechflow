@@ -242,7 +242,7 @@ class SignalProcessor(BaseAudioProcessor):
     @staticmethod
     def mu_law_encode(
         ds: AudioDataSample,
-        bits: int = 9,
+        bits: int = 16,
         quantize: bool = False,
         split: bool = False,
     ):

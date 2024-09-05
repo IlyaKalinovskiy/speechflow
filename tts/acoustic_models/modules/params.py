@@ -138,7 +138,7 @@ class DecoderParams(EmbeddingParams):
 class PostnetParams(EmbeddingParams):
     """Postnet component parameters."""
 
-    postnet_type: str = "ForwardPostnet"
+    postnet_type: tp.Optional[str] = "ForwardPostnet"
     postnet_num_blocks: int = 1
     postnet_num_layers: int = 1
     postnet_inner_dim: int = 512

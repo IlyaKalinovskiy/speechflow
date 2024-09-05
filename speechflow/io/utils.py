@@ -19,7 +19,9 @@ def check_path(f_py=None, assert_file_exists: bool = False, make_dir: bool = Fal
                     path = Path(path)
                 if isinstance(path, Path):
                     if assert_file_exists and not path.exists():
-                        raise FileNotFoundError(f"Path {path.as_posix()} does not exist!")
+                        raise FileNotFoundError(
+                            f"File or directory '{path.as_posix()}' does not exist!"
+                        )
                 return path
 
             func_sig = inspect.signature(func)

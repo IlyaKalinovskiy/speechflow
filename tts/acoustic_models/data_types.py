@@ -99,7 +99,7 @@ class TTSForwardInputWithSSML(TTSForwardInput):
 
 @dataclass
 class TTSForwardOutput(TrainData):
-    spectrogram: Tensor = None
+    spectrogram: tp.Union[Tensor, tp.List[Tensor]] = None
     spectrogram_lengths: Tensor = None
     after_postnet_spectrogram: Tensor = None
     gate: Tensor = None

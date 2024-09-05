@@ -59,7 +59,7 @@ class DataServer(ProcessWorker):
         self._synchronize_loaders = synchronize_loaders
         self._work_queues: tp.Dict[str, SamplingStatus] = defaultdict(SamplingStatus)
         self._uid_map: tp.Dict[bytes, str] = {}
-        self._sync_samplers = {} if self._synchronize_loaders else None
+        self._sync_samplers = {}
 
         self._subscribers: tp.Dict[str, int] = {}
         self._info_for_worker = None
