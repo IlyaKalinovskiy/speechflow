@@ -218,8 +218,15 @@ class SignalProcessor(BaseAudioProcessor):
         return ds
 
     @staticmethod
-    def resample(ds: AudioDataSample, sample_rate: int) -> AudioDataSample:
-        ds.audio_chunk.resample(sample_rate, inplace=True)
+    def resample(ds: AudioDataSample, sample_rate: int, **kwargs) -> AudioDataSample:
+        try:
+            waveform = ds.audio_chunk.waveform
+            sr = ds.audio_chunk.sr
+            resample = transforms.Resample(orig_freq=sr, new_freq=sample_rate, **kwargs)
+            ds.audio_chunk.data = resample(torch.from_numpy(waveform)).numpy()
+            ds.audio_chunk.sr = sample_rate
+        except ModuleNotFoundError:
+            ds.audio_chunk.resample(sample_rate, inplace=True)
         return ds
 
     @staticmethod

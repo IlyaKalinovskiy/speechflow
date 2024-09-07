@@ -49,7 +49,7 @@ def init_method_from_config(
     if (
         check_keys
         and not init_keys >= config_keys
-        and not (init_keys == {"args", "kwargs"})
+        and not (any(x in init_keys for x in ["args", "kwargs"]))
     ):
         raise ValueError(
             f"Config for {method.__name__} contains invalid or outdated parameters! {config_keys} -> {init_keys}"
@@ -58,6 +58,11 @@ def init_method_from_config(
     for arg in init_params.keys():
         if arg in config:
             params[arg] = config[arg]
+
+    if "kwargs" in init_params:
+        unresolve_keys = init_keys.union(config_keys) - init_keys
+        for key in unresolve_keys:
+            params[key] = config[key]
 
     info = f"Set params for {method.__name__}({', '.join(init_params.keys())})"
     for key, field in params.items():
