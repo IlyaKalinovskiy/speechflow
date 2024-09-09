@@ -8,18 +8,19 @@ from torch.nn import functional as F
 from vector_quantize_pytorch import ResidualFSQ
 
 from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
-from tts.acoustic_models.modules.params import VariancePredictorParams
+from tts.acoustic_models.modules.params import EmbeddingParams
 
 __all__ = ["StyleEncoder", "StyleEncoderParams"]
 
 
-class StyleEncoderParams(VariancePredictorParams):
+class StyleEncoderParams(EmbeddingParams):
     base_encoder_type: tp.Literal[
         "SimpleStyle", "StyleSpeech", "StyleTTS2"
     ] = "SimpleStyle"
     base_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
-    source: str = "spectrogram"
+    source: tp.Optional[str] = "spectrogram"
     source_dim: int = 80
+    style_emb_dim: int = (128,)
     random_chunk: bool = False
     min_spec_len: int = 256
     max_spec_len: int = 512
@@ -47,7 +48,7 @@ class StyleEncoder(Component):
             params, params.base_encoder_params
         )
 
-        self.encoder = enc_cls(enc_params, params.source_dim)
+        self.encoder = enc_cls(enc_params, params.source_dim or input_dim)
 
         if params.use_gmvae:
             self.gmvae = GMVAE(
@@ -105,7 +106,11 @@ class StyleEncoder(Component):
                 )
                 return style_emb, {}, {}
 
-        x = self.get_condition(model_inputs, self.params.source, average_by_time=False)
+        if self.params.source is not None:
+            x = self.get_condition(
+                model_inputs, self.params.source, average_by_time=False
+            )
+
         if x.shape[1] == model_inputs.input_lengths.max():
             x_lengths = model_inputs.input_lengths
         elif model_inputs.output_lengths is None:
@@ -114,9 +119,13 @@ class StyleEncoder(Component):
             x_lengths = model_inputs.output_lengths
 
         if self.params.base_encoder_type == "SimpleStyle":
-            assert x.shape[1] == 1
+            assert x.shape[1] == 1, ValueError(
+                "This style coder requires a biometric embedding."
+            )
         else:
-            assert x.shape[1] > 1
+            assert x.shape[1] > 1, ValueError(
+                "This style coder requires a mel spectrogram."
+            )
 
         if self.params.random_chunk and x.shape[1] > 1:
             name = f"{self.params.source.replace('linear_', '')}_lengths"

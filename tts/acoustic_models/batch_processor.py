@@ -52,6 +52,7 @@ class TTSBatchProcessor(BaseBatchProcessor):
             waveform_lengths=collated.mu_law_waveform_lengths,
             transcription=collated.transcription_id,
             transcription_by_frames=collated.transcription_id_by_frames,
+            mel_spectrogram=collated.mel,
             linear_spectrogram=collated.magnitude,
             aggregate_energy=collated.aggregated.get("energy"),
             aggregate_spectral_flatness=collated.aggregated.get("spectral_flatness"),

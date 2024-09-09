@@ -92,7 +92,6 @@ class MelSpecReconstructionLoss(nn.Module):
         mel = safe_log(self.mel_spec(y))
 
         loss = F.l1_loss(mel, mel_hat)
-
         return loss
 
 
@@ -117,9 +116,9 @@ class GeneratorLoss(nn.Module):
         loss = torch.zeros(1, device=disc_outputs[0].device, dtype=disc_outputs[0].dtype)
         gen_losses = []
         for dg in disc_outputs:
-            l = torch.mean(torch.clamp(1 - dg, min=0))
-            gen_losses.append(l)
-            loss += l
+            val = torch.mean(torch.clamp(1 - dg, min=0))
+            gen_losses.append(val)
+            loss += val
 
         return loss, gen_losses
 

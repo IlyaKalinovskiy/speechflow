@@ -72,8 +72,8 @@ class AudioDataSample(DataSample):
     speaker_emb_mean: tp_DATA = None
     speech_quality_emb: tp_DATA = None
     lpc_feat: tp_DATA = None
-    ssl_feat: SSLFeatures = None
-    ac_feat: AudioCodecFeatures = None
+    ssl_feat: tp.Union[SSLFeatures, tp_DATA] = None
+    ac_feat: tp.Union[AudioCodecFeatures, tp_DATA] = None
     mu_law_waveform: tp_DATA = None
     lpc_waveform: tp_DATA = None
 

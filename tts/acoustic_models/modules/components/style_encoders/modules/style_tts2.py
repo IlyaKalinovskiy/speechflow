@@ -26,7 +26,7 @@ class StyleTTS2(Component):
     def __init__(self, params: StyleTTS2Params, input_dim: int):
         super().__init__(params, input_dim)
         dim_in = input_dim
-        style_dim = params.vp_output_dim
+        style_dim = params.style_emb_dim
         max_conv_dim = 384
 
         blocks = []
@@ -48,7 +48,7 @@ class StyleTTS2(Component):
 
     @property
     def output_dim(self):
-        return self.params.vp_output_dim
+        return self.params.style_emb_dim
 
     def encode(self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs):
         h = self.shared(x.unsqueeze(1))

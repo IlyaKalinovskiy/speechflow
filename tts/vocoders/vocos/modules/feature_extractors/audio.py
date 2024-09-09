@@ -1,7 +1,6 @@
 import typing as tp
 
 import torch
-import torchaudio
 
 from torch import nn
 from torch.nn import functional as F
@@ -11,8 +10,6 @@ from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
 )
 from speechflow.training.losses.vae_loss import VAELoss
 from speechflow.training.utils.tensor_utils import get_mask_from_lengths
-from tts.acoustic_models.data_types import TTSForwardOutput
-from tts.acoustic_models.models.tts_model import ParallelTTSModel, ParallelTTSParams
 from tts.acoustic_models.modules import TTS_ENCODERS
 from tts.acoustic_models.modules.additional_modules import (
     AdditionalModules,
@@ -35,63 +32,17 @@ from tts.acoustic_models.modules.components.variance_predictors import (
 )
 from tts.acoustic_models.modules.data_types import ComponentInput
 from tts.vocoders.data_types import VocoderForwardInput
-from tts.vocoders.vocos.utils.tensor_utils import safe_log
+from tts.vocoders.vocos.modules.feature_extractors.base import FeatureExtractor
 
-__all__ = ["MelSpectrogramFeatures", "AudioFeatures", "TTSFeatures"]
-
-
-class FeatureExtractor(nn.Module):
-    """Base class for feature extractors."""
-
-    def forward(self, inputs: VocoderForwardInput, **kwargs) -> torch.Tensor:
-        """Extract features from the given audio.
-
-        Args:
-            inputs (VocoderForwardInput): Input audio features.
-
-        Returns:
-            Tensor: Extracted features of shape (B, C, L), where B is the batch size,
-                    C denotes output features, and L is the sequence length.
-
-        """
-        raise NotImplementedError("Subclasses must implement the forward method.")
-
-
-class MelSpectrogramFeatures(FeatureExtractor):
-    def __init__(
-        self, sample_rate=24000, n_fft=1024, hop_length=320, n_mels=80, padding="center"
-    ):
-        super().__init__()
-        if padding not in ["center", "same"]:
-            raise ValueError("Padding must be 'center' or 'same'.")
-        self.padding = padding
-        self.mel_spec = torchaudio.transforms.MelSpectrogram(
-            sample_rate=sample_rate,
-            n_fft=n_fft,
-            hop_length=hop_length,
-            n_mels=n_mels,
-            center=padding == "center",
-            power=1,
-        )
-
-    def forward(self, inputs: VocoderForwardInput, **kwargs):
-        if self.padding == "same":
-            pad = self.mel_spec.win_length - self.mel_spec.hop_length
-            audio = torch.nn.functional.pad(
-                inputs.waveform, (pad // 2, pad // 2), mode="reflect"
-            )
-        else:
-            audio = inputs.waveform
-
-        mel = self.mel_spec(audio)
-        features = safe_log(mel)
-        return features, {}
+__all__ = ["AudioFeatures"]
 
 
 class AudioFeatures(FeatureExtractor):
     def __init__(
         self,
-        input_feat_type: tp.Literal["linear_spec", "mel_spec", "ssl_feat"] = "mel_spec",
+        input_feat_type: tp.Literal[
+            "linear_spectrogram", "mel_spectrogram", "ssl_feat"
+        ] = "mel_spectrogram",
         output_dim: int = 256,
         n_langs: int = 1,
         n_speakers: int = 2,
@@ -100,7 +51,7 @@ class AudioFeatures(FeatureExtractor):
         mel_spectrogram_dim: int = 80,
         ssl_feat_dim: int = 1024,
         style_emb_dim: int = 192,
-        condition_emb_dim: int = 32,
+        condition_emb_dim: int = 64,
         encoder_type: str = "RNNEncoder",
         encoder_num_blocks: int = 1,
         encoder_num_layers: int = 1,
@@ -110,8 +61,12 @@ class AudioFeatures(FeatureExtractor):
             "SimpleStyle", "StyleSpeech", "StyleTTS2"
         ] = "StyleSpeech",
         style_feat_type: tp.Literal[
-            "linear_spec", "mel_spec", "ssl_feat", "speaker_emb", "style_emb"
-        ] = "mel_spec",
+            "linear_spectrogram",
+            "mel_spectrogram",
+            "ssl_feat",
+            "speaker_emb",
+            "style_emb",
+        ] = "mel_spectrogram",
         style_use_gmvae: bool = False,
         style_use_fsq: bool = False,
         style_gmvae_n_components: int = 16,
@@ -130,6 +85,7 @@ class AudioFeatures(FeatureExtractor):
         use_style: bool = False,
         use_energy: bool = False,
         use_pitch: bool = False,
+        use_sf_encoder: bool = False,
         use_plbert: bool = False,
         use_ssl_adjustment: bool = False,
         use_vq: bool = False,
@@ -142,9 +98,9 @@ class AudioFeatures(FeatureExtractor):
         super().__init__()
 
         def _get_feat_dim(feat_name: str) -> int:
-            if feat_name == "linear_spec":
+            if feat_name == "linear_spectrogram":
                 return linear_spectrogram_dim
-            elif feat_name == "mel_spec":
+            elif feat_name == "mel_spectrogram":
                 return mel_spectrogram_dim
             elif feat_name == "ssl_feat":
                 return ssl_feat_dim
@@ -200,8 +156,9 @@ class AudioFeatures(FeatureExtractor):
         if use_style:
             style_params = StyleEncoderParams(
                 base_encoder_type=style_encoder_type,
-                source=style_feat_type,
+                source=None,
                 source_dim=_get_feat_dim(style_feat_type),
+                style_emb_dim=style_emb_dim,
                 vp_output_dim=condition_emb_dim,
                 min_spec_len=128,
                 max_spec_len=512,
@@ -222,7 +179,7 @@ class AudioFeatures(FeatureExtractor):
                 self.vae_scheduler = None
 
             condition.append("style_emb<no_detach>")
-            condition_dim += condition_emb_dim
+            condition_dim += style_emb_dim
         else:
             self.style_enc = None
 
@@ -305,7 +262,7 @@ class AudioFeatures(FeatureExtractor):
 
         # ----- init 1d source-filter encoder -----
 
-        if use_energy or use_pitch:
+        if use_sf_encoder:
             enc_params = SFEncoderParams(
                 base_encoder_type=encoder_type,
                 encoder_inner_dim=encoder_inner_dim,
@@ -378,9 +335,9 @@ class AudioFeatures(FeatureExtractor):
     def _get_input_feat(
         self, inputs: VocoderForwardInput
     ) -> tp.Tuple[torch.Tensor, torch.Tensor]:
-        if self.input_feat_type == "linear_spec":
+        if self.input_feat_type == "linear_spectrogram":
             return inputs.linear_spectrogram, inputs.spectrogram_lengths
-        elif self.input_feat_type == "mel_spec":
+        elif self.input_feat_type == "mel_spectrogram":
             return inputs.spectrogram, inputs.spectrogram_lengths
         elif self.input_feat_type == "ssl_feat":
             return inputs.ssl_feat, inputs.ssl_feat_lengths
@@ -411,9 +368,9 @@ class AudioFeatures(FeatureExtractor):
     def _get_style(
         self, inputs: VocoderForwardInput, global_step: int
     ) -> tp.Tuple[torch.Tensor, tp.Dict[str, torch.Tensor]]:
-        if self.style_feat_type == "linear_spec":
+        if self.style_feat_type == "linear_spectrogram":
             source, source_lengths = inputs.linear_spectrogram, inputs.spectrogram_lengths
-        elif self.style_feat_type == "mel_spec":
+        elif self.style_feat_type == "mel_spectrogram":
             source, source_lengths = inputs.spectrogram, inputs.spectrogram_lengths
         elif self.style_feat_type == "ssl_feat":
             source, source_lengths = inputs.ssl_feat, inputs.ssl_feat_lengths
@@ -550,48 +507,21 @@ class AudioFeatures(FeatureExtractor):
 
         if "spec_chunk" in inputs.additional_inputs:
             chunk = []
+            energy = []
+            pitch = []
             for i, (a, b) in enumerate(inputs.additional_inputs["spec_chunk"]):
                 chunk.append(x[i, a:b, :])
+                energy.append(inputs.energy[i, a:b])
+                pitch.append(inputs.pitch[i, a:b])
 
             output = torch.stack(chunk)
+            additional_content["energy"] = torch.stack(energy)
+            additional_content["pitch"] = torch.stack(pitch)
+            additional_content["style_emb"] = conditions["style_emb"]
         else:
             output = x
+            additional_content["energy"] = inputs.energy
+            additional_content["pitch"] = inputs.pitch
+            additional_content["style_emb"] = conditions["style_emb"]
 
         return output.transpose(1, -1), losses, additional_content
-
-
-class TTSFeatures(FeatureExtractor):
-    def __init__(
-        self,
-        tts_cfg: tp.MutableMapping,
-        output_dim: int = 256,
-    ):
-        super().__init__()
-        self._tts = ParallelTTSModel(tts_cfg)
-
-    def forward(self, inputs: VocoderForwardInput, **kwargs):
-        outputs: TTSForwardOutput = self._tts(inputs)
-
-        target_spec = inputs.spectrogram
-        losses = outputs.additional_losses
-
-        if isinstance(outputs.spectrogram, list):
-            for idx, predict_spec in enumerate(outputs.spectrogram):
-                if predict_spec.shape[-1] == target_spec.shape[-1]:
-                    losses[f"spec_loss_{idx}"] = F.l1_loss(predict_spec, target_spec)
-
-            x = outputs.spectrogram[-1]
-        else:
-            losses["spec_loss"] = F.l1_loss(outputs.spectrogram, target_spec)
-            x = outputs.spectrogram
-
-        if "spec_chunk" in inputs.additional_inputs:
-            chunk = []
-            for i, (a, b) in enumerate(inputs.additional_inputs["spec_chunk"]):
-                chunk.append(x[i, a:b, :])
-
-            output = torch.stack(chunk)
-        else:
-            output = x
-
-        return output.transpose(1, -1), losses, {}

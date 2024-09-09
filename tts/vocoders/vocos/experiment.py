@@ -11,6 +11,7 @@ import pytorch_lightning as pl
 
 from speechflow.training.saver import ExperimentSaver
 from tts.vocoders.batch_processor import VocoderBatchProcessor
+from tts.vocoders.data_types import VocoderForwardInput, VocoderTarget
 from tts.vocoders.vocos.helpers import plot_spectrogram_to_numpy
 from tts.vocoders.vocos.loss import (
     DiscriminatorLoss,
@@ -152,11 +153,28 @@ class VocosExp(pl.LightningModule):
         )
 
     def forward(self, inputs, **kwargs):
-        features, losses, _ = self.feature_extractor(inputs, **kwargs)
-        x = self.backbone(features, **kwargs)
+        losses = {}
+
+        feats, ft_losses, ft_additional = self.feature_extractor(inputs, **kwargs)
+        losses.update(ft_losses)
+        kwargs.update(ft_additional)
+
+        x = self.backbone(feats, **kwargs)
+
         audio_output, mb_audio_output, head_losses = self.head(x, **kwargs)
         losses.update(head_losses)
+
         return audio_output, mb_audio_output, losses
+
+    @staticmethod
+    def _get_kwargs(inputs: VocoderForwardInput):
+        return {
+            "audio_gt": inputs.waveform.squeeze(-1),
+            "ac_latent_gt": inputs.ac_feat,
+            "speaker_emb_gt": inputs.speaker_emb,
+            "spec_chunk": inputs.additional_inputs.get("spec_chunk"),
+            "model_inputs": inputs,
+        }
 
     def training_step(self, batch, batch_idx, optimizer_idx, **kwargs):
         inputs, targets, metadata = self.batch_processor(
@@ -164,10 +182,7 @@ class VocosExp(pl.LightningModule):
         )
 
         audio_input = inputs.waveform.squeeze(-1)
-        kwargs["audio_gt"] = audio_input
-        kwargs["ac_latent_gt"] = batch.collated_samples.ac_feat
-        kwargs["speaker_emb_gt"] = batch.collated_samples.speaker_emb
-        kwargs["spec_chunk"] = batch.collated_samples.additional_fields["spec_chunk"]
+        kwargs = self._get_kwargs(inputs)
 
         # train discriminator
         if optimizer_idx == 0 and self.train_discriminator:
@@ -303,9 +318,7 @@ class VocosExp(pl.LightningModule):
         )
 
         audio_input = inputs.waveform.squeeze(-1)
-        kwargs["audio_gt"] = audio_input
-        kwargs["ac_latent_gt"] = inputs.ac_feat
-        kwargs["speaker_emb_gt"] = inputs.speaker_emb
+        kwargs = self._get_kwargs(inputs)
 
         audio_hat, _, feat_losses = self(inputs, **kwargs)
 

@@ -32,7 +32,7 @@ class StyleSpeech(Component):
     def __init__(self, params: StyleSpeechParams, input_dim: int):
         super().__init__(params, input_dim)
 
-        style_hidden = params.vp_output_dim
+        style_hidden = params.style_emb_dim
 
         self.in_dim = input_dim
         self.hidden_dim = style_hidden
@@ -68,7 +68,7 @@ class StyleSpeech(Component):
 
     @property
     def output_dim(self):
-        return self.params.vp_output_dim
+        return self.params.style_emb_dim
 
     @staticmethod
     def temporal_avg_pool(x, x_lengths, x_mask):
