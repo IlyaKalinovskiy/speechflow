@@ -20,6 +20,7 @@ class TTSFeatures(FeatureExtractor):
     ):
         super().__init__()
         self._tts = ParallelTTSModel(tts_cfg)
+        self._mel_proj = torch.nn.Linear(output_dim, 80)
 
     def forward(self, inputs: VocoderForwardInput, **kwargs):
         outputs: TTSForwardOutput = self._tts(inputs)
@@ -31,6 +32,10 @@ class TTSFeatures(FeatureExtractor):
             for idx, predict_spec in enumerate(outputs.spectrogram):
                 if predict_spec.shape[-1] == target_spec.shape[-1]:
                     losses[f"spec_loss_{idx}"] = F.l1_loss(predict_spec, target_spec)
+                else:
+                    losses[f"spec_loss_{idx}"] = F.l1_loss(
+                        self._mel_proj(predict_spec), target_spec
+                    )
 
             x = outputs.spectrogram[-1]
         else:

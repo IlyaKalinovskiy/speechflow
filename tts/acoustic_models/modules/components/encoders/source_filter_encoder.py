@@ -23,19 +23,19 @@ __all__ = [
 
 
 class SFEncoderParams(EncoderParams):
-    base_encoder_type: str = "FFTEncoder"
+    base_encoder_type: str = "RNNEncoder"
     base_encoder_params: dict = None  # type: ignore
     condition: tp.Tuple[str, ...] = ()
     condition_dim: int = 0
     condition_type: tp.Literal["cat", "adanorm"] = "cat"
     var_as_embedding: tp.Tuple[bool, bool] = (False, False)
     var_intervals: tp.Tuple[tp.Tuple[float, float], tp.Tuple[float, float]] = (
-        (0, 1.5),
-        (0, 1.5),
+        (0, 150),
+        (0, 880),
     )
-    var_n_bins: tp.Tuple[int, int] = (384, 384)
+    var_n_bins: tp.Tuple[int, int] = (256, 256)
     var_embedding_dim: tp.Tuple[int, int] = (64, 64)
-    var_log_scale: tp.Tuple[bool, bool] = (False, False)
+    var_log_scale: tp.Tuple[bool, bool] = (False, True)
 
     def model_post_init(self, __context: tp.Any):
         if self.base_encoder_params is None:
@@ -100,7 +100,7 @@ class SFEncoder(Component):
         x, x_lens, x_mask = self.get_content_and_mask(inputs)
 
         if self.energy_embeddings is not None:
-            energy = inputs.model_inputs.pitch
+            energy = inputs.model_inputs.energy
             energy_embs = self.energy_embeddings(energy)
         else:
             energy_embs = inputs.model_inputs.energy.unsqueeze(-1)
