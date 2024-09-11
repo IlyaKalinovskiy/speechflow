@@ -206,6 +206,7 @@ class VocoderEvaluationInterface(VocoderLoader):
             ref_collated: SpectrogramCollateOutput = ref_batch.collated_samples  # type: ignore
             collated.speaker_emb = ref_collated.speaker_emb
             collated.speaker_emb_mean = ref_collated.speaker_emb_mean
+            collated.spectrogram = ref_collated.spectrogram
             collated.averages = ref_collated.averages
             collated.speech_quality_emb = ref_collated.speech_quality_emb
             collated.additional_fields = ref_collated.additional_fields

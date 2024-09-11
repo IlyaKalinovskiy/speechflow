@@ -32,24 +32,6 @@ from tts.vocoders import vocos
 LOGGER = logging.getLogger("root")
 
 
-def update_vocos_model_config(cfg: Config, dl: DataLoader):
-    speaker_id_handler = dl.client.find_info("SpeakerIDSetter")
-    if speaker_id_handler is not None:
-        cfg["model"]["feature_extractor"][
-            "init_args"
-        ].n_langs = speaker_id_handler.n_langs
-        cfg["model"]["feature_extractor"][
-            "init_args"
-        ].n_speakers = speaker_id_handler.n_speakers
-        lang_id_map = speaker_id_handler.lang2id
-        speaker_id_map = speaker_id_handler.speaker2id
-    else:
-        lang_id_map = None
-        speaker_id_map = None
-
-    return cfg, lang_id_map, speaker_id_map
-
-
 def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
     experiment_path = Path(cfg_model["experiment_path"])
 
@@ -68,6 +50,14 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         lang_id_map = None
         speaker_id_map = None
 
+    lang = dl_train.client.find_info("lang")
+    if lang:
+        text_proc = TTSTextProcessor(lang=lang)
+        alphabet = text_proc.alphabet
+    else:
+        text_proc = None
+        alphabet = None
+
     saver = ExperimentSaver(
         expr_path=experiment_path,
         additional_files={
@@ -79,6 +69,7 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         {
             "lang_id_map": lang_id_map,
             "speaker_id_map": speaker_id_map,
+            "alphabet": alphabet,
         }
     )
 
@@ -97,14 +88,11 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         feat_cfg = cfg_model["model"].feature_extractor
 
         if feat_cfg.class_name == "TTSFeatures":
-            lang = dl_train.client.find_info("lang", "RU")
-            text_proc = TTSTextProcessor(lang=lang)
-            feat_cfg.init_args["tts_cfg"].alphabet_size = text_proc.alphabet_size
-            feat_cfg.init_args[
-                "tts_cfg"
-            ].n_symbols_per_token = text_proc.num_symbols_per_phoneme_token
-            feat_cfg.init_args["tts_cfg"].n_langs = speaker_id_handler.n_langs
-            feat_cfg.init_args["tts_cfg"].n_speakers = speaker_id_handler.n_speakers
+            tts_cfg = feat_cfg.init_args["tts_cfg"]
+            tts_cfg.alphabet_size = text_proc.alphabet_size
+            tts_cfg.n_symbols_per_token = text_proc.num_symbols_per_phoneme_token
+            tts_cfg.n_langs = speaker_id_handler.n_langs
+            tts_cfg.n_speakers = speaker_id_handler.n_speakers
         else:
             feat_cfg.init_args.n_langs = speaker_id_handler.n_langs
             feat_cfg.init_args.n_speakers = speaker_id_handler.n_speakers

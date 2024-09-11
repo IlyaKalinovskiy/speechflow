@@ -134,6 +134,34 @@ class TTSEvaluationInterface:
         tts_ckpt = ExperimentSaver.load_checkpoint(tts_ckpt_path)
         cfg_data, cfg_model = ExperimentSaver.load_configs_from_checkpoint(tts_ckpt)
 
+        if "feature_extractor" in cfg_model["model"]:
+            cfg_model["model"] = {
+                "type": "ParallelTTSModel",
+                "params": cfg_model["model"]["feature_extractor"]["init_args"]["tts_cfg"],
+            }
+            tts_ckpt["params"] = cfg_model["model"]["params"]
+
+            tts_ckpt["params"]["n_langs"] = 1
+            tts_ckpt["params"]["n_speakers"] = len(tts_ckpt["speaker_id_map"])
+            tts_ckpt["params"]["alphabet_size"] = 246
+
+            sd = tts_ckpt["state_dict"]
+            for k in list(sd.keys()):
+                if any(
+                    x in k
+                    for x in [
+                        "backbone",
+                        "head",
+                        "melspec_loss",
+                        "multiperioddisc",
+                        "multiresddisc",
+                        "feature_extractor._mel_proj",
+                    ]
+                ):
+                    sd.pop(k)
+                elif "feature_extractor" in k:
+                    sd[k.replace("feature_extractor._tts", "model")] = sd.pop(k)
+
         version_check(
             multilingual_text_parser, tts_ckpt["versions"]["libs"]["text_parser"]
         )
@@ -184,7 +212,7 @@ class TTSEvaluationInterface:
             assert tts_ckpt["alphabet"] == TTSTextProcessor(self.lang).alphabet
         else:
             assert (
-                tts_ckpt["params"]["n_symbols"]
+                tts_ckpt["params"]["alphabet_size"]
                 == TTSTextProcessor(lang=self.lang).alphabet_size
             )
 
@@ -297,7 +325,8 @@ class TTSEvaluationInterface:
         # init batch processor
         cfg_model["batch"]["type"] = (
             "TTSBatchProcessorWithSSML"
-            if cfg_model["batch"]["type"] == "TTSBatchProcessor"
+            if cfg_model["batch"]["type"]
+            in ["TTSBatchProcessor", "VocoderBatchProcessor"]
             else cfg_model["batch"]["type"]
         )
 

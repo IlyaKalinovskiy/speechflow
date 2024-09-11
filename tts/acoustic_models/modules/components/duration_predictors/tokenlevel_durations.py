@@ -28,6 +28,7 @@ class TokenLevelDPParams(VariancePredictorParams):
     add_lm_feat: bool = False
     add_noise: bool = False
     every_iter: int = 2
+    var_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
 
 
 class TokenLevelDP(Component):

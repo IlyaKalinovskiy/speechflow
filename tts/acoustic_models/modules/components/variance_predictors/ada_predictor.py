@@ -2,6 +2,7 @@ import typing as tp
 
 import torch
 
+from pydantic import Field
 from torch import nn
 
 from tts.acoustic_models.modules.ada_speech.decoder import AdaDecoder, AdaDecoderParams
@@ -16,6 +17,7 @@ class AdaPredictorParams(VariancePredictorParams):
     aggregate_by_tokens: bool = False
     condition: tp.Tuple[str, ...] = ()
     condition_dim: int = 0
+    var_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
 
 
 class AdaPredictor(Component):

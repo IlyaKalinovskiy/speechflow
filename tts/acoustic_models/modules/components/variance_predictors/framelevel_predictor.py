@@ -6,6 +6,7 @@ from pydantic import Field
 from torch.nn import functional as F
 
 from speechflow.training.utils.tensor_utils import get_mask_from_lengths
+from tts.acoustic_models.modules.common import VarianceEmbedding
 from tts.acoustic_models.modules.common.blocks import Regression
 from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.components.discriminators import SignalDiscriminator
@@ -22,7 +23,11 @@ __all__ = [
 class FrameLevelPredictorParams(VariancePredictorParams):
     frame_encoder_type: str = "VarianceEncoder"
     frame_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
-    use_ssl_adjustment: bool = False
+    use_ssl_adjustment: bool = (
+        False  # improving the target feature through prediction over SSL model
+    )
+    use_mtm: bool = False  # masked token modeling
+    var_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
 
 
 class FrameLevelPredictor(Component):
@@ -37,26 +42,46 @@ class FrameLevelPredictor(Component):
 
         from tts.acoustic_models.modules import TTS_ENCODERS
 
-        def _init_encoder(_enc_cls, _enc_params_cls, _encoder_params, _input_dim):
+        def _init_encoder(
+            _enc_cls, _enc_params_cls, _encoder_params, _input_dim, _output_dim=1
+        ):
             _enc_params = _enc_params_cls.init_from_parent_params(params, _encoder_params)
             _enc_params.encoder_num_blocks = params.vp_num_blocks
             _enc_params.encoder_num_layers = params.vp_num_layers
             _enc_params.encoder_inner_dim = params.vp_inner_dim
-            _enc_params.encoder_output_dim = 1
+            _enc_params.encoder_output_dim = _output_dim
             return _enc_cls(_enc_params, _input_dim)
 
         enc_cls, enc_params_cls = TTS_ENCODERS[params.frame_encoder_type]
-        self.frame_encoder = _init_encoder(
-            enc_cls, enc_params_cls, params.frame_encoder_params, input_dim
-        )
 
         if params.use_ssl_adjustment:
-            self.ssl_adjustment = _init_encoder(
+            self.ssl_encoder = _init_encoder(
                 enc_cls, enc_params_cls, params.frame_encoder_params, params.ssl_feat_dim
             )
             self.ssl_proj = Regression(params.vp_inner_dim * 2, 1)
         else:
-            self.ssl_adjustment = None
+            self.ssl_encoder = None
+
+        if params.use_mtm:
+            emb_dim = params.var_params.emb_dim  # type: ignore
+            self.mtm_embeddings = VarianceEmbedding(
+                interval=(0, params.var_params.interval[1]),  # type: ignore
+                n_bins=params.var_params.n_bins,  # type: ignore
+                log_scale=params.var_params.log_scale,  # type: ignore
+                emb_dim=emb_dim,  # type: ignore
+            )
+            self.mtm_encoder = _init_encoder(
+                enc_cls, enc_params_cls, params.frame_encoder_params, emb_dim, emb_dim
+            )
+            self.mtm_proj = Regression(input_dim, emb_dim)
+
+            input_dim += emb_dim
+        else:
+            self.mtm_encoder = None
+
+        self.frame_encoder = _init_encoder(
+            enc_cls, enc_params_cls, params.frame_encoder_params, input_dim
+        )
 
     @property
     def output_dim(self):
@@ -67,20 +92,36 @@ class FrameLevelPredictor(Component):
     ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
         name = kwargs.get("name")
         target = kwargs.get("target")
+        losses = {}
+
+        if self.mtm_encoder is not None and target is not None:
+            mask_target = target
+
+            mtm_x = self.mtm_embeddings(mask_target)
+            mtm_x = mtm_x + self.mtm_proj(x.detach())
+            mtm_predict, _ = self.mtm_encoder.process_content(
+                mtm_x, x_lengths, model_inputs
+            )
+
+            if self.training:
+                losses[f"{name}_mtm_loss"] = F.l1_loss(
+                    mtm_predict, self.mtm_embeddings(target)
+                )
+
+            x = torch.cat([x, mtm_predict], dim=-1)
 
         enc_predict, enc_ctx = self.frame_encoder.process_content(
             x, x_lengths, model_inputs
         )
 
-        losses = {}
         content = {
             f"{name}_vp_context": enc_ctx,
             f"{name}_vp_predict": enc_predict,
         }
 
         if self.training:
-            if self.ssl_adjustment is not None:
-                _, ssl_ctx = self.ssl_adjustment.process_content(
+            if self.ssl_encoder is not None:
+                _, ssl_ctx = self.ssl_encoder.process_content(
                     model_inputs.ssl_feat, x_lengths, model_inputs
                 )
                 var_from_ssl = self.ssl_proj(

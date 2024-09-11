@@ -33,6 +33,12 @@ def instantiate_class(
 
     module = __import__(class_module, fromlist=[class_name])
     args_class = getattr(module, class_name)
+
+    if "tts_cfg" in kwargs:
+        kwargs["tts_cfg"]["n_langs"] = kwargs.pop("n_langs")
+        kwargs["tts_cfg"]["n_speakers"] = kwargs.pop("n_speakers")
+        kwargs["tts_cfg"]["alphabet_size"] = 246
+
     return args_class(*args, **kwargs)
 
 
@@ -97,13 +103,12 @@ class Vocos(nn.Module):
 
         """
         x = self.backbone(features_input, **kwargs)
-        audio_output = self.head(x)
+        audio_output = self.head(x, **kwargs)
         return audio_output
 
     @torch.no_grad()
     def inference(self, inputs: VocoderForwardInput, **kwargs) -> VocoderForwardOutput:
-        feat, losses, additional_content = self.feature_extractor(inputs, **kwargs)
+        feat, losses, ft_additional = self.feature_extractor(inputs, **kwargs)
+        kwargs.update(ft_additional)
         waveform, _, _ = self.decode(feat, **kwargs)
-        return VocoderForwardOutput(
-            waveform=waveform, additional_content=additional_content
-        )
+        return VocoderForwardOutput(waveform=waveform, additional_content=ft_additional)

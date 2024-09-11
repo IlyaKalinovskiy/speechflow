@@ -7,7 +7,8 @@ from torch import nn
 from torch.nn import functional as F
 
 from speechflow.training.utils.tensor_utils import get_mask_from_lengths
-from tts.acoustic_models.modules.common import SoftLengthRegulator
+from tts.acoustic_models.modules.common import SoftLengthRegulator, VarianceEmbedding
+from tts.acoustic_models.modules.common.blocks import Regression
 from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.components.discriminators import SignalDiscriminator
 from tts.acoustic_models.modules.params import VariancePredictorParams
@@ -26,6 +27,8 @@ class TokenLevelPredictorParams(VariancePredictorParams):
     token_encoder_type: str = "VarianceEncoder"
     token_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
     add_lm_feat: bool = False
+    use_mtm: bool = False  # masked token modeling
+    var_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
 
 
 class TokenLevelPredictor(Component):
@@ -40,19 +43,19 @@ class TokenLevelPredictor(Component):
 
         from tts.acoustic_models.modules import TTS_ENCODERS
 
-        def _init_encoder(_enc_cls, _enc_params_cls, _encoder_params):
+        def _init_encoder(
+            _enc_cls, _enc_params_cls, _encoder_params, _input_dim, _output_dim=None
+        ):
             _enc_params = _enc_params_cls.init_from_parent_params(params, _encoder_params)
             _enc_params.encoder_num_blocks = params.vp_num_blocks
             _enc_params.encoder_num_layers = params.vp_num_layers
             _enc_params.encoder_inner_dim = params.vp_inner_dim
-            _enc_params.encoder_output_dim = params.vp_output_dim
-            return _enc_cls(_enc_params, input_dim)
+            _enc_params.encoder_output_dim = (
+                params.vp_output_dim if _output_dim is None else _output_dim
+            )
+            return _enc_cls(_enc_params, _input_dim)
 
         enc_cls, enc_params_cls = TTS_ENCODERS[params.token_encoder_type]
-        self.token_encoder = _init_encoder(
-            enc_cls, enc_params_cls, params.token_encoder_params
-        )
-        self.lr = SoftLengthRegulator()
 
         if params.add_lm_feat:
             self.lm_proj = nn.Linear(params.lm_feat_dim, input_dim, bias=False)
@@ -62,12 +65,34 @@ class TokenLevelPredictor(Component):
 
             enc_cls, enc_params_cls = TTS_ENCODERS[params.word_encoder_type]
             self.word_encoder = _init_encoder(
-                enc_cls, enc_params_cls, params.word_encoder_params
+                enc_cls, enc_params_cls, params.word_encoder_params, input_dim
             )
 
             self.hard_lr = SoftLengthRegulator(hard=True)
         else:
             self.token_proj = nn.Identity()
+
+        if params.use_mtm:
+            emb_dim = params.var_params.emb_dim  # type: ignore
+            self.mtm_embeddings = VarianceEmbedding(
+                interval=(0, params.var_params.interval[1]),  # type: ignore
+                n_bins=params.var_params.n_bins,  # type: ignore
+                log_scale=params.var_params.log_scale,  # type: ignore
+                emb_dim=emb_dim,  # type: ignore
+            )
+            self.mtm_encoder = _init_encoder(
+                enc_cls, enc_params_cls, params.token_encoder_params, emb_dim, emb_dim
+            )
+            self.mtm_proj = Regression(input_dim, emb_dim)
+
+            input_dim += emb_dim
+        else:
+            self.mtm_encoder = None
+
+        self.token_encoder = _init_encoder(
+            enc_cls, enc_params_cls, params.token_encoder_params, input_dim
+        )
+        self.lr = SoftLengthRegulator()
 
     @property
     def output_dim(self):
@@ -77,7 +102,7 @@ class TokenLevelPredictor(Component):
         self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
     ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
         name = kwargs.get("name")
-
+        target_by_tokens = kwargs.get("target")
         losses = {}
 
         word_length = model_inputs.additional_inputs.get("word_lengths")
@@ -97,6 +122,22 @@ class TokenLevelPredictor(Component):
         else:
             x_by_tokens = x
 
+        if self.mtm_encoder is not None and target_by_tokens is not None:
+            mask_target = target_by_tokens
+
+            mtm_x = self.mtm_embeddings(mask_target)
+            mtm_x = mtm_x + self.mtm_proj(x_by_tokens.detach())
+            mtm_predict, _ = self.mtm_encoder.process_content(
+                mtm_x, x_lengths, model_inputs
+            )
+
+            if self.training:
+                losses[f"{name}_mtm_loss"] = F.l1_loss(
+                    mtm_predict, self.mtm_embeddings(target_by_tokens)
+                )
+
+            x_by_tokens = torch.cat([x_by_tokens, mtm_predict], dim=-1)
+
         tk_proj = self.token_proj(x_by_tokens)
         tk_predict, tk_ctx = self.token_encoder.process_content(
             tk_proj, model_inputs.input_lengths, model_inputs
@@ -106,7 +147,6 @@ class TokenLevelPredictor(Component):
         var_predict = tk_predict.squeeze(-1)
 
         if self.training:
-            target_by_tokens = kwargs.get("target")
             if target_by_tokens.ndim == 2:
                 target_by_tokens = target_by_tokens.unsqueeze(-1)
 

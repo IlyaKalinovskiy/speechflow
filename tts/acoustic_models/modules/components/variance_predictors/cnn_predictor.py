@@ -2,6 +2,7 @@ import typing as tp
 
 import torch
 
+from pydantic import Field
 from torch import nn
 
 from speechflow.training.utils.tensor_utils import apply_mask, get_mask_from_lengths
@@ -16,6 +17,7 @@ class CNNPredictorParams(VariancePredictorParams):
     kernel_sizes: tp.Tuple[int, ...] = (3, 7, 13, 3)
     dropout: float = 0.1
     as_encoder: bool = False
+    var_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
 
 
 class CNNPredictor(Component):

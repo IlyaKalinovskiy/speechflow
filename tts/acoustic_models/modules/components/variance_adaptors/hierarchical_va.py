@@ -95,6 +95,7 @@ class HierarchicalVarianceAdaptor(Component):
                 if key in predictor_params.to_dict():
                     setattr(vp_params, key, getattr(predictor_params, key))
 
+            vp_params.var_params = variance_params
             self.predictors[name] = predictor_cls(vp_params, content_dim)
 
         self.embeddings = torch.nn.ModuleDict()

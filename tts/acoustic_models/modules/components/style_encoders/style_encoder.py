@@ -113,10 +113,10 @@ class StyleEncoder(Component):
 
         if x.shape[1] == model_inputs.input_lengths.max():
             x_lengths = model_inputs.input_lengths
-        elif model_inputs.output_lengths is None:
-            x_lengths = torch.LongTensor([x.shape[1]] * x.shape[0]).to(x.device)
         elif x.shape[1] == model_inputs.output_lengths.max():
             x_lengths = model_inputs.output_lengths
+        else:
+            x_lengths = torch.LongTensor([x.shape[1]] * x.shape[0]).to(x.device)
 
         if self.params.base_encoder_type == "SimpleStyle":
             assert x.shape[1] == 1, ValueError(

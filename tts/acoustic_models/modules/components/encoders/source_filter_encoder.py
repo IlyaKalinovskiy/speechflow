@@ -29,7 +29,7 @@ class SFEncoderParams(EncoderParams):
     condition_dim: int = 0
     condition_type: tp.Literal["cat", "adanorm"] = "cat"
     var_as_embedding: tp.Tuple[bool, bool] = (False, False)
-    var_intervals: tp.Tuple[tp.Tuple[float, float], tp.Tuple[float, float]] = (
+    var_interval: tp.Tuple[tp.Tuple[float, float], tp.Tuple[float, float]] = (
         (0, 150),
         (0, 880),
     )
@@ -62,7 +62,7 @@ class SFEncoder(Component):
         in_dim_e = 1
         if params.var_as_embedding[0]:
             self.energy_embeddings = VarianceEmbedding(
-                interval=params.var_intervals[0],
+                interval=params.var_interval[0],
                 n_bins=params.var_n_bins[0],
                 emb_dim=params.var_embedding_dim[0],
                 log_scale=params.var_log_scale[0],
@@ -74,7 +74,7 @@ class SFEncoder(Component):
         in_dim_p = 1
         if params.var_as_embedding[0]:
             self.pitch_embeddings = VarianceEmbedding(
-                interval=params.var_intervals[1],
+                interval=params.var_interval[1],
                 n_bins=params.var_n_bins[1],
                 emb_dim=params.var_embedding_dim[1],
                 log_scale=params.var_log_scale[1],
@@ -99,17 +99,22 @@ class SFEncoder(Component):
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
         x, x_lens, x_mask = self.get_content_and_mask(inputs)
 
-        if self.energy_embeddings is not None:
+        if self.training:
             energy = inputs.model_inputs.energy
+            pitch = inputs.model_inputs.pitch
+        else:
+            energy = inputs.model_inputs.additional_inputs["energy_postprocessed"]
+            pitch = inputs.model_inputs.additional_inputs["pitch_postprocessed"]
+
+        if self.energy_embeddings is not None:
             energy_embs = self.energy_embeddings(energy)
         else:
-            energy_embs = inputs.model_inputs.energy.unsqueeze(-1)
+            energy_embs = energy.unsqueeze(-1)
 
         if self.pitch_embeddings is not None:
-            pitch = inputs.model_inputs.pitch
             pitch_embs = self.pitch_embeddings(pitch)
         else:
-            pitch_embs = inputs.model_inputs.pitch.unsqueeze(-1)
+            pitch_embs = pitch.unsqueeze(-1)
 
         x_src = apply_mask(self.pre_source(x.transpose(1, -1)).transpose(1, -1), x_mask)
         x_ftr_e = apply_mask(

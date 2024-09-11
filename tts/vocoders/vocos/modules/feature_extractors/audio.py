@@ -272,7 +272,7 @@ class AudioFeatures(FeatureExtractor):
                 condition_dim=condition_dim,
                 condition_type=condition_type,
                 var_as_embedding=(True, True),
-                var_intervals=(energy_interval, pitch_interval),
+                var_interval=(energy_interval, pitch_interval),
                 var_log_scale=(False, True),
                 max_input_length=2048 * 2,
                 max_output_length=2048 * 2,
