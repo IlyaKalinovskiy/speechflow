@@ -104,7 +104,7 @@ class FrameLevelPredictor(Component):
             )
 
             if self.training:
-                losses[f"{name}_mtm_loss"] = F.l1_loss(
+                losses[f"{name}_mtm_loss"] = F.mse_loss(
                     mtm_predict, self.mtm_embeddings(target)
                 )
 
