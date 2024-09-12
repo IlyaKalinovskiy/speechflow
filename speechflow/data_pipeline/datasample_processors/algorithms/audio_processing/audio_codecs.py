@@ -83,7 +83,7 @@ class BaseAudioCodecModel(torch.nn.Module):
 
 
 class DAC(BaseAudioCodecModel):
-    @check_path(assert_file_exists=True)
+    @check_path
     def __init__(
         self,
         device: str = "cpu",
@@ -105,7 +105,7 @@ class DAC(BaseAudioCodecModel):
         else:
             raise NotImplementedError(f"feature {self._feat_type} is not supported")
 
-        if pretrain_path is None:
+        if pretrain_path is None or not pretrain_path.exists():
             model_path = dac.utils.download(model_type=f"{self.sample_rate // 1000}khz")
             self.model = dac.DAC.load(model_path.as_posix())
         else:
