@@ -85,12 +85,12 @@ class AudioFeatures(FeatureExtractor):
         use_style: bool = False,
         use_energy: bool = False,
         use_pitch: bool = False,
-        use_sf_encoder: bool = False,
         use_plbert: bool = False,
         use_ssl_adjustment: bool = False,
-        use_vq: bool = False,
         use_averages: bool = False,
         use_range: bool = False,
+        use_sf_encoder: bool = False,
+        use_vq: bool = False,
         use_auxiliary_classification_loss: bool = False,
         use_auxiliary_mel_loss: bool = False,
         use_inverse_grad: bool = False,
@@ -305,6 +305,10 @@ class AudioFeatures(FeatureExtractor):
                 addm_params.addm_apply_token_classifier = {
                     "token_context_0": self.vq_enc.output_dim
                 }
+            else:
+                addm_params.addm_apply_token_classifier = {
+                    self.encoder.name: self.encoder.output_dim
+                }
 
             if use_vq and use_inverse_grad:
                 addm_params.addm_apply_inverse_speaker_emb = {
@@ -433,8 +437,6 @@ class AudioFeatures(FeatureExtractor):
                     if not k.startswith("constant")
                 }
             )
-        else:
-            vq_output = ComponentInput.empty()
 
         if self.plbert_proj is not None:
             x = x + self.plbert_proj(inputs.plbert_feat)
@@ -485,9 +487,15 @@ class AudioFeatures(FeatureExtractor):
         x = enc_output.content
 
         if self.training and self.addm is not None:
-            vq_output.additional_content.update(conditions)
-            vq_output.additional_losses = {}
-            addm_out = self.addm(vq_output)
+            if self.vq_enc is not None:
+                vq_output.additional_content.update(conditions)
+                vq_output.additional_losses = {}
+                addm_out = self.addm(vq_output)
+            else:
+                enc_output.additional_content.update(conditions)
+                enc_output.additional_losses = {}
+                addm_out = self.addm(enc_output)
+
             losses.update(
                 {
                     k: v

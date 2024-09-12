@@ -99,7 +99,10 @@ class SFEncoder(Component):
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
         x, x_lens, x_mask = self.get_content_and_mask(inputs)
 
-        if self.training:
+        if (
+            self.training
+            or "energy_postprocessed" not in inputs.model_inputs.additional_inputs
+        ):
             energy = inputs.model_inputs.energy
             pitch = inputs.model_inputs.pitch
         else:

@@ -212,8 +212,6 @@ class VocoderEvaluationInterface(VocoderLoader):
             collated.additional_fields = ref_collated.additional_fields
 
         if self.model.__class__.__name__ == "Vocos":
-            collated.averages["energy"] = collated.averages["energy"] * 0 + 25
-            collated.averages["pitch"] = collated.averages["pitch"] * 0 + 115
             collated.speech_quality_emb = collated.speech_quality_emb * 0 + 5
 
             _input = VocoderForwardInput(

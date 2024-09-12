@@ -41,7 +41,7 @@ preproc:
          style, store_style, voice_bio, speech_quality,
          spectrogram, melscale,
          energy, pitch, enhancement_energy, enhancement_pitch,
-         average_by_time, # energy_norm, pitch_norm,
+         average_by_time, energy_norm, pitch_norm,
          add_pauses_from_timestamps, text,
          int_durations, calc_invert_durations, transcription_by_frames, float_durations,
          # to_whisper,
@@ -111,15 +111,11 @@ preproc:
     energy_norm:
       type: normalize
       attributes: [energy]
-      normalize_by: constant
-      min_value: 0
-      max_value: 200
+      normalize_by: speaker
     pitch_norm:
       type: normalize
       attributes: [pitch]
-      normalize_by: constant
-      min_value: 0
-      max_value: 880
+      normalize_by: speaker
     add_pauses_from_timestamps:
       step: 0.05
     text:
@@ -141,7 +137,8 @@ preproc:
       ssl_type: Hubert
       ssl_params:
         model_name: facebook/hubert-large-ls960-ft
-        pretrain_path: epoch=0-step=4500.ckpt
+        pretrain_path: EN_epoch=0-step=4500.ckpt
+        vocab_path: EN_epoch=0-step=4500_vocab.json
         # stream_mod:
         #   chunk_size: 6400
         #   context_size: [64000, 6550]
@@ -157,13 +154,13 @@ preproc:
       pipe_cfg:
         trim:
           random_chunk: true
-          num_samples_per_chunk: 40960  # 40952
+          num_samples_per_chunk: 40960  # 40952 for DAC head
     mu_law:
       type: SignalProcessor
       pipe: [mu_law_encode]
 
 singleton_handlers:
-  handlers: [SpeakerIDSetter]
+  handlers: [SpeakerIDSetter, StatisticsRange]
   SpeakerIDSetter: {}
   StatisticsRange:
     statistics_file: !join [*data_root, *dump_folder, ranges.json]
@@ -181,9 +178,10 @@ processor:
       data_root: *data_root
       folder_path: !join [*data_root, *dump_folder]
       fields: [file_path, speaker_name]
-      functions: [VoiceBiometricProcessor, SpeechQualityAssessment, PitchProcessor, SSLProcessor]
+      functions: [VoiceBiometricProcessor, SpeechQualityAssessment,
+                  PitchProcessor, SSLProcessor, MultilingualPLBert]
       mode: file_path
-      # skip_samples_without_dump: true
+      skip_samples_without_dump: true
     debug: ~
 
 sampler:

@@ -62,11 +62,11 @@ model:
         input_feat_type: ssl_feat
         ssl_feat_dim: 1024
         encoder_num_layers: 2
-        energy_interval: [0, 200]  # [0, 1.5]
-        pitch_interval: [0, 880]  # [0, 1.5]
+        energy_interval: [0, 1.5]  # [0, 150]
+        pitch_interval: [0, 1.5]  # [0, 880]
         style_encoder_type: StyleTTS2
         style_feat_type: mel_spectrogram
-        style_emb_dim: 64
+        style_emb_dim: 128
         style_use_gmvae: false
         use_lang_emb: false
         use_speaker_emb: true
@@ -75,12 +75,14 @@ model:
         use_energy: true
         use_pitch: true
         use_plbert: true
-        use_averages: false
+        use_averages: true
         use_range: false
+        use_sf_encoder: true
         use_vq: false
         vq_num_quantizers: 1
         vq_codebook_size: 256
         use_auxiliary_classification_loss: true
+        use_auxiliary_mel_loss: true
 
   backbone:
     class_name: VocosResNetBackbone
@@ -95,4 +97,4 @@ model:
     class_name: NSFHead
     init_args:
       dim: 1024
-      style_emb_dim: 64
+      style_emb_dim: 128

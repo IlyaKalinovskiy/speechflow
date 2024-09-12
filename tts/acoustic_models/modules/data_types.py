@@ -59,6 +59,10 @@ class ComponentInput:
         else:
             raise RuntimeError("device not found")
 
+    @property
+    def is_empty(self) -> bool:
+        return self.content == None and self.content_lengths == None
+
     @staticmethod
     def empty():
         return ComponentInput(
