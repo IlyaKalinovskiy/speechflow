@@ -71,11 +71,11 @@ class FrameLevelPredictor(Component):
                 emb_dim=emb_dim,  # type: ignore
             )
             self.mtm_encoder = _init_encoder(
-                enc_cls, enc_params_cls, params.frame_encoder_params, emb_dim, emb_dim
+                enc_cls, enc_params_cls, params.frame_encoder_params, 2 * emb_dim, emb_dim
             )
             self.mtm_proj = Regression(input_dim, emb_dim)
 
-            input_dim += emb_dim
+            input_dim += 2 * emb_dim
         else:
             self.mtm_encoder = None
 
@@ -95,20 +95,25 @@ class FrameLevelPredictor(Component):
         losses = {}
 
         if self.mtm_encoder is not None and target is not None:
-            mask_target = target
+            target_mask = target
 
-            mtm_x = self.mtm_embeddings(mask_target)
-            mtm_x = mtm_x + self.mtm_proj(x.detach())
+            mtm_embs = self.mtm_embeddings(target_mask)
+            mtm_x = torch.cat([mtm_embs, self.mtm_proj(x.detach())], dim=-1)
             mtm_predict, _ = self.mtm_encoder.process_content(
                 mtm_x, x_lengths, model_inputs
             )
 
             if self.training:
                 losses[f"{name}_mtm_loss"] = F.mse_loss(
-                    mtm_predict, self.mtm_embeddings(target)
+                    mtm_predict, self.mtm_embeddings(target).detach()
                 )
 
-            x = torch.cat([x, mtm_predict], dim=-1)
+            if model_inputs.imputer_masks is not None:
+                mtm_predict = mtm_predict * (
+                    ~model_inputs.imputer_masks["spectrogram"]
+                ).unsqueeze(-1)
+
+            x = torch.cat([x, mtm_embs, mtm_predict], dim=-1)
 
         enc_predict, enc_ctx = self.frame_encoder.process_content(
             x, x_lengths, model_inputs

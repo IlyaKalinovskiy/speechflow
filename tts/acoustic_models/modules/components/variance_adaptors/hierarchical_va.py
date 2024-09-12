@@ -314,8 +314,12 @@ class HierarchicalVarianceAdaptor(Component):
         variance_params = self.va_variance_params.get(DP_NAME)
         ignored_variance = kwargs.get("ignored_variance")
 
-        if ignored_variance and DP_NAME in ignored_variance:
-            return None, None, {}, {}
+        if (
+            DP_NAME in self.predictors
+            and ignored_variance
+            and DP_NAME in ignored_variance
+        ):
+            return model_inputs.durations, model_inputs.durations, {}, {}
         if DP_NAME not in targets and DP_NAME not in self.predictors:
             return None, None, {}, {}
 

@@ -81,11 +81,11 @@ class TokenLevelPredictor(Component):
                 emb_dim=emb_dim,  # type: ignore
             )
             self.mtm_encoder = _init_encoder(
-                enc_cls, enc_params_cls, params.token_encoder_params, emb_dim, emb_dim
+                enc_cls, enc_params_cls, params.token_encoder_params, 2 * emb_dim, emb_dim
             )
             self.mtm_proj = Regression(input_dim, emb_dim)
 
-            input_dim += emb_dim
+            input_dim += 2 * emb_dim
         else:
             self.mtm_encoder = None
 
@@ -123,20 +123,25 @@ class TokenLevelPredictor(Component):
             x_by_tokens = x
 
         if self.mtm_encoder is not None and target_by_tokens is not None:
-            mask_target = target_by_tokens
+            target_mask = target_by_tokens
 
-            mtm_x = self.mtm_embeddings(mask_target)
-            mtm_x = mtm_x + self.mtm_proj(x_by_tokens.detach())
+            mtm_embs = self.mtm_embeddings(target_mask)
+            mtm_x = torch.cat([mtm_embs, self.mtm_proj(x_by_tokens.detach())], dim=-1)
             mtm_predict, _ = self.mtm_encoder.process_content(
                 mtm_x, x_lengths, model_inputs
             )
 
             if self.training:
                 losses[f"{name}_mtm_loss"] = F.mse_loss(
-                    mtm_predict, self.mtm_embeddings(target_by_tokens)
+                    mtm_predict, self.mtm_embeddings(target_by_tokens).detach()
                 )
 
-            x_by_tokens = torch.cat([x_by_tokens, mtm_predict], dim=-1)
+            if model_inputs.imputer_masks is not None:
+                mtm_predict = mtm_predict * (
+                    ~model_inputs.imputer_masks["text"]
+                ).unsqueeze(-1)
+
+            x_by_tokens = torch.cat([x_by_tokens, mtm_embs, mtm_predict.detach()], dim=-1)
 
         tk_proj = self.token_proj(x_by_tokens)
         tk_predict, tk_ctx = self.token_encoder.process_content(

@@ -10,6 +10,7 @@ from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing.
 from speechflow.data_pipeline.datasample_processors.biometric_processors import (
     VoiceBiometricProcessor,
 )
+from speechflow.io import check_path, tp_PATH
 from tts.acoustic_models.modules.common.blocks import Regression
 from tts.vocoders.vocos.modules.heads.fourier import FourierHead
 
@@ -17,6 +18,7 @@ __all__ = ["DACHead"]
 
 
 class DACHead(FourierHead):
+    @check_path(assert_file_exists=True)
     def __init__(
         self,
         dim: int,
@@ -27,6 +29,7 @@ class DACHead(FourierHead):
         sm_loss_every_iter: int = 1,
         sm_loss_max_iter: int = 1_000_000_000,
         speaker_biometric_model: tp.Literal["speechbrain", "wespeaker"] = "speechbrain",
+        pretrain_path: tp.Optional[tp_PATH] = None,
     ):
         super().__init__()
         self.with_dac_loss = with_dac_loss
@@ -36,7 +39,7 @@ class DACHead(FourierHead):
         self.sm_loss_every_iter = sm_loss_every_iter
         self.sm_loss_max_iter = sm_loss_max_iter
 
-        self.dac_model = DAC()
+        self.dac_model = DAC(pretrain_path=pretrain_path)
         self.proj = Regression(dim, self.dac_model.embedding_dim, hidden_dim=dim)
 
         if with_sm_loss:

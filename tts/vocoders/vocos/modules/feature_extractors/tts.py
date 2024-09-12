@@ -4,7 +4,7 @@ import torch
 
 from torch.nn import functional as F
 
-from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
+from tts.acoustic_models.data_types import TTSForwardOutput
 from tts.acoustic_models.models.tts_model import ParallelTTSModel
 from tts.vocoders.data_types import VocoderForwardInput
 from tts.vocoders.vocos.modules.feature_extractors import FeatureExtractor
@@ -23,7 +23,7 @@ class TTSFeatures(FeatureExtractor):
         self._mel_proj = torch.nn.Linear(output_dim, 80)
 
     def forward(self, inputs: VocoderForwardInput, **kwargs):
-        if isinstance(inputs, (VocoderForwardInput, TTSForwardInput)):
+        if inputs.__class__.__name__ != "TTSForwardInputWithSSML":
             outputs: TTSForwardOutput = self._tts(inputs)
             losses = outputs.additional_losses
             additional_content = outputs.additional_content
