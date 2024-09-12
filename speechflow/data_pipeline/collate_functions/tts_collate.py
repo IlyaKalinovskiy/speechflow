@@ -76,7 +76,7 @@ class TTSCollateOutput(SpectrogramCollateOutput, TTSDataSample):
     transcription_lengths: Tensor = None
     ling_feat: LinguisticFeatures = None  # type: ignore
     lm_feat_lengths: Tensor = None
-    plbert_lengths: Tensor = None
+    plbert_feat_lengths: Tensor = None
     num_words: Tensor = None
     num_synt: Tensor = None
     token_lengths: Tensor = None
@@ -112,7 +112,7 @@ class TTSCollate(SpectrogramCollate):
             batch, "transcription_id_by_frames", pad_token_id, spec_multiple
         )
         collated.lm_feat, collated.lm_feat_lengths = collate_sequence(batch, "lm_feat")
-        collated.plbert_feat, collated.plbert_lengths = collate_sequence(
+        collated.plbert_feat, collated.plbert_feat_lengths = collate_sequence(
             batch, "plbert_feat"
         )
         collated.durations, _ = collate_sequence(batch, "durations")

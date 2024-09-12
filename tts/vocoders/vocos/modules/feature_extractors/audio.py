@@ -256,9 +256,19 @@ class AudioFeatures(FeatureExtractor):
             self.pitch_predictor = None
 
         if use_plbert:
-            self.plbert_proj = nn.Linear(plbert_emb_dim, in_dim)
+            enc_cls, enc_params_cls = TTS_ENCODERS[encoder_type]
+            enc_params = enc_params_cls(
+                encoder_num_blocks=encoder_num_blocks,
+                encoder_num_layers=encoder_num_layers,
+                encoder_inner_dim=256,
+                encoder_output_dim=in_dim,
+                condition=tuple(condition),
+                condition_dim=condition_dim,
+                condition_type=condition_type,
+            )
+            self.plbert_encoder = enc_cls(enc_params, plbert_emb_dim)
         else:
-            self.plbert_proj = None
+            self.plbert_encoder = None
 
         # ----- init 1d source-filter encoder -----
 
@@ -438,8 +448,15 @@ class AudioFeatures(FeatureExtractor):
                 }
             )
 
-        if self.plbert_proj is not None:
-            x = x + self.plbert_proj(inputs.plbert_feat)
+        if self.plbert_encoder is not None:
+            enc_input = ComponentInput(
+                content=inputs.plbert_feat,
+                content_lengths=inputs.plbert_feat_lengths,
+                model_inputs=inputs,
+            )
+            enc_output = self.plbert_encoder(enc_input)
+            for idx, len in enumerate(enc_output.content_lengths):
+                x[idx, :] = x[idx, :] + enc_output.content[idx, len - 1, :]
 
         if self.energy_predictor is not None:
             e_output, e_content, e_losses = self.energy_predictor(
