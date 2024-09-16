@@ -20,11 +20,7 @@ class SimpleStyle(Component):
 
     def __init__(self, params: SimpleStyleParams, input_dim: int):
         super().__init__(params, input_dim)
-        self.proj = nn.Sequential(
-            nn.Linear(input_dim, 2 * input_dim),
-            nn.ReLU(),
-            nn.Linear(2 * input_dim, params.style_emb_dim),
-        )
+        self.proj = nn.Sequential(nn.Linear(input_dim, params.style_emb_dim), nn.Tanh())
 
     @property
     def output_dim(self):

@@ -109,6 +109,7 @@ class DAC(BaseAudioCodecModel):
             model_path = dac.utils.download(model_type=f"{self.sample_rate // 1000}khz")
             self.model = dac.DAC.load(model_path.as_posix())
         else:
+            LOGGER.info(f"Load DAC model from {pretrain_path.as_posix()}")
             self.model = dac.DAC.load(pretrain_path.as_posix())
 
         self.model.to(device)

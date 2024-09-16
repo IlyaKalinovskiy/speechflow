@@ -25,6 +25,7 @@ class StyleEncoderParams(EmbeddingParams):
     min_spec_len: int = 256
     max_spec_len: int = 512
     use_gmvae: bool = False
+    gmvae_dim: int = 32
     gmvae_n_components: int = 16
     use_fsq: bool = False
     fsq_levels: tp.Tuple[int, ...] = (
@@ -53,7 +54,7 @@ class StyleEncoder(Component):
         if params.use_gmvae:
             self.gmvae = GMVAE(
                 self.encoder.output_dim,
-                self.encoder.output_dim,
+                self.params.gmvae_dim,
                 self.params.gmvae_n_components,
             )
         elif params.use_fsq:
@@ -65,7 +66,10 @@ class StyleEncoder(Component):
 
     @property
     def output_dim(self):
-        return self.encoder.output_dim
+        if self.params.use_gmvae:
+            return self.params.gmvae_dim
+        else:
+            return self.encoder.output_dim
 
     def encode(self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs):
         if x.shape[1] > 1:
