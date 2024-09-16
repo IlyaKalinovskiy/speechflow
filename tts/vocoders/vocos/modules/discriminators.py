@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+import typing as tp
 
 import torch
 
@@ -15,7 +15,7 @@ class MultiPeriodDiscriminator(nn.Module):
     embeddings table.
 
     Args:
-        periods (tuple[int]): Tuple of periods for each discriminator.
+        periods (tp.Tuple[int]): Tuple of periods for each discriminator.
         num_embeddings (int, optional): Number of embeddings. None means non-conditional discriminator.
             Defaults to None.
 
@@ -23,8 +23,8 @@ class MultiPeriodDiscriminator(nn.Module):
 
     def __init__(
         self,
-        periods: Tuple[int, ...] = (2, 3, 5, 7, 11),
-        num_embeddings: Optional[int] = None,
+        periods: tp.Tuple[int, ...] = (2, 3, 5, 7, 11),
+        num_embeddings: tp.Optional[int] = None,
     ):
         super().__init__()
         self.discriminators = nn.ModuleList(
@@ -35,12 +35,12 @@ class MultiPeriodDiscriminator(nn.Module):
         self,
         y: torch.Tensor,
         y_hat: torch.Tensor,
-        bandwidth_id: Optional[torch.Tensor] = None,
-    ) -> Tuple[
-        List[torch.Tensor],
-        List[torch.Tensor],
-        List[List[torch.Tensor]],
-        List[List[torch.Tensor]],
+        bandwidth_id: tp.Optional[torch.Tensor] = None,
+    ) -> tp.Tuple[
+        tp.List[torch.Tensor],
+        tp.List[torch.Tensor],
+        tp.List[tp.List[torch.Tensor]],
+        tp.List[tp.List[torch.Tensor]],
     ]:
         y_d_rs = []
         y_d_gs = []
@@ -65,7 +65,7 @@ class DiscriminatorP(nn.Module):
         kernel_size: int = 5,
         stride: int = 3,
         lrelu_slope: float = 0.1,
-        num_embeddings: Optional[int] = None,
+        num_embeddings: tp.Optional[int] = None,
     ):
         super().__init__()
         self.period = period
@@ -128,8 +128,8 @@ class DiscriminatorP(nn.Module):
         self.lrelu_slope = lrelu_slope
 
     def forward(
-        self, x: torch.Tensor, cond_embedding_id: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        self, x: torch.Tensor, cond_embedding_id: tp.Optional[torch.Tensor] = None
+    ) -> tp.Tuple[torch.Tensor, tp.List[torch.Tensor]]:
         x = x.unsqueeze(1)
         fmap = []
         # 1d to 2d
@@ -161,15 +161,15 @@ class DiscriminatorP(nn.Module):
 class MultiResolutionDiscriminator(nn.Module):
     def __init__(
         self,
-        fft_sizes: Tuple[int, ...] = (2048, 1024, 512),
-        num_embeddings: Optional[int] = None,
+        fft_sizes: tp.Tuple[int, ...] = (2048, 1024, 512),
+        num_embeddings: tp.Optional[int] = None,
     ):
         """Multi-Resolution Discriminator module adapted from
         https://github.com/descriptinc/descript-audio-codec. Additionally, it allows
         incorporating conditional information with a learned embeddings table.
 
         Args:
-            fft_sizes (tuple[int]): Tuple of window lengths for FFT. Defaults to (2048, 1024, 512).
+            fft_sizes (tp.Tuple[int]): Tuple of window lengths for FFT. Defaults to (2048, 1024, 512).
             num_embeddings (int, optional): Number of embeddings. None means non-conditional discriminator.
                 Defaults to None.
 
@@ -185,11 +185,11 @@ class MultiResolutionDiscriminator(nn.Module):
 
     def forward(
         self, y: torch.Tensor, y_hat: torch.Tensor, bandwidth_id: torch.Tensor = None
-    ) -> Tuple[
-        List[torch.Tensor],
-        List[torch.Tensor],
-        List[List[torch.Tensor]],
-        List[List[torch.Tensor]],
+    ) -> tp.Tuple[
+        tp.List[torch.Tensor],
+        tp.List[torch.Tensor],
+        tp.List[tp.List[torch.Tensor]],
+        tp.List[tp.List[torch.Tensor]],
     ]:
         y_d_rs = []
         y_d_gs = []
@@ -211,10 +211,10 @@ class DiscriminatorR(nn.Module):
     def __init__(
         self,
         window_length: int,
-        num_embeddings: Optional[int] = None,
+        num_embeddings: tp.Optional[int] = None,
         channels: int = 32,
         hop_factor: float = 0.25,
-        bands: Tuple[Tuple[float, float], ...] = (
+        bands: tp.Tuple[tp.Tuple[float, float], ...] = (
             (0.0, 0.1),
             (0.1, 0.25),
             (0.25, 0.5),

@@ -6,7 +6,7 @@ import torch
 
 from speechflow.data_pipeline.core import TrainData
 from speechflow.io import AudioChunk
-from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
+from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput, TTSTarget
 
 __all__ = [
     "VocoderTarget",
@@ -16,8 +16,8 @@ __all__ = [
 
 
 @dataclass
-class VocoderTarget(TrainData):
-    phase: str = None  # type: ignore
+class VocoderTarget(TTSTarget):
+    pass
 
 
 @dataclass

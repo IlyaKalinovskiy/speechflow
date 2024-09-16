@@ -37,7 +37,7 @@ callbacks:
   GradNormCallback: {}
 
 experiment:
-  class_name: VocosExp
+  class_name: VocosLightningEngine
   init_args:
     sample_rate: 24000
     initial_learning_rate: 5.e-4
