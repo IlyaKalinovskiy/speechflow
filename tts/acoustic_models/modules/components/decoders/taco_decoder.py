@@ -185,15 +185,12 @@ class TacoDecoder(Component):
         decoder_outputs = []
         decoder_context_outputs = []
 
-        if self.training:
-            group_mask = [(True, [True] * memory.shape[0])]  # type: ignore
-        else:
-            group_mask = [(False, [False] * memory.shape[0])]  # type: ignore
+        group_mask = [(True, [True] * memory.shape[0])]  # type: ignore
 
         begin = 0
         for flag, mask in group_mask:
             end = begin + len(list(mask))
-            if flag:
+            if flag and not self.training:
                 encoder_context = memory[begin:end]
                 frames = torch.cat([frame.unsqueeze(0), target[begin : end - 1]])
                 (next_frame, gate, self.dec_step.states, dec_context) = self.dec_step(

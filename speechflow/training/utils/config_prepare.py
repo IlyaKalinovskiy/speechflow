@@ -188,7 +188,7 @@ def model_config_prepare(
                 data_config_path = [data_config_path]
 
             for path in data_config_path:
-                cfg_data = Config.create_from_file(path)
+                cfg_data = Config.create_from_file(path, value_select=value_select)
                 speaker_id_setter = find_field(cfg_data, "SpeakerIDSetter")
                 if (
                     speaker_id_setter is not None

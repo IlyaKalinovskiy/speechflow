@@ -55,11 +55,25 @@ class TTSFeatures(FeatureExtractor):
 
         if "spec_chunk" in inputs.additional_inputs:
             chunk = []
+            energy = []
+            pitch = []
             for i, (a, b) in enumerate(inputs.additional_inputs["spec_chunk"]):
                 chunk.append(x[i, a:b, :])
+                energy.append(inputs.energy[i, a:b])
+                pitch.append(inputs.pitch[i, a:b])
 
             output = torch.stack(chunk)
+            additional_content["energy"] = torch.stack(energy)
+            additional_content["pitch"] = torch.stack(pitch)
+            additional_content["style_emb"] = outputs.additional_content[
+                "style_emb"
+            ].squeeze(1)
         else:
             output = x
+            additional_content["energy"] = inputs.energy
+            additional_content["pitch"] = inputs.pitch
+            additional_content["style_emb"] = outputs.additional_content[
+                "style_emb"
+            ].squeeze(1)
 
         return output.transpose(1, -1), losses, additional_content

@@ -18,6 +18,7 @@ from speechflow.data_pipeline.datasample_processors.data_types import (
     TTSDataSample,
 )
 from speechflow.io import AudioChunk, Config, check_path, tp_PATH
+from speechflow.logging import trace
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.dictutils import find_field
 from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
@@ -220,6 +221,7 @@ class VocoderEvaluationInterface(VocoderLoader):
                 ssl_feat=collated.ssl_feat,
                 ssl_feat_lengths=collated.ssl_feat_lengths,
                 plbert_feat=collated.plbert_feat,
+                plbert_feat_lengths=collated.plbert_feat_lengths,
                 speaker_emb=collated.speaker_emb,
                 speaker_emb_mean=collated.speaker_emb,
                 # energy=collated.energy,
@@ -268,7 +270,7 @@ if __name__ == "__main__":
         result_path = root_dir / "eng_spontan/result"
         ref_file = root_dir / "4922.wav"
 
-        voc = VocoderEvaluationInterface(voc_path, device="cuda:0")
+        voc = VocoderEvaluationInterface(voc_path, device="cpu")
         Path(result_path).mkdir(parents=True, exist_ok=True)
 
         file_list = list(Path(test_files).glob("*.wav"))
@@ -280,6 +282,6 @@ if __name__ == "__main__":
             try:
                 voc_out = voc.resynthesize(wav_file, ref_file, lang="EN")
                 voc_out.audio_chunk.save(result_file_name, overwrite=True)
-                print(voc_out.additional_content["vq_codes"].squeeze().cpu().numpy())
+                # print(voc_out.additional_content["vq_codes"].squeeze().cpu().numpy())
             except Exception as e:
-                print(e)
+                print(trace("", e))

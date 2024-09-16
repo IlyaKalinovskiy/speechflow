@@ -23,7 +23,9 @@ dataset:
 
 parser:
   type: TTSDSParser
-  dump: !join [*data_root, *dump_folder]
+  dump:
+    default: !join [*data_root, *dump_folder]  # fast dataset load
+    debug: ~
   pipe: [audio_strip, split_by_phrases, check_phoneme_length, get_simple_intonation_type]
   pipe_cfg:
     audio_strip:
@@ -146,7 +148,7 @@ preproc:
       type: MultilingualPLBert
       from_ssl_tokens: True
     timedim_interpolation:
-      features: [ssl_feat, plbert_feat]
+      features: [ssl_feat]
       shape_as: mel
     trim:
       type: SignalProcessor

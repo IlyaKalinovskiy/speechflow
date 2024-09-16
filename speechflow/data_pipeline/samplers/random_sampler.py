@@ -21,7 +21,7 @@ class RandomSampler(SimpleSampler):
         comb_by_len: bool = False,
         use_neighbors: bool = False,
         use_dynamic_batch: bool = False,
-        max_batch_length: int = 100,
+        max_batch_length: int = 1000,  # in milliseconds for AudioDataSample
     ):
         super().__init__(comb_by_len, use_neighbors, use_dynamic_batch, max_batch_length)
         self._total_samples = 0

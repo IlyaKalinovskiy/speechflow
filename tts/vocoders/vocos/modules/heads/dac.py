@@ -10,7 +10,7 @@ from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing.
 from speechflow.data_pipeline.datasample_processors.biometric_processors import (
     VoiceBiometricProcessor,
 )
-from speechflow.io import check_path, tp_PATH
+from speechflow.io import tp_PATH
 from tts.acoustic_models.modules.common.blocks import Regression
 from tts.vocoders.vocos.modules.heads.fourier import FourierHead
 
@@ -18,7 +18,6 @@ __all__ = ["DACHead"]
 
 
 class DACHead(FourierHead):
-    @check_path(assert_file_exists=True)
     def __init__(
         self,
         dim: int,

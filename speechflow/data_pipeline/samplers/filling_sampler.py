@@ -30,7 +30,7 @@ class FillingSampler(RandomSampler):
         comb_by_len: bool = False,
         use_neighbors: bool = False,
         use_dynamic_batch: bool = False,
-        max_batch_length: int = 100,
+        max_batch_length: int = 1000,  # in milliseconds for AudioDataSample
         chunks_ratio: tp.Optional[tp.List] = None,
         filter_tags: tp.Optional[tp.List] = None,
     ):

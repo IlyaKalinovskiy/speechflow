@@ -6,6 +6,7 @@ import hashlib
 import logging
 import argparse
 
+from copy import deepcopy
 from functools import partial
 from os import environ as env
 from pathlib import Path
@@ -303,7 +304,7 @@ class DumpProcessor:
                 if k in func_fields and v is not None
             }
             file_path_storage = self.preproc_functions_storage.setdefault(file_path, {})
-            file_path_storage[f"{func_name}|{hash_params}"] = dump_data
+            file_path_storage[f"{func_name}|{hash_params}"] = deepcopy(dump_data)
 
     def clear_storage(self):
         self.preproc_functions_storage = {}
