@@ -126,20 +126,22 @@ class TokenLevelPredictor(Component):
             target_mask = target_by_tokens
 
             mtm_embs = self.mtm_embeddings(target_mask)
+            mtm_target_embs = self.mtm_embeddings(target_by_tokens)
+
             mtm_x = torch.cat([mtm_embs, self.mtm_proj(x_by_tokens.detach())], dim=-1)
             mtm_predict, _ = self.mtm_encoder.process_content(
                 mtm_x, x_lengths, model_inputs
             )
 
+            if model_inputs.imputer_masks is not None:
+                m = ~model_inputs.imputer_masks["text"]
+                mtm_predict = mtm_predict * m.unsqueeze(-1)
+                mtm_target_embs = mtm_target_embs * m.unsqueeze(-1)
+
             if self.training:
                 losses[f"{name}_mtm_loss"] = F.mse_loss(
-                    mtm_predict, self.mtm_embeddings(target_by_tokens).detach()
+                    mtm_predict, mtm_target_embs.detach()
                 )
-
-            if model_inputs.imputer_masks is not None:
-                mtm_predict = mtm_predict * (
-                    ~model_inputs.imputer_masks["text"]
-                ).unsqueeze(-1)
 
             x_by_tokens = torch.cat([x_by_tokens, mtm_embs, mtm_predict.detach()], dim=-1)
 

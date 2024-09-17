@@ -170,7 +170,7 @@ class TacoDecoder(Component):
     def output_dim(self):
         return self.params.decoder_output_dim
 
-    def forward_step(self, inputs: VarianceAdaptorOutput) -> DecoderOutput:  # type: ignore
+    def forward_step(self, inputs: VarianceAdaptorOutput, mask=None) -> DecoderOutput:  # type: ignore
         x = self.get_content(inputs)[0]
         target = getattr(inputs.model_inputs, self.params.target)
 
@@ -185,11 +185,14 @@ class TacoDecoder(Component):
         decoder_outputs = []
         decoder_context_outputs = []
 
-        group_mask = [(True, [True] * memory.shape[0])]  # type: ignore
+        if not self.training and mask is not None and mask.shape[0] == 1:
+            group_mask = groupby(mask.tolist()[0])  # type: ignore
+        else:
+            group_mask = [(True, [True] * memory.shape[0])]  # type: ignore
 
         begin = 0
-        for flag, mask in group_mask:
-            end = begin + len(list(mask))
+        for flag, seq in group_mask:
+            end = begin + len(list(seq))
             if flag and not self.training:
                 encoder_context = memory[begin:end]
                 frames = torch.cat([frame.unsqueeze(0), target[begin : end - 1]])
@@ -219,7 +222,11 @@ class TacoDecoder(Component):
                         self.dec_step.states,
                     )
 
-                    frame = target[idx] if self.training else next_frame
+                    if mask is not None:  # inference as imputer
+                        frame = target[idx].clone()
+                        frame[~mask[:, idx]] = next_frame[~mask[:, idx]]
+                    else:  # train or inference as tts
+                        frame = target[idx] if self.training else next_frame
 
                     local_decoder_context_outputs.append(dec_context)
                     local_decoder_outputs.append(next_frame)

@@ -72,7 +72,7 @@ class TTSFeatures(FeatureExtractor):
             output = x
             additional_content["energy"] = inputs.energy
             additional_content["pitch"] = inputs.pitch
-            additional_content["style_emb"] = outputs.additional_content[
+            additional_content["style_emb"] = outputs.additional_inputs[
                 "style_emb"
             ].squeeze(1)
 
