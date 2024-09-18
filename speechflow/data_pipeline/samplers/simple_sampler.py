@@ -31,7 +31,7 @@ class SimpleSampler(AbstractDataSampler):
         comb_by_len: bool = False,
         use_neighbors: bool = False,
         use_dynamic_batch: bool = False,
-        max_batch_length: int = 100,
+        max_batch_length: int = 1000,  # in milliseconds for AudioDataSample
     ):
         super().__init__()
         self._comb_by_len = comb_by_len

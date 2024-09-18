@@ -11,7 +11,7 @@ import pytorch_lightning as pl
 
 from speechflow.training.saver import ExperimentSaver
 from tts.vocoders.batch_processor import VocoderBatchProcessor
-from tts.vocoders.data_types import VocoderForwardInput, VocoderTarget
+from tts.vocoders.data_types import VocoderForwardInput
 from tts.vocoders.vocos.helpers import plot_spectrogram_to_numpy
 from tts.vocoders.vocos.loss import (
     DiscriminatorLoss,
@@ -29,10 +29,10 @@ from tts.vocoders.vocos.modules.feature_extractors import FeatureExtractor
 from tts.vocoders.vocos.modules.heads import FourierHead
 from tts.vocoders.vocos.utils.tensor_utils import safe_log
 
-__all__ = ["VocosExp"]
+__all__ = ["VocosLightningEngine"]
 
 
-class VocosExp(pl.LightningModule):
+class VocosLightningEngine(pl.LightningModule):
     # noinspection PyUnusedLocal
     def __init__(
         self,
@@ -307,7 +307,7 @@ class VocosExp(pl.LightningModule):
 
     def on_validation_epoch_start(self):
         if self.hparams.evaluate_utmos:
-            from tts.vocoders.vocos.metrics.UTMOS import UTMOSScore
+            from tts.vocoders.vocos.metrics.utmos import UTMOSScore
 
             if not hasattr(self, "utmos_model"):
                 self.utmos_model = UTMOSScore(device=self.device)
