@@ -2,7 +2,7 @@ import torch.nn.functional as F
 
 from torch import nn
 
-from speechflow.training.utils.tensor_utils import run_rnn_on_padded_sequence
+from speechflow.utils.tensor_utils import run_rnn_on_padded_sequence
 from tts.acoustic_models.modules.common.layers import Conv
 from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.data_types import ComponentInput, EncoderOutput

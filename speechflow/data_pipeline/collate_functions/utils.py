@@ -2,7 +2,7 @@ import typing as tp
 
 import torch
 
-from speechflow.training.utils.pad_utils import pad_1d, pad_2d
+from speechflow.utils.pad_utils import pad_1d, pad_2d
 
 __all__ = [
     "collate_integers",

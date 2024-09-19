@@ -6,11 +6,7 @@ import torch.nn as nn
 
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import (
-    get_lengths_from_mask,
-    get_mask_from_lengths,
-    masked_fill,
-)
+from speechflow.utils.tensor_utils import get_mask_from_lengths, masked_fill
 from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.components.style_encoders.style_encoder import (
     StyleEncoderParams,

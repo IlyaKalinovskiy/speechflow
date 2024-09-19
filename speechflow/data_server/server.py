@@ -15,7 +15,7 @@ from speechflow.data_server.patterns import ZMQPatterns, ZMQServer
 from speechflow.data_server.pool import WorkerPool
 from speechflow.io import Config, check_path, tp_PATH
 from speechflow.logging import log_to_file, trace
-from speechflow.utils.gpu import get_freer_gpu
+from speechflow.utils.gpu_info import get_freer_gpu
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.profiler import Profiler
 from speechflow.utils.serialize import Serialize

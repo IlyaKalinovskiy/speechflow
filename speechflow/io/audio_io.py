@@ -251,10 +251,8 @@ class AudioChunk:
             return self
         else:
             return AudioChunk(
-                begin=0.0,
-                end=(end - begin) / self.sr,
-                sr=self.sr,
                 data=self.data[begin:end],
+                sr=self.sr,
             )
 
     def volume(self, value: float = 1.0, inplace: bool = False):
@@ -290,17 +288,32 @@ class AudioChunk:
             data = self.data if inplace else self.data.copy()
 
         if inplace:
-            self.sr = sr
             self.data = data
+            self.sr = sr
             return self
         else:
             return AudioChunk(
                 file_path=self.file_path,
                 begin=self.begin,
                 end=self.end,
-                sr=sr,
                 data=data,
+                sr=sr,
             )
+
+    def multiple(self, value: int, mode: str = "constant", inplace: bool = False):
+        data = self.data
+        pad_size = value - data.shape[0] % value
+        if pad_size == value:
+            pad_size = 0
+
+        data = np.pad(data, (0, pad_size), mode=mode, constant_values=0)  # type: ignore
+
+        if inplace:
+            self.data = data
+            self.end += pad_size / self.sr
+            return self
+        else:
+            return AudioChunk(data=data, sr=self.sr)
 
     def astype(self, dtype, inplace: bool = False) -> "AudioChunk":
         data = self.data
@@ -325,8 +338,8 @@ class AudioChunk:
                 file_path=self.file_path,
                 begin=self.begin,
                 end=self.end,
-                sr=self.sr,
                 data=data,
+                sr=self.sr,
             )
 
     @staticmethod

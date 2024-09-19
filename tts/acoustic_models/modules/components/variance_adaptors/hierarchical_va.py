@@ -6,7 +6,7 @@ import torch
 from torch.nn import functional as F
 
 from speechflow.logging import trace
-from speechflow.training.utils.tensor_utils import (
+from speechflow.utils.tensor_utils import (
     apply_mask,
     get_lengths_from_durations,
     get_mask_from_lengths,

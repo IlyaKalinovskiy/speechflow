@@ -13,7 +13,7 @@ from speechflow.io import Config, check_path, tp_PATH, tp_PATH_LIST
 from speechflow.logging import trace
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.dictutils import find_field
-from speechflow.utils.gpu import get_freer_gpu
+from speechflow.utils.gpu_info import get_freer_gpu
 
 __all__ = ["train_arguments", "model_config_prepare"]
 

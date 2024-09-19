@@ -6,6 +6,7 @@ from functools import lru_cache
 
 import numpy as np
 import torch
+import numpy.typing as npt
 import torch.nn.functional as F
 
 ENABLE_ASSERTS: bool = False
@@ -288,3 +289,75 @@ def string_to_tensor(data: str, device: str, tensor_size: int = 16) -> torch.Ten
 def tensor_to_string(data: torch.Tensor) -> str:
     b = data.cpu().numpy()
     return b[b > 0].tobytes().decode()
+
+
+def fold(
+    chunks: tp.Union[npt.NDArray, torch.Tensor],
+    chunk_size: int,
+    context_left: int = 0,
+    context_right: int = 0,
+    pad_size: int = 0,
+) -> tp.Union[npt.NDArray, torch.Tensor]:
+    assert chunks.ndim >= 2
+    if chunks.ndim == 2:
+        if isinstance(chunks, torch.Tensor):
+            chunks = chunks.unsqueeze(-1)
+        else:
+            chunks = chunks[..., np.newaxis]
+
+    if pad_size > 0:
+        chunks = chunks[:, pad_size:, :]
+
+    chunks_size = context_left + chunk_size + context_right
+    a = round(chunks.shape[1] * context_left / chunks_size)
+    b = -round(chunks.shape[1] * context_right / chunks_size)
+    data = chunks[:, a:b, :].reshape(1, -1, chunks.shape[2])
+
+    if data.shape[-1] == 1:
+        return data[0].squeeze(-1)
+    else:
+        return data[0]
+
+
+def unfold(
+    data: tp.Union[npt.NDArray, torch.Tensor],
+    chunk_size: int,
+    context_left: int = 0,
+    context_right: int = 0,
+    pad_size: int = 0,
+) -> tp.Union[npt.NDArray, torch.Tensor]:
+    assert data.ndim == 1
+    if isinstance(data, torch.Tensor):
+        t = data
+    else:
+        t = torch.from_numpy(data)
+
+    pad_size_left = chunk_size - t.shape[0] % chunk_size
+    if pad_size_left == chunk_size:
+        pad_size_left = 0
+
+    a = torch.zeros(context_left)
+    b = torch.zeros(context_right)
+    c = torch.zeros(pad_size_left)
+
+    data_pad = torch.cat([a, t, b, c])
+    total_size = context_left + chunk_size + context_right
+    chunks = data_pad.unfold(0, total_size, chunk_size)
+    chunks = torch.nn.functional.pad(chunks, (pad_size, 0, 0, 0), "constant", 0)
+
+    if isinstance(data, torch.Tensor):
+        return chunks
+    else:
+        return chunks.cpu().numpy()
+
+
+if __name__ == "__main__":
+    for i in range(2):
+        if i == 0:
+            x = np.arange(0, 100)
+        else:
+            x = torch.arange(0, 100)
+        for s_, l_, r_ in [(5, 10, 5), (1, 1, 1), (5, 100, 50), (100, 7, 8)]:
+            chunks_ = unfold(x, s_, l_, r_)
+            y = fold(chunks_, s_, l_, r_)[: x.shape[0]]
+            assert (x == y).all()

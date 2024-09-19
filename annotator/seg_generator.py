@@ -17,7 +17,7 @@ from speechflow.data_pipeline.core.parser_types import Metadata
 from speechflow.data_pipeline.dataset_parsers import EasyDSParser
 from speechflow.io import AudioChunk, AudioFormat, generate_file_list, read_file_list
 from speechflow.logging.server import LoggingServer
-from speechflow.utils.gpu import get_freer_gpu
+from speechflow.utils.gpu_info import get_freer_gpu
 
 __all__ = ["main"]
 

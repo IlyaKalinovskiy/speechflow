@@ -5,7 +5,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import get_lengths_from_durations, stack
+from speechflow.utils.tensor_utils import get_lengths_from_durations, stack
 
 __all__ = ["LengthRegulator", "SoftLengthRegulator"]
 

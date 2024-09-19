@@ -5,7 +5,7 @@ import torch
 from pydantic import Field
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import get_mask_from_lengths
+from speechflow.utils.tensor_utils import get_mask_from_lengths
 from tts.acoustic_models.modules.common import VarianceEmbedding
 from tts.acoustic_models.modules.common.blocks import Regression
 from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component

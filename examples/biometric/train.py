@@ -48,10 +48,10 @@ from speechflow.training import (
     LightningEngine,
     Optimizer,
 )
-from speechflow.training.utils.pad_utils import sequence_collate
-from speechflow.training.utils.tensor_utils import run_rnn_on_padded_sequence
 from speechflow.utils.init import lazy_initialization
+from speechflow.utils.pad_utils import sequence_collate
 from speechflow.utils.profiler import Profiler
+from speechflow.utils.tensor_utils import run_rnn_on_padded_sequence
 
 LOGGER = logging.getLogger("root")
 

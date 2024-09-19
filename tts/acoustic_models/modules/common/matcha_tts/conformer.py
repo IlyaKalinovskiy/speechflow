@@ -5,7 +5,7 @@ from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import einsum, nn
 
-from speechflow.training.utils.tensor_utils import masked_fill
+from speechflow.utils.tensor_utils import masked_fill
 
 # helper functions
 

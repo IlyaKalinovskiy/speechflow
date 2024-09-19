@@ -6,7 +6,7 @@ from speechflow.data_pipeline.core.base_collate_fn import BaseCollate, BaseColla
 from speechflow.data_pipeline.datasample_processors.data_types import (
     ProsodyPredictionDataSample,
 )
-from speechflow.training.utils.pad_utils import pad_1d
+from speechflow.utils.pad_utils import pad_1d
 
 __all__ = ["ProsodyPredictionCollate", "ProsodyPredictionCollateOutput"]
 

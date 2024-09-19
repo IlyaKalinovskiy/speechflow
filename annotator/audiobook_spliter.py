@@ -21,7 +21,7 @@ from speechflow.data_pipeline.datasample_processors.algorithms.text_processing.s
 )
 from speechflow.io import AudioChunk, AudioSeg, Config, Timestamps, construct_file_list
 from speechflow.logging import log_to_file, trace
-from speechflow.utils.gpu import get_freer_gpu
+from speechflow.utils.gpu_info import get_freer_gpu
 
 __all__ = ["AudiobookSpliter"]
 

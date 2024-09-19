@@ -3,7 +3,7 @@ import typing as tp
 from torch import nn
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import apply_mask
+from speechflow.utils.tensor_utils import apply_mask
 from tts.acoustic_models.modules.common import VarianceEmbedding
 from tts.acoustic_models.modules.common.layers import Conv
 from tts.acoustic_models.modules.component import Component

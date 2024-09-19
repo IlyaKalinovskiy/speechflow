@@ -4,7 +4,7 @@ import torch
 
 from torch import nn
 
-from speechflow.training.utils.tensor_utils import (
+from speechflow.utils.tensor_utils import (
     get_mask_from_lengths,
     get_sinusoid_encoding_table,
     run_rnn_on_padded_sequence,

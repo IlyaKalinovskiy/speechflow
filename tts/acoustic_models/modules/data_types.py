@@ -7,7 +7,7 @@ import torch
 
 from torch import Tensor
 
-from speechflow.training.utils.tensor_utils import apply_mask
+from speechflow.utils.tensor_utils import apply_mask
 from tts.acoustic_models.data_types import (
     TTSForwardInput,
     TTSForwardInputWithPrompt,
@@ -61,7 +61,7 @@ class ComponentInput:
 
     @property
     def is_empty(self) -> bool:
-        return self.content == None and self.content_lengths == None
+        return self.content is None and self.content_lengths is None
 
     @staticmethod
     def empty():

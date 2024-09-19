@@ -14,7 +14,7 @@ from speechflow.data_pipeline.core.datasample import (
 )
 from speechflow.data_pipeline.core.exceptions import NoDataSamplesError
 from speechflow.logging import log_to_file, trace
-from speechflow.training.utils.pad_utils import pad_1d, pad_2d
+from speechflow.utils.pad_utils import pad_1d, pad_2d
 
 __all__ = ["BaseCollate", "BaseCollateOutput"]
 

@@ -9,7 +9,7 @@ from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
     TTSTextProcessor,
 )
 from speechflow.training.losses.vae_loss import VAELoss
-from speechflow.training.utils.tensor_utils import get_mask_from_lengths
+from speechflow.utils.tensor_utils import get_mask_from_lengths
 from tts.acoustic_models.modules import TTS_ENCODERS
 from tts.acoustic_models.modules.additional_modules import (
     AdditionalModules,

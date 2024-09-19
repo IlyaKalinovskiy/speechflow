@@ -5,7 +5,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import apply_mask
+from speechflow.utils.tensor_utils import apply_mask
 
 __all__ = ["SignalDiscriminator"]
 

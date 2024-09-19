@@ -17,6 +17,7 @@ from whisper.decoding import DecodingTask
 from speechflow.data_pipeline.datasample_processors.data_types import SSLFeatures
 from speechflow.io import AudioChunk, check_path, tp_PATH
 from speechflow.utils.fs import get_root_dir
+from speechflow.utils.tensor_utils import fold, unfold
 
 __all__ = [
     "SSLFeatures",
@@ -251,18 +252,10 @@ class Wav2Vec(BaseSSLModel):
         attention_mask = processed.pop("attention_mask")
 
         if self._stream_mod is not None:
-            wave = processed["input_values"].squeeze(0)
-            pad_size = wave.shape[0] % self._stream_mod["chunk_size"]
-            a = torch.zeros(self._stream_mod["context_size"][0]).to(self.device)
-            b = torch.zeros(self._stream_mod["context_size"][1]).to(self.device)
-            c = torch.zeros(pad_size).to(self.device)
-            wave_pad = torch.cat([a, wave, c, b])
-            chunks_size = self._stream_mod["chunk_size"] + sum(
-                self._stream_mod["context_size"]
-            )
-            chunks = wave_pad.unfold(0, chunks_size, self._stream_mod["chunk_size"])
-            chunks = torch.nn.functional.pad(chunks, (self._pad, 0, 0, 0), "constant", 0)
-            processed["input_values"] = chunks
+            waveform = processed["input_values"].squeeze(0)
+            s_ = self._stream_mod["chunk_size"]
+            l_, r_ = self._stream_mod["context_size"]
+            processed["input_values"] = unfold(waveform, s_, l_, r_, pad_size=self._pad)
 
         if self._feature_type == "logits":
             outputs = self.model(**processed)
@@ -285,15 +278,10 @@ class Wav2Vec(BaseSSLModel):
                 ssl_feat.encoder_feat = outputs.hidden_states[self._level]
 
         if self._stream_mod is not None:
-            chunks_size = self._stream_mod["chunk_size"] + sum(
-                self._stream_mod["context_size"]
-            )
-            shape = ssl_feat.encoder_feat.shape
-            a = round(shape[1] * self._stream_mod["context_size"][0] / chunks_size)
-            b = -round(shape[1] * self._stream_mod["context_size"][1] / chunks_size)
-            ssl_feat.encoder_feat = ssl_feat.encoder_feat[:, a:b, :].reshape(
-                (1, -1, ssl_feat.encoder_feat.shape[2])
-            )
+            chunks = ssl_feat.encoder_feat
+            s_ = self._stream_mod["chunk_size"]
+            l_, r_ = self._stream_mod["context_size"]
+            ssl_feat.encoder_feat = fold(chunks, s_, l_, r_)
 
         ssl_feat = self.get_tokens(ssl_feat)
         ssl_feat.encoder_feat = ssl_feat.encoder_feat.cpu().squeeze(0)

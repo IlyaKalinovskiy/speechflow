@@ -12,7 +12,7 @@ from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
 from speechflow.logging import trace
 from speechflow.logging.server import LoggingServer
 from speechflow.utils.fs import get_root_dir
-from speechflow.utils.gpu import get_freer_gpu
+from speechflow.utils.gpu_info import get_freer_gpu
 from speechflow.utils.profiler import Profiler
 
 BOOK_NAME = {

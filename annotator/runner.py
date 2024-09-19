@@ -21,7 +21,7 @@ from speechflow.data_pipeline.dataset_parsers import EasyDSParser
 from speechflow.io import AudioSeg, Config
 from speechflow.logging.server import LoggingServer
 from speechflow.utils.fs import get_root_dir
-from speechflow.utils.gpu import get_freer_gpu, get_total_gpu_memory
+from speechflow.utils.gpu_info import get_freer_gpu, get_total_gpu_memory
 from speechflow.utils.init import init_method_from_config
 from tts.forced_alignment.scripts.train import main as run_fa
 

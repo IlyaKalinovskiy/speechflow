@@ -203,14 +203,7 @@ class SignalProcessor(BaseAudioProcessor):
     def multiple(
         ds: AudioDataSample, value: int = 1, mode: str = "constant"
     ) -> AudioDataSample:
-        data = ds.audio_chunk.waveform
-        pad_size = value - data.shape[0] % value
-        if pad_size == value:
-            pad_size = 0
-        data = np.pad(data, (0, pad_size), mode=mode, constant_values=0)  # type: ignore
-        ds.audio_chunk.data = data
-        ds.audio_chunk.end += pad_size / ds.audio_chunk.sr
-        return ds
+        return ds.audio_chunk.multiple(value, mode, inplace=True)
 
     @staticmethod
     def astype(ds: AudioDataSample, dtype=np.float32) -> AudioDataSample:

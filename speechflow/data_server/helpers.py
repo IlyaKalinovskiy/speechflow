@@ -17,9 +17,9 @@ from speechflow.data_server.proxy import Proxy
 from speechflow.data_server.server import DataServer
 from speechflow.io import Config, check_path, tp_PATH, tp_PATH_LIST
 from speechflow.logging import track_process
-from speechflow.training.utils.tensor_utils import string_to_tensor, tensor_to_string
-from speechflow.utils.gpu import get_freer_gpu
+from speechflow.utils.gpu_info import get_freer_gpu
 from speechflow.utils.init import init_class_from_config
+from speechflow.utils.tensor_utils import string_to_tensor, tensor_to_string
 
 __all__ = [
     "LoaderParams",

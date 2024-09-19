@@ -3,7 +3,7 @@ from abc import ABC
 import torch
 import torch.nn.functional as F
 
-from speechflow.training.utils.tensor_utils import apply_mask
+from speechflow.utils.tensor_utils import apply_mask
 from tts.acoustic_models.modules.common.matcha_tts.decoder import Decoder
 
 

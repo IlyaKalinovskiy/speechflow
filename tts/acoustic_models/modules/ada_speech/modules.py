@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import apply_mask, masked_fill
+from speechflow.utils.tensor_utils import apply_mask, masked_fill
 from tts.acoustic_models.modules.common.layers import CondionalLayerNorm
 
 

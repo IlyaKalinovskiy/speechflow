@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from diffusers.models.activations import get_activation
 from einops import pack, rearrange, repeat
 
-from speechflow.training.utils.tensor_utils import apply_mask
+from speechflow.utils.tensor_utils import apply_mask
 from tts.acoustic_models.modules.common.matcha_tts.conformer import ConformerBlock
 from tts.acoustic_models.modules.common.matcha_tts.transformer import BaseTransformerBlock
 

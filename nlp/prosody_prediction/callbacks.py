@@ -22,7 +22,7 @@ from nlp.prosody_prediction.data_types import (
     ProsodyPredictionTarget,
 )
 from speechflow.data_server.loader import DataLoader
-from speechflow.training.utils.pad_utils import pad_1d, pad_2d
+from speechflow.utils.pad_utils import pad_1d, pad_2d
 
 LOGGER = logging.getLogger("root")
 

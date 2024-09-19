@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from speechflow.training.utils.tensor_utils import apply_mask
+from speechflow.utils.tensor_utils import apply_mask
 
 
 def sequence_mask(length, max_length=None):

@@ -8,7 +8,7 @@ from pydantic import Field
 from torch import nn
 
 from speechflow.training.saver import ExperimentSaver
-from speechflow.training.utils.tensor_utils import (
+from speechflow.utils.tensor_utils import (
     apply_mask,
     get_lengths_from_durations,
     get_lengths_from_mask,

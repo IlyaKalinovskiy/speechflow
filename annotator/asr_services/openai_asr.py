@@ -12,7 +12,7 @@ from whisper.tokenizer import get_tokenizer
 from annotator.asr_services.cloud_asr import CloudASR
 from speechflow.data_pipeline.core.parser_types import Metadata
 from speechflow.utils.checks import check_install
-from speechflow.utils.gpu import get_freer_gpu, get_total_gpu_memory
+from speechflow.utils.gpu_info import get_freer_gpu, get_total_gpu_memory
 from speechflow.utils.tqdm_disable import tqdm_disable
 
 __all__ = ["OpenAIASR"]

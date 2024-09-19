@@ -15,13 +15,14 @@ matplotlib.use("Agg")
 
 __all__ = [
     "figure_to_ndarray",
-    "plot_alignment",
-    "plot_spectrogram",
     "plot_1d",
+    "plot_tensor",
+    "plot_alignment",
+    "plot_statistics",
+    "plot_spectrogram",
+    "plot_durations_and_signals",
     "phonemes_to_frame_ticks",
     "phonemes_to_frame_ticks_with_durations",
-    "plot_tensor",
-    "plot_durations_and_signals",
 ]
 
 
@@ -46,6 +47,67 @@ def figure_to_ndarray(fig: plt.Figure, tensorboard=True) -> npt.NDArray:
     else:
         # (h, w, c) -> (w, h, c)
         return data.transpose(1, 0, 2)
+
+
+def plot_1d(signal: npt.NDArray, dpi: int = 80, **kwargs) -> tp.Union[plt.Figure, None]:
+    """Plot a 1d signal.
+
+    :param signal: (n_bands, n_frames)
+    :param dpi: DPI
+    :return: a matplotlib figure
+
+    """
+    w = signal.shape[0] if signal.ndim == 1 else signal.shape[1]
+
+    fig = plt.figure()
+    fig.set_size_inches(w / 16, 8)  # type: ignore
+    fig.set_dpi(dpi)  # type: ignore
+    ax = fig.gca()  # type: ignore
+
+    if signal.ndim == 1:
+        ax.plot(signal)
+    else:
+        for i in range(signal.shape[0]):
+            ax.plot(signal[i])
+
+    if not kwargs.get("dont_close", False):
+        fig.canvas.draw()  # type: ignore
+        return fig
+
+    return None
+
+
+def plot_tensor(t, title=None):
+    import numpy as np
+    import torch
+    import matplotlib
+    import matplotlib.pyplot as plt
+
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+    matplotlib.use("TkAgg")
+
+    if t.ndim > 3:
+        raise NotImplementedError
+
+    if t.ndim == 3:
+        t = torch.cat([i for i in t][::-1], dim=1)
+
+    if isinstance(t, torch.Tensor):
+        t = t.t().detach().cpu().numpy()
+
+    if t.ndim > 1:
+        fig, ax = plt.subplots()
+        plt.title(title)
+        mel = np.flip(t, axis=0)
+        im = ax.imshow(mel)
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size=0.25, pad=0.05)
+        fig.colorbar(im, cax=cax)  # type: ignore
+    else:
+        plot_1d(t)
+
+    plt.show()
 
 
 def plot_alignment(
@@ -104,47 +166,6 @@ def plot_alignment(
     plt.close(fig)
 
     return fig
-
-
-def phonemes_to_frame_ticks(
-    alignment: npt.NDArray, phonemes: tp.List[str]
-) -> tp.List[float]:
-    """Compute rough alignment between phoneme_symb and spectrogram frames.
-
-    :param alignment: (n_frames, n_phonemes)
-    :param phonemes: list of phoneme_symb
-    :return: list with a frame number (possibly fractional) for each phoneme_symb
-
-    """
-    frame_ticks = []
-    for i, phoneme in enumerate(phonemes):
-        attention = alignment[:, i]
-        frame_number = attention.argmax()
-        frame_ticks.append(float(frame_number))
-
-    return frame_ticks
-
-
-def phonemes_to_frame_ticks_with_durations(
-    durations: npt.NDArray, phonemes: tp.List[str]
-) -> tp.List[float]:
-    """Compute phoneme_symb-spectrogram alignment based on predicted phoneme_symb
-    duration.
-
-    :param durations: (durations in timesteps of decoder)
-    :param phonemes: list of phoneme_symb
-    :return: list with a frame number (possibly fractional) for each phoneme_symb
-
-    """
-    frame_ticks = []
-    sum_ticks = 0
-    for i in range(min(len(durations), len(phonemes))):
-        sum_ticks += np.ceil(durations[i])
-        frame_ticks.append(float(sum_ticks))
-    for i in range(np.abs(len(durations) - len(phonemes))):
-        frame_ticks.append(float(sum_ticks))
-
-    return frame_ticks
 
 
 def plot_statistics(e_pred=None, e_gt=None, p_pred=None, p_gt=None):
@@ -310,67 +331,6 @@ def plot_spectrogram(
     return None
 
 
-def plot_1d(signal: npt.NDArray, dpi: int = 80, **kwargs) -> tp.Union[plt.Figure, None]:
-    """Plot a 1d signal.
-
-    :param signal: (n_bands, n_frames)
-    :param dpi: DPI
-    :return: a matplotlib figure
-
-    """
-    w = signal.shape[0] if signal.ndim == 1 else signal.shape[1]
-
-    fig = plt.figure()
-    fig.set_size_inches(w / 16, 8)  # type: ignore
-    fig.set_dpi(dpi)  # type: ignore
-    ax = fig.gca()  # type: ignore
-
-    if signal.ndim == 1:
-        ax.plot(signal)
-    else:
-        for i in range(signal.shape[0]):
-            ax.plot(signal[i])
-
-    if not kwargs.get("dont_close", False):
-        fig.canvas.draw()  # type: ignore
-        return fig
-
-    return None
-
-
-def plot_tensor(t, title=None):
-    import numpy as np
-    import torch
-    import matplotlib
-    import matplotlib.pyplot as plt
-
-    from mpl_toolkits.axes_grid1 import make_axes_locatable
-
-    matplotlib.use("TkAgg")
-
-    if t.ndim > 3:
-        raise NotImplementedError
-
-    if t.ndim == 3:
-        t = torch.cat([i for i in t][::-1], dim=1)
-
-    if isinstance(t, torch.Tensor):
-        t = t.t().detach().cpu().numpy()
-
-    if t.ndim > 1:
-        fig, ax = plt.subplots()
-        plt.title(title)
-        mel = np.flip(t, axis=0)
-        im = ax.imshow(mel)
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes("right", size=0.25, pad=0.05)
-        fig.colorbar(im, cax=cax)  # type: ignore
-    else:
-        plot_1d(t)
-
-    plt.show()
-
-
 def plot_durations_and_signals(spec, dura=None, symbols=None, signal=None):
     import torch
     import matplotlib
@@ -393,3 +353,44 @@ def plot_durations_and_signals(spec, dura=None, symbols=None, signal=None):
         plot_spectrogram(spec, symbols, dura, signal=signal, dont_close=True)
     else:
         plot_spectrogram(spec, signal=signal, dont_close=True)
+
+
+def phonemes_to_frame_ticks(
+    alignment: npt.NDArray, phonemes: tp.List[str]
+) -> tp.List[float]:
+    """Compute rough alignment between phoneme_symb and spectrogram frames.
+
+    :param alignment: (n_frames, n_phonemes)
+    :param phonemes: list of phoneme_symb
+    :return: list with a frame number (possibly fractional) for each phoneme_symb
+
+    """
+    frame_ticks = []
+    for i, phoneme in enumerate(phonemes):
+        attention = alignment[:, i]
+        frame_number = attention.argmax()
+        frame_ticks.append(float(frame_number))
+
+    return frame_ticks
+
+
+def phonemes_to_frame_ticks_with_durations(
+    durations: npt.NDArray, phonemes: tp.List[str]
+) -> tp.List[float]:
+    """Compute phoneme_symb-spectrogram alignment based on predicted phoneme_symb
+    duration.
+
+    :param durations: (durations in timesteps of decoder)
+    :param phonemes: list of phoneme_symb
+    :return: list with a frame number (possibly fractional) for each phoneme_symb
+
+    """
+    frame_ticks = []
+    sum_ticks = 0
+    for i in range(min(len(durations), len(phonemes))):
+        sum_ticks += np.ceil(durations[i])
+        frame_ticks.append(float(sum_ticks))
+    for i in range(np.abs(len(durations) - len(phonemes))):
+        frame_ticks.append(float(sum_ticks))
+
+    return frame_ticks

@@ -10,7 +10,7 @@ from annotator.asr_services import GoogleASR, OpenAIASR, YandexASR
 from speechflow.data_pipeline.dataset_parsers import EasyDSParser
 from speechflow.io import AudioChunk, construct_file_list
 from speechflow.logging.server import LoggingServer
-from speechflow.utils.gpu import get_total_gpu_memory
+from speechflow.utils.gpu_info import get_total_gpu_memory
 
 __all__ = ["main"]
 

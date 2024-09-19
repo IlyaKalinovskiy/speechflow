@@ -12,8 +12,8 @@ from nlp.prosody_prediction.data_types import (
 )
 from speechflow.data_server.helpers import init_data_loader_from_config
 from speechflow.training.saver import ExperimentSaver
-from speechflow.training.utils.pad_utils import pad_1d, pad_2d
 from speechflow.utils.init import init_class_from_config
+from speechflow.utils.pad_utils import pad_1d, pad_2d
 
 
 def eval(data_loader, model, callback, batch_processor, log_to_file=True):

@@ -17,7 +17,7 @@ from tqdm import tqdm
 from speechflow.data_server.helpers import dataset_iterator
 from speechflow.io import AudioSeg, Config
 from speechflow.training.saver import ExperimentSaver
-from speechflow.utils.gpu import get_freer_gpu
+from speechflow.utils.gpu_info import get_freer_gpu
 from speechflow.utils.init import init_class_from_config
 from tts import acoustic_models
 

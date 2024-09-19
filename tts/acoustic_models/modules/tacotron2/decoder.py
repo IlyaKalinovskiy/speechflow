@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import get_mask_from_lengths
+from speechflow.utils.tensor_utils import get_mask_from_lengths
 from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.data_types import DecoderOutput, VarianceAdaptorOutput
 from tts.acoustic_models.modules.params import DecoderParams

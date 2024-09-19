@@ -34,7 +34,7 @@ from speechflow.io import (
 from speechflow.logging.server import LoggingServer
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.dictutils import find_field
-from speechflow.utils.gpu import get_freer_gpu
+from speechflow.utils.gpu_info import get_freer_gpu
 from speechflow.utils.init import init_class_from_config
 from tts import forced_alignment
 
