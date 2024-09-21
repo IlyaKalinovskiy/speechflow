@@ -203,7 +203,8 @@ class SignalProcessor(BaseAudioProcessor):
     def multiple(
         ds: AudioDataSample, value: int = 1, mode: str = "constant"
     ) -> AudioDataSample:
-        return ds.audio_chunk.multiple(value, mode, inplace=True)
+        ds.audio_chunk.multiple(value, mode, inplace=True)
+        return ds
 
     @staticmethod
     def astype(ds: AudioDataSample, dtype=np.float32) -> AudioDataSample:

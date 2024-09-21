@@ -306,7 +306,7 @@ def fold(
             chunks = chunks[..., np.newaxis]
 
     if pad_size > 0:
-        chunks = chunks[:, pad_size:, :]
+        chunks = chunks[:, pad_size:-pad_size, :]
 
     chunks_size = context_left + chunk_size + context_right
     a = round(chunks.shape[1] * context_left / chunks_size)
@@ -343,7 +343,7 @@ def unfold(
     data_pad = torch.cat([a, t, b, c])
     total_size = context_left + chunk_size + context_right
     chunks = data_pad.unfold(0, total_size, chunk_size)
-    chunks = torch.nn.functional.pad(chunks, (pad_size, 0, 0, 0), "constant", 0)
+    chunks = torch.nn.functional.pad(chunks, (pad_size, pad_size, 0, 0), "constant", 0)
 
     if isinstance(data, torch.Tensor):
         return chunks

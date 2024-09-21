@@ -170,9 +170,7 @@ class AudioChunk:
         sf.write(file_path, data, self.sr, format=audio_format)
         return self
 
-    def to_bytes(
-        self, audio_format: AudioFormat = AudioFormat.wav, bitrate: str = "128k"
-    ):
+    def tobytes(self, audio_format: AudioFormat = AudioFormat.wav, bitrate: str = "128k"):
         buff = io.BytesIO()
         if audio_format in [AudioFormat.wav]:
             self.save(buff)
@@ -315,6 +313,26 @@ class AudioChunk:
         else:
             return AudioChunk(data=data, sr=self.sr)
 
+    def pad(
+        self,
+        left: float = 0,
+        right: float = 0,
+        mode: str = "constant",
+        inplace: bool = False,
+    ):
+        left = int(left * self.sr)
+        right = int(right * self.sr)
+
+        data = self.data
+        data = np.pad(data, (left, right), mode=mode, constant_values=0)  # type: ignore
+
+        if inplace:
+            self.data = data
+            self.end += (left + right) / self.sr
+            return self
+        else:
+            return AudioChunk(data=data, sr=self.sr)
+
     def astype(self, dtype, inplace: bool = False) -> "AudioChunk":
         data = self.data
 
@@ -382,7 +400,7 @@ if __name__ == "__main__":
     _flac_chunk = AudioChunk(_flac_path).load()
 
     for _audio_format in AudioFormat.names():
-        _bytes = _audio_chunk.to_bytes(AudioFormat[_audio_format])
+        _bytes = _audio_chunk.tobytes(AudioFormat[_audio_format])
         _file_path = f"{_wav_path.stem}.{_audio_format}"
         with open(_file_path, "wb") as f:
             f.write(_bytes)

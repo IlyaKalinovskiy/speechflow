@@ -106,12 +106,14 @@ class TTSForwardOutput(TrainData):
     after_postnet_spectrogram: Tensor = None
     gate: Tensor = None
     attention_weights: Tensor = None
-    variance_predictions: tp.Dict[str, Tensor] = None  # type: ignore
-    additional_content: tp.Dict[str, Tensor] = None  # type: ignore
-    additional_losses: tp.Dict[str, Tensor] = None  # type: ignore
-    embeddings: tp.Dict = None  # type: ignore
+    embeddings: tp.Optional[tp.Dict[str, Tensor]] = None
+    variance_predictions: tp.Optional[tp.Dict[str, Tensor]] = None
+    additional_content: tp.Optional[tp.Dict[str, Tensor]] = None
+    additional_losses: tp.Optional[tp.Dict[str, Tensor]] = None
 
     def __post_init__(self):
+        if self.embeddings is None:
+            self.embeddings = {}
         if self.variance_predictions is None:
             self.variance_predictions = {}
         if self.additional_content is None:
