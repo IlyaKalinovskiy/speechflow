@@ -24,8 +24,8 @@ from tts.acoustic_models.modules.params import EncoderParams
 __all__ = [
     "VQEncoder",
     "VQEncoderParams",
-    "VQEncoderWithTokenContext",
-    "VQEncoderWithTokenContextParams",
+    "VQEncoderWithClassificationAdaptor",
+    "VQEncoderWithClassificationAdaptorParams",
 ]
 
 
@@ -140,22 +140,22 @@ class VQEncoder(Component):
             z, indices, commit_loss = self.rlfq(z.transpose(1, -1))
             inputs.additional_losses[f"rlfq_encoder_{self.id}"] = commit_loss.sum()
 
-        inputs.additional_content[f"vq_latents"] = y
-        inputs.additional_content[f"vq_codes"] = indices
-        inputs.additional_content[f"vq_z"] = z
+        inputs.additional_content["vq_latents"] = y
+        inputs.additional_content["vq_codes"] = indices
+        inputs.additional_content["vq_z"] = z
 
         return EncoderOutput.copy_from(inputs).set_content(z)
 
 
-class VQEncoderWithTokenContextParams(VQEncoderParams):
+class VQEncoderWithClassificationAdaptorParams(VQEncoderParams):
     n_convolutions: int = 3
     kernel_size: int = 5
 
 
-class VQEncoderWithTokenContext(VQEncoder):
-    params: VQEncoderWithTokenContextParams
+class VQEncoderWithClassificationAdaptor(VQEncoder):
+    params: VQEncoderWithClassificationAdaptorParams
 
-    def __init__(self, params: VQEncoderWithTokenContextParams, input_dim: int):
+    def __init__(self, params: VQEncoderWithClassificationAdaptorParams, input_dim: int):
         super().__init__(params, input_dim)
 
         convolutions = []
@@ -176,14 +176,14 @@ class VQEncoderWithTokenContext(VQEncoder):
 
         self.convolutions = nn.ModuleList(convolutions)
 
-        self.components_output_dim["token_context"] = lambda: self.output_dim
+        self.components_output_dim["adaptor_context"] = lambda: self.output_dim
 
     def forward_step(self, x: ComponentInput) -> EncoderOutput:
         result: EncoderOutput = super().forward_step(x)
 
         content = result.content
-        token_context = result.additional_content.setdefault(
-            f"token_context_{self.id}", []
+        adaptor_context = result.additional_content.setdefault(
+            f"adaptor_context_{self.id}", []
         )
 
         if self.training:
@@ -191,6 +191,6 @@ class VQEncoderWithTokenContext(VQEncoder):
             for conv in self.convolutions:
                 ctx = F.relu(conv(ctx))
 
-            token_context.append(ctx.transpose(2, 1))
+            adaptor_context.append(ctx.transpose(2, 1))
 
         return result

@@ -28,10 +28,10 @@ class AdditionalModulesParams(EmbeddingParams):
     addm_apply_inverse_speaker_emb: tp.Dict[str, int] = Field(default_factory=lambda: {})
     addm_apply_inverse_style_emb: tp.Dict[str, int] = Field(default_factory=lambda: {})
     addm_apply_inverse_1d_feature: tp.Dict[str, int] = Field(default_factory=lambda: {})
-    addm_apply_inverse_token_classifier: tp.Dict[str, int] = Field(
+    addm_apply_inverse_phoneme_classifier: tp.Dict[str, int] = Field(
         default_factory=lambda: {}
     )
-    addm_apply_token_classifier: tp.Dict[str, int] = Field(default_factory=lambda: {})
+    addm_apply_phoneme_classifier: tp.Dict[str, int] = Field(default_factory=lambda: {})
 
     addm_1d_features: tp.List[str] = ["energy", "pitch"]
 
@@ -85,9 +85,9 @@ class AdditionalModules(Component):
                         in_dim=emb_size
                     )
 
-        if params.addm_apply_inverse_token_classifier:
+        if params.addm_apply_inverse_phoneme_classifier:
             self.inverse_phoneme_proj = nn.ModuleDict()
-            for name, emb_size in params.addm_apply_inverse_token_classifier.items():
+            for name, emb_size in params.addm_apply_inverse_phoneme_classifier.items():
                 if emb_size is None:
                     emb_size = self.components_output_dim[name]()
                 self.inverse_phoneme_proj[name] = nn.ModuleList()
@@ -96,9 +96,9 @@ class AdditionalModules(Component):
                         InverseGradPhonemePredictor(emb_size, params.alphabet_size)
                     )
 
-        if params.addm_apply_token_classifier:
+        if params.addm_apply_phoneme_classifier:
             self.phoneme_proj = nn.ModuleDict()
-            for name, emb_size in params.addm_apply_token_classifier.items():
+            for name, emb_size in params.addm_apply_phoneme_classifier.items():
                 if emb_size is None:
                     emb_size = self.components_output_dim[name]()
                 self.phoneme_proj[name] = nn.ModuleList()
@@ -173,7 +173,7 @@ class AdditionalModules(Component):
                     if loss > 0:
                         losses[f"{feat_name}_{name}_inverse_1d_feature"] = 0.1 * loss
 
-        if self.params.addm_apply_inverse_token_classifier:
+        if self.params.addm_apply_inverse_phoneme_classifier:
             for name, module in self.inverse_phoneme_proj.items():
                 loss = 0
                 for idx, m in enumerate(module):
@@ -190,7 +190,7 @@ class AdditionalModules(Component):
 
                 losses[f"{name}_inverse_phoneme_classifier"] = 0.1 * loss
 
-        if self.params.addm_apply_token_classifier:
+        if self.params.addm_apply_phoneme_classifier:
             for name, module in self.phoneme_proj.items():
                 loss = 0
                 for idx, m in enumerate(module):

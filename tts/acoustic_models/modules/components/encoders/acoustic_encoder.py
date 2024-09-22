@@ -11,8 +11,8 @@ from tts.acoustic_models.modules.params import EncoderParams
 __all__ = [
     "AcousticEncoder",
     "AcousticEncoderParams",
-    "AcousticEncoderWithTokenContext",
-    "AcousticEncoderWithTokenContextParams",
+    "AcousticEncoderWithClassificationAdaptor",
+    "AcousticEncoderWithClassificationAdaptorParams",
 ]
 
 
@@ -78,15 +78,17 @@ class PreNet(nn.Module):
         return self.net(x)
 
 
-class AcousticEncoderWithTokenContextParams(AcousticEncoderParams):
+class AcousticEncoderWithClassificationAdaptorParams(AcousticEncoderParams):
     n_convolutions: int = 3
     kernel_size: int = 5
 
 
-class AcousticEncoderWithTokenContext(AcousticEncoder):
-    params: AcousticEncoderWithTokenContextParams
+class AcousticEncoderWithClassificationAdaptor(AcousticEncoder):
+    params: AcousticEncoderWithClassificationAdaptorParams
 
-    def __init__(self, params: AcousticEncoderWithTokenContextParams, input_dim: int):
+    def __init__(
+        self, params: AcousticEncoderWithClassificationAdaptorParams, input_dim: int
+    ):
         super().__init__(params, input_dim)
 
         convolutions = []
@@ -107,19 +109,21 @@ class AcousticEncoderWithTokenContext(AcousticEncoder):
 
         self.convolutions = nn.ModuleList(convolutions)
 
-        self.components_output_dim["token_context"] = lambda: self.output_dim
+        self.components_output_dim["adaptor_context"] = lambda: self.output_dim
 
     def forward_step(self, x: ComponentInput) -> EncoderOutput:
         result: EncoderOutput = super().forward_step(x)
 
         content = result.content
-        token_context = result.additional_content.setdefault("token_context", [])
+        adaptor_context = result.additional_content.setdefault(
+            f"adaptor_context_{self.id}", []
+        )
 
         if self.training:
             ctx = content.transpose(2, 1)
             for conv in self.convolutions:
                 ctx = F.relu(conv(ctx))
 
-            token_context.append(ctx.transpose(2, 1))
+            adaptor_context.append(ctx.transpose(2, 1))
 
         return result

@@ -19,8 +19,8 @@ from tts.acoustic_models.modules.common.blocks import Regression, VarianceEmbedd
 from tts.acoustic_models.modules.components.encoders import (
     SFEncoder,
     SFEncoderParams,
-    VQEncoderWithTokenContext,
-    VQEncoderWithTokenContextParams,
+    VQEncoderWithClassificationAdaptor,
+    VQEncoderWithClassificationAdaptorParams,
 )
 from tts.acoustic_models.modules.components.style_encoders import (
     StyleEncoder,
@@ -193,7 +193,7 @@ class AudioFeatures(FeatureExtractor):
         # ----- init VQ encoder -----
 
         if use_vq:
-            vq_enc_params = VQEncoderWithTokenContextParams(
+            vq_enc_params = VQEncoderWithClassificationAdaptorParams(
                 vq_type=vq_type,
                 vq_codebook_size=vq_codebook_size,
                 vq_num_quantizers=vq_num_quantizers,
@@ -212,7 +212,7 @@ class AudioFeatures(FeatureExtractor):
                 encoder_output_dim=vq_emb_dim,
                 tag="vq_encoder",
             )
-            self.vq_enc = VQEncoderWithTokenContext(vq_enc_params, in_dim)
+            self.vq_enc = VQEncoderWithClassificationAdaptor(vq_enc_params, in_dim)
             in_dim = self.vq_enc.output_dim
         else:
             self.vq_enc = None
@@ -256,19 +256,9 @@ class AudioFeatures(FeatureExtractor):
             self.pitch_predictor = None
 
         if use_plbert:
-            enc_cls, enc_params_cls = TTS_ENCODERS[encoder_type]
-            enc_params = enc_params_cls(
-                encoder_num_blocks=encoder_num_blocks,
-                encoder_num_layers=encoder_num_layers,
-                encoder_inner_dim=256,
-                encoder_output_dim=in_dim,
-                condition=tuple(condition),
-                condition_dim=condition_dim,
-                condition_type=condition_type,
-            )
-            self.plbert_encoder = enc_cls(enc_params, plbert_emb_dim)
+            self.plbert_proj = nn.Linear(plbert_emb_dim, in_dim)
         else:
-            self.plbert_encoder = None
+            self.plbert_proj = None
 
         # ----- init 1d source-filter encoder -----
 
@@ -312,11 +302,11 @@ class AudioFeatures(FeatureExtractor):
             addm_params.speaker_emb_dim = speaker_emb_dim
 
             if use_vq:
-                addm_params.addm_apply_token_classifier = {
-                    "token_context_0": self.vq_enc.output_dim
+                addm_params.addm_apply_phoneme_classifier = {
+                    "adaptor_context_0": self.vq_enc.output_dim
                 }
             else:
-                addm_params.addm_apply_token_classifier = {
+                addm_params.addm_apply_phoneme_classifier = {
                     self.encoder.name: self.encoder.output_dim
                 }
 
@@ -448,14 +438,8 @@ class AudioFeatures(FeatureExtractor):
                 }
             )
 
-        if self.plbert_encoder is not None:
-            enc_input = ComponentInput(
-                content=inputs.plbert_feat,
-                content_lengths=inputs.plbert_feat_lengths,
-                model_inputs=inputs,
-            )
-            enc_output = self.plbert_encoder(enc_input)
-            x = x + enc_output.content
+        if self.plbert_proj is not None:
+            x = x + self.plbert_proj(inputs.plbert_feat)
 
         if self.energy_predictor is not None:
             e_output, e_content, e_losses = self.energy_predictor(
@@ -524,7 +508,7 @@ class AudioFeatures(FeatureExtractor):
             enc_input = ComponentInput(
                 content=x, content_lengths=x_lens, model_inputs=inputs
             )
-            mel_predict = self.mel_predictor(enc_input).content[0]
+            mel_predict = self.mel_predictor(enc_input).content
             losses["auxiliary_mel_loss"] = 0.1 * F.mse_loss(
                 mel_predict, inputs.spectrogram
             )

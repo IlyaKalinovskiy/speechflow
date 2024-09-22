@@ -81,8 +81,8 @@ model:
         use_averages: true
         use_range: false
         use_sf_encoder: true
-        use_vq: false
-        vq_num_quantizers: 1
+        use_vq: true
+        vq_num_quantizers: 4
         vq_codebook_size: 256
         use_auxiliary_classification_loss: true
         use_auxiliary_mel_loss: true

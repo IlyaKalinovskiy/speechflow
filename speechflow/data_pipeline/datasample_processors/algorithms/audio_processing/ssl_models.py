@@ -358,8 +358,7 @@ class Hubert(Wav2Vec):
             }
             try:
                 self.model.load_state_dict(state_dict, strict=True)
-            except Exception as e:
-                print(e)
+            except Exception:
                 self.model.load_state_dict(state_dict, strict=False)
 
         self.model.eval()
@@ -517,8 +516,7 @@ if __name__ == "__main__":
         for _ssl_cls in [Whisper, Wav2Vec, WavLM, ECAPABiometric]:
             try:
                 _ssl_model = _ssl_cls()
-            except Exception as e:
-                print(e)
+            except Exception:
                 continue
 
             with Profiler(_ssl_cls.__name__) as prof:

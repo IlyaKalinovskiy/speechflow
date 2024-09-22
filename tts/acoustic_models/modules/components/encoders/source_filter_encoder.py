@@ -17,8 +17,8 @@ from tts.acoustic_models.modules.params import EncoderParams
 __all__ = [
     "SFEncoder",
     "SFEncoderParams",
-    "SFEncoderWithTokenContext",
-    "SFEncoderWithTokenContextParams",
+    "SFEncoderWithClassificationAdaptor",
+    "SFEncoderWithClassificationAdaptorParams",
 ]
 
 
@@ -152,15 +152,15 @@ class SFEncoder(Component):
         return outputs
 
 
-class SFEncoderWithTokenContextParams(SFEncoderParams):
+class SFEncoderWithClassificationAdaptorParams(SFEncoderParams):
     n_convolutions: int = 3
     kernel_size: int = 5
 
 
-class SFEncoderWithTokenContext(SFEncoder):
-    params: SFEncoderWithTokenContextParams
+class SFEncoderWithClassificationAdaptor(SFEncoder):
+    params: SFEncoderWithClassificationAdaptorParams
 
-    def __init__(self, params: SFEncoderWithTokenContextParams, input_dim: int):
+    def __init__(self, params: SFEncoderWithClassificationAdaptorParams, input_dim: int):
         super().__init__(params, input_dim)
 
         convolutions = []
@@ -180,18 +180,20 @@ class SFEncoderWithTokenContext(SFEncoder):
             convolutions.append(conv_layer)
 
         self.conv_module = nn.ModuleList(convolutions)
-        self.components_output_dim["token_context"] = lambda: self.output_dim
+        self.components_output_dim["adaptor_context"] = lambda: self.output_dim
 
     def forward_step(self, x: ComponentInput) -> EncoderOutput:
         result: EncoderOutput = super().forward_step(x)
 
-        token_context = result.additional_content.setdefault("token_context", [])
+        adaptor_context = result.additional_content.setdefault(
+            f"adaptor_context_{self.id}", []
+        )
 
         ctx = result.content
         ctx = ctx.transpose(1, 2)
         for conv in self.conv_module:
             ctx = F.relu(conv(ctx))
 
-        token_context.append(ctx.transpose(2, 1))
+        adaptor_context.append(ctx.transpose(2, 1))
 
         return result
