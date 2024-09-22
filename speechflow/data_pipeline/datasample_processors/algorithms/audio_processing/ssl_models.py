@@ -268,11 +268,13 @@ class Wav2Vec(BaseSSLModel):
         if self._feature_type == "logits":
             outputs = self.model(**processed)
             ssl_feat.encoder_feat = outputs.logits
-            ssl_feat.logits = outputs.logits
+            if hasattr(outputs, "logits"):
+                ssl_feat.logits = outputs.logits
         elif self._feature_type == "last_hidden_state":
             outputs = self.model(**processed, output_hidden_states=True)
             ssl_feat.encoder_feat = outputs.hidden_states[-1]
-            ssl_feat.logits = outputs.logits
+            if hasattr(outputs, "logits"):
+                ssl_feat.logits = outputs.logits
         elif self._feature_type == "partial":
             if self._level > 0:
                 ssl_feat.encoder_feat = self.encode(
@@ -286,7 +288,8 @@ class Wav2Vec(BaseSSLModel):
                     output_hidden_states=True,
                 )
                 ssl_feat.encoder_feat = outputs.hidden_states[self._level]
-                ssl_feat.logits = outputs.logits
+                if hasattr(outputs, "logits"):
+                    ssl_feat.logits = outputs.logits
 
         if self._stream_mod is not None:
             for feat_name in ["encoder_feat", "logits"]:
