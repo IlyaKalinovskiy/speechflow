@@ -1,24 +1,25 @@
 import math
+import typing as tp
 
-from typing import Tuple
-
-import cdpam
 import numpy as np
 import torch
 import torchaudio
 import transformers
 import pytorch_lightning as pl
 
+from speechflow.io import tp_PATH
 from speechflow.training.saver import ExperimentSaver
 from tts.vocoders.batch_processor import VocoderBatchProcessor
 from tts.vocoders.data_types import VocoderForwardInput
 from tts.vocoders.vocos.helpers import plot_spectrogram_to_numpy
-from tts.vocoders.vocos.loss import (
+from tts.vocoders.vocos.losses import (
+    CDPAMLoss,
     DiscriminatorLoss,
     FeatureMatchingLoss,
     GeneratorLoss,
     MelSpecReconstructionLoss,
     MultiResolutionSTFTLoss,
+    SpeakerSimilarityLoss,
 )
 from tts.vocoders.vocos.modules.backbone import Backbone
 from tts.vocoders.vocos.modules.discriminators import (
@@ -46,18 +47,21 @@ class VocosLightningEngine(pl.LightningModule):
         num_warmup_steps: int = 0,
         mel_loss_coeff: float = 1.0,
         mrd_loss_coeff: float = 1.0,
+        auxiliary_loss_coeff: float = 1.0,
+        auxiliary_losses_every: int = 1,
         pretrain_mel_steps: int = 0,
         decay_mel_coeff: bool = False,
+        use_sm_loss: bool = False,
+        biometric_model_type: tp.Literal["speechbrain", "wespeaker"] = "wespeaker",
+        biometric_model_name: tp.Optional[tp_PATH] = None,
+        use_cdpam_loss: bool = False,
+        cdpam_model_device: str = "cpu",
+        fft_sizes: tp.Tuple[int, ...] = (1024, 680, 450),
+        hop_sizes: tp.Tuple[int, ...] = (200, 135, 90),
+        win_sizes: tp.Tuple[int, ...] = (800, 450, 300),
         evaluate_utmos: bool = False,
         evaluate_pesq: bool = False,
         evaluate_periodicty: bool = False,
-        with_cdpam: bool = False,
-        cdpam_every: int = 1,
-        cdpam_device: str = "cpu",
-        fft_sizes: Tuple[int, ...] = (1024, 680, 450),
-        hop_sizes: Tuple[int, ...] = (200, 135, 90),
-        win_sizes: Tuple[int, ...] = (800, 450, 300),
-        subbands: int = 1,
     ):
         """
         Args:
@@ -101,18 +105,25 @@ class VocosLightningEngine(pl.LightningModule):
         self.melspec_loss = MelSpecReconstructionLoss(sample_rate=sample_rate)
         self.mr_melspec_loss = MultiResolutionSTFTLoss(fft_sizes, hop_sizes, win_sizes)
 
+        if use_sm_loss:
+            self.sm_loss = SpeakerSimilarityLoss(
+                sample_rate, biometric_model_type, biometric_model_name
+            )
+        else:
+            self.sm_loss = None
+
+        if use_cdpam_loss:
+            self.cdpam_loss = CDPAMLoss(cdpam_model_device)
+        else:
+            self.cdpam_loss = None
+
         self.train_discriminator = False
         self.base_mel_coeff = self.mel_loss_coeff = mel_loss_coeff
 
-        self.with_cdpam = with_cdpam
-        self.cdpam_every = cdpam_every
-        self.cdpam_device = cdpam_device
-        self.cdpam = None
-
     def on_fit_start(self):
         self.batch_processor.set_device(self.device)
-        if self.with_cdpam:
-            self.cdpam = cdpam.CDPAM(dev=self.cdpam_device)
+        if self.cdpam_loss is not None and self.cdpam_loss.device == "cpu":
+            self.cdpam_loss.cdpam.model.to(self.device)
 
     def configure_optimizers(self):
         disc_params = [
@@ -214,7 +225,7 @@ class VocosLightningEngine(pl.LightningModule):
 
         # train generator
         if optimizer_idx == 1:
-            audio_hat, _, feat_losses = self(inputs, **kwargs)
+            audio_hat, _, inner_losses = self(inputs, **kwargs)
             if self.train_discriminator:
                 _, gen_score_mp, fmap_rs_mp, fmap_gs_mp = self.multiperioddisc(
                     y=audio_input,
@@ -248,30 +259,29 @@ class VocosLightningEngine(pl.LightningModule):
             mr_melspec_loss = self.mr_melspec_loss(audio_hat, audio_input)
             mel_loss = melspec_loss + mr_melspec_loss
 
+            auxiliary_loss = 0
+            if self.global_step % self.hparams.auxiliary_losses_every == 0:
+                for loss_fn in [self.sm_loss, self.cdpam_loss]:
+                    if loss_fn is not None:
+                        loss_val = loss_fn(audio_hat, audio_input)
+                        auxiliary_loss += loss_val
+                        self.log(f"generator/{loss_fn.__class__.__name__}", loss_val)
+
+            for name, value in inner_losses.items():
+                self.log(f"generator/{name}", value)
+                if value.requires_grad and not name.startswith("constant"):
+                    auxiliary_loss += value
+
             loss = (
                 loss_gen_mp
                 + self.hparams.mrd_loss_coeff * loss_gen_mrd
                 + loss_fm_mp
                 + self.hparams.mrd_loss_coeff * loss_fm_mrd
                 + self.mel_loss_coeff * mel_loss
+                + self.hparams.auxiliary_loss_coeff * auxiliary_loss
             )
 
-            if self.cdpam is not None and self.global_step % self.cdpam_every == 0:
-                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                    cdpam_loss = self.cdpam.forward(
-                        audio_input * 32768.0, audio_hat * 32768.0
-                    ).sum()
-                cdpam_loss = cdpam_loss.to(self.device).float()
-                self.log("generator/cdpam_loss", cdpam_loss, prog_bar=True)
-                loss += cdpam_loss
-
-            for name, value in feat_losses.items():
-                self.log(f"generator/{name}", value)
-                if value.requires_grad and not name.startswith("constant"):
-                    loss += value
-
             self.log("generator/total_loss", loss, prog_bar=True)
-            self.log("mel_loss_coeff", self.mel_loss_coeff)
             self.log("generator/mel_loss", mel_loss)
 
             if self.global_step % 1000 == 0 and self.global_rank == 0:
@@ -287,9 +297,11 @@ class VocosLightningEngine(pl.LightningModule):
                     self.global_step,
                     self.hparams.sample_rate,
                 )
+
                 with torch.no_grad():
                     mel = safe_log(self.melspec_loss.mel_spec(audio_input[0]))
                     mel_hat = safe_log(self.melspec_loss.mel_spec(audio_hat[0]))
+
                 self.logger.experiment.add_image(
                     "train/mel_target",
                     plot_spectrogram_to_numpy(mel.data.cpu().numpy()),
@@ -388,8 +400,10 @@ class VocosLightningEngine(pl.LightningModule):
                 self.global_step,
                 self.hparams.sample_rate,
             )
+
             mel_target = safe_log(self.melspec_loss.mel_spec(audio_in))
             mel_hat = safe_log(self.melspec_loss.mel_spec(audio_pred))
+
             self.logger.experiment.add_image(
                 "val_mel_target",
                 plot_spectrogram_to_numpy(mel_target.data.cpu().numpy()),
@@ -402,6 +416,7 @@ class VocosLightningEngine(pl.LightningModule):
                 self.global_step,
                 dataformats="HWC",
             )
+
         avg_loss = torch.stack([x["val_loss"] for x in outputs]).mean()
         mel_loss = torch.stack([x["mel_loss"] for x in outputs]).mean()
         utmos_score = torch.stack([x["utmos_score"] for x in outputs]).mean()

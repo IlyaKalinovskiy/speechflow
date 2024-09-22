@@ -227,13 +227,21 @@ class Wav2Vec(BaseSSLModel):
         return hidden_states
 
     def get_tokens(self, ssl_feat: SSLFeatures) -> SSLFeatures:
-        if self._vocab_path is not None:
-            feat = ssl_feat.encoder_feat
-            if feat.shape[1] != self.model.lm_head.out_features:
-                feat = self.model.lm_head(feat)
+        if self._vocab_path is None or ssl_feat.logits is None:
+            return ssl_feat
 
-            ssl_feat.tokens = self.processor.batch_decode(feat.argmax(dim=-1))[0]
+        logits = ssl_feat.logits
+        text = self.processor.batch_decode(logits.argmax(dim=-1))[0]
+        tokens_id = self.processor.tokenizer(text).input_ids
 
+        dictionary = self.processor.tokenizer.get_vocab()
+        dictionary = {v: k for k, v in dictionary.items()}
+        tokens_text = [dictionary[t] for t in tokens_id]
+        tokens_text = [" " if s == "|" else s for s in tokens_text]
+
+        ssl_feat.tokens_id = tokens_id
+        ssl_feat.tokens_text = tokens_text
+        ssl_feat.text = text
         return ssl_feat
 
     @torch.inference_mode()
@@ -260,9 +268,11 @@ class Wav2Vec(BaseSSLModel):
         if self._feature_type == "logits":
             outputs = self.model(**processed)
             ssl_feat.encoder_feat = outputs.logits
+            ssl_feat.logits = outputs.logits
         elif self._feature_type == "last_hidden_state":
             outputs = self.model(**processed, output_hidden_states=True)
             ssl_feat.encoder_feat = outputs.hidden_states[-1]
+            ssl_feat.logits = outputs.logits
         elif self._feature_type == "partial":
             if self._level > 0:
                 ssl_feat.encoder_feat = self.encode(
@@ -276,15 +286,21 @@ class Wav2Vec(BaseSSLModel):
                     output_hidden_states=True,
                 )
                 ssl_feat.encoder_feat = outputs.hidden_states[self._level]
+                ssl_feat.logits = outputs.logits
 
         if self._stream_mod is not None:
-            chunks = ssl_feat.encoder_feat
-            s_ = self._stream_mod["chunk_size"]
-            l_, r_ = self._stream_mod["context_size"]
-            ssl_feat.encoder_feat = fold(chunks, s_, l_, r_)
+            for feat_name in ["encoder_feat", "logits"]:
+                feat = getattr(ssl_feat, feat_name)
+                if feat is None:
+                    continue
+                s_ = self._stream_mod["chunk_size"]
+                l_, r_ = self._stream_mod["context_size"]
+                setattr(ssl_feat, feat_name, fold(feat, s_, l_, r_))
 
         ssl_feat = self.get_tokens(ssl_feat)
         ssl_feat.encoder_feat = ssl_feat.encoder_feat.cpu().squeeze(0)
+        if ssl_feat.logits is not None:
+            ssl_feat.logits = ssl_feat.logits.cpu().squeeze(0)
 
         if self._trim_pad:
             attention_mask = attention_mask.squeeze(0)

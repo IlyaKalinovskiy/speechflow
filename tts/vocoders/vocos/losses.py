@@ -1,12 +1,92 @@
-from typing import List, Tuple, Union
+import typing as tp
 
+import cdpam
 import torch
 import torchaudio
 
 from torch import nn
 from torch.nn import functional as F
 
+from speechflow.data_pipeline.datasample_processors.biometric_processors import (
+    VoiceBiometricProcessor,
+)
+from speechflow.io import tp_PATH
 from tts.vocoders.vocos.utils.tensor_utils import safe_log
+
+__all__ = [
+    "GeneratorLoss",
+    "DiscriminatorLoss",
+    "MelSpecReconstructionLoss",
+    "FeatureMatchingLoss",
+    "MultiResolutionSTFTLoss",
+    "SpeakerSimilarityLoss",
+    "CDPAMLoss",
+]
+
+
+class GeneratorLoss(nn.Module):
+    """Generator Loss module.
+
+    Calculates the loss for the generator based on discriminator outputs.
+
+    """
+
+    def forward(
+        self, disc_outputs: tp.List[torch.Tensor]
+    ) -> tp.Tuple[torch.Tensor, tp.List[torch.Tensor]]:
+        """
+        Args:
+            disc_outputs (List[Tensor]): List of discriminator outputs.
+
+        Returns:
+            Tuple[Tensor, List[Tensor]]: Tuple containing the total loss and a list of loss values from
+                                         the sub-discriminators
+        """
+        loss = torch.zeros(1, device=disc_outputs[0].device, dtype=disc_outputs[0].dtype)
+        gen_losses = []
+        for dg in disc_outputs:
+            val = torch.mean(torch.clamp(1 - dg, min=0))
+            gen_losses.append(val)
+            loss += val
+
+        return loss, gen_losses
+
+
+class DiscriminatorLoss(nn.Module):
+    """Discriminator Loss module.
+
+    Calculates the loss for the discriminator based on real and generated outputs.
+
+    """
+
+    def forward(
+        self,
+        disc_real_outputs: tp.List[torch.Tensor],
+        disc_generated_outputs: tp.List[torch.Tensor],
+    ) -> tp.Tuple[torch.Tensor, tp.List[torch.Tensor], tp.List[torch.Tensor]]:
+        """
+        Args:
+            disc_real_outputs (List[Tensor]): List of discriminator outputs for real samples.
+            disc_generated_outputs (List[Tensor]): List of discriminator outputs for generated samples.
+
+        Returns:
+            Tuple[Tensor, List[Tensor], List[Tensor]]: A tuple containing the total loss, a list of loss values from
+                                                       the sub-discriminators for real outputs, and a list of
+                                                       loss values for generated outputs.
+        """
+        loss = torch.zeros(
+            1, device=disc_real_outputs[0].device, dtype=disc_real_outputs[0].dtype
+        )
+        r_losses = []
+        g_losses = []
+        for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
+            r_loss = torch.mean(torch.clamp(1 - dr, min=0))
+            g_loss = torch.mean(torch.clamp(1 + dg, min=0))
+            loss += r_loss + g_loss
+            r_losses.append(r_loss)
+            g_losses.append(g_loss)
+
+        return loss, r_losses, g_losses
 
 
 class SpectrogramTransform(nn.Module):
@@ -95,71 +175,6 @@ class MelSpecReconstructionLoss(nn.Module):
         return loss
 
 
-class GeneratorLoss(nn.Module):
-    """Generator Loss module.
-
-    Calculates the loss for the generator based on discriminator outputs.
-
-    """
-
-    def forward(
-        self, disc_outputs: List[torch.Tensor]
-    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
-        """
-        Args:
-            disc_outputs (List[Tensor]): List of discriminator outputs.
-
-        Returns:
-            Tuple[Tensor, List[Tensor]]: Tuple containing the total loss and a list of loss values from
-                                         the sub-discriminators
-        """
-        loss = torch.zeros(1, device=disc_outputs[0].device, dtype=disc_outputs[0].dtype)
-        gen_losses = []
-        for dg in disc_outputs:
-            val = torch.mean(torch.clamp(1 - dg, min=0))
-            gen_losses.append(val)
-            loss += val
-
-        return loss, gen_losses
-
-
-class DiscriminatorLoss(nn.Module):
-    """Discriminator Loss module.
-
-    Calculates the loss for the discriminator based on real and generated outputs.
-
-    """
-
-    def forward(
-        self,
-        disc_real_outputs: List[torch.Tensor],
-        disc_generated_outputs: List[torch.Tensor],
-    ) -> Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]:
-        """
-        Args:
-            disc_real_outputs (List[Tensor]): List of discriminator outputs for real samples.
-            disc_generated_outputs (List[Tensor]): List of discriminator outputs for generated samples.
-
-        Returns:
-            Tuple[Tensor, List[Tensor], List[Tensor]]: A tuple containing the total loss, a list of loss values from
-                                                       the sub-discriminators for real outputs, and a list of
-                                                       loss values for generated outputs.
-        """
-        loss = torch.zeros(
-            1, device=disc_real_outputs[0].device, dtype=disc_real_outputs[0].dtype
-        )
-        r_losses = []
-        g_losses = []
-        for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
-            r_loss = torch.mean(torch.clamp(1 - dr, min=0))
-            g_loss = torch.mean(torch.clamp(1 + dg, min=0))
-            loss += r_loss + g_loss
-            r_losses.append(r_loss)
-            g_losses.append(g_loss)
-
-        return loss, r_losses, g_losses
-
-
 class FeatureMatchingLoss(nn.Module):
     """Feature Matching Loss module.
 
@@ -169,7 +184,9 @@ class FeatureMatchingLoss(nn.Module):
     """
 
     def forward(
-        self, fmap_r: List[List[torch.Tensor]], fmap_g: List[List[torch.Tensor]]
+        self,
+        fmap_r: tp.List[tp.List[torch.Tensor]],
+        fmap_g: tp.List[tp.List[torch.Tensor]],
     ) -> torch.Tensor:
         """
         Args:
@@ -190,9 +207,9 @@ class FeatureMatchingLoss(nn.Module):
 class MultiResolutionSTFTLoss(nn.Module):
     def __init__(
         self,
-        fft_sizes: Union[int, Tuple[int, ...]],
-        hop_sizes: Union[int, Tuple[int, ...]],
-        win_sizes: Union[int, Tuple[int, ...]],
+        fft_sizes: tp.Union[int, tp.Tuple[int, ...]],
+        hop_sizes: tp.Union[int, tp.Tuple[int, ...]],
+        win_sizes: tp.Union[int, tp.Tuple[int, ...]],
     ):
         super().__init__()
 
@@ -246,3 +263,56 @@ class MultiResolutionSTFTLoss(nn.Module):
             Tensor: L1 loss between the mel-scaled magnitude spectrograms.
         """
         return self.compute_loss_value(y_hat, y)
+
+
+class SpeakerSimilarityLoss(nn.Module):
+    def __init__(
+        self,
+        sample_rate: int,
+        model_type: tp.Literal["speechbrain", "wespeaker"] = "wespeaker",
+        model_name: tp.Optional[tp_PATH] = None,
+    ):
+        super().__init__()
+        self.sample_rate = sample_rate
+        self.bio_proc = VoiceBiometricProcessor(model_type, model_name)
+
+    def forward(self, y_hat, y) -> torch.Tensor:
+        """
+        Args:
+            y_hat (Tensor): Predicted audio waveform.
+            y (Tensor): Ground truth audio waveform.
+
+        """
+        sm_loss = self.bio_proc.compute_sm_loss(
+            y_hat.unsqueeze(1), y.unsqueeze(1), sample_rate=self.sample_rate
+        )
+        return torch.mean(sm_loss, dim=0)
+
+
+class CDPAMLoss(nn.Module):
+    def __init__(self, device: str):
+        super().__init__()
+        self.device = device
+        self.cdpam = cdpam.CDPAM(dev=device)
+
+    def forward(self, y_hat, y) -> torch.Tensor:
+        """
+        Args:
+            y_hat (Tensor): Predicted audio waveform.
+            y (Tensor): Ground truth audio waveform.
+
+        """
+        y_hat = (y_hat * 32768.0).unsqueeze(1)
+        y = (y * 32768.0).unsqueeze(1)
+
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            _, enc_hat, _ = self.cdpam.model.base_encoder.forward(y_hat)
+
+            with torch.no_grad():
+                _, enc_gt, _ = self.cdpam.model.base_encoder.forward(y)
+
+        enc_hat = F.normalize(enc_hat.float(), dim=1)
+        enc_gt = F.normalize(enc_gt.float(), dim=1)
+
+        cdpam_loss = self.cdpam.model.model_dist.forward(enc_hat, enc_gt.detach())
+        return torch.mean(cdpam_loss, dim=0)

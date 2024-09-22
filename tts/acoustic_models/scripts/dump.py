@@ -287,7 +287,7 @@ def main(
     if attributes == [""]:
         attributes = []
 
-    if "dump" not in cfg["processor"]:
+    if "dump" not in cfg["processor"] or cfg["processor"]["dump"] is None:
         raise ValueError("section 'processor.dump' not configured")
 
     dump_folder = Path(cfg["processor"]["dump"].get("folder_path"))

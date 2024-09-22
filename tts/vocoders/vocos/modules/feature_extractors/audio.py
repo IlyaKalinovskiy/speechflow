@@ -455,8 +455,7 @@ class AudioFeatures(FeatureExtractor):
                 model_inputs=inputs,
             )
             enc_output = self.plbert_encoder(enc_input)
-            for idx, len in enumerate(enc_output.content_lengths):
-                x[idx, :] = x[idx, :] + enc_output.content[idx, len - 1, :]
+            x = x + enc_output.content
 
         if self.energy_predictor is not None:
             e_output, e_content, e_losses = self.energy_predictor(

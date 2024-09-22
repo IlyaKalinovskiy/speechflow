@@ -36,7 +36,7 @@ callbacks:
   ModelSummary: {}
   GradNormCallback: {}
 
-experiment:
+engine:
   class_name: VocosLightningEngine
   init_args:
     sample_rate: 24000

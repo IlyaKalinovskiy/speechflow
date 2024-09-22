@@ -5,7 +5,7 @@ import hashlib
 from copy import deepcopy as copy
 from pathlib import Path
 
-from omegaconf import DictConfig, DictKeyType, OmegaConf
+from omegaconf import DictConfig, OmegaConf
 
 from speechflow.io.utils import check_path, tp_PATH
 from speechflow.io.yaml_io import yaml_dump, yaml_load
@@ -48,9 +48,7 @@ class Config(DictConfig):
     def raw_file_path(self) -> Path:
         return self._metadata.resolver_cache.get("raw_file_path", Path())
 
-    def get(
-        self, key: DictKeyType, default_value: tp.Any = None, mutable: bool = False
-    ) -> tp.Any:
+    def get(self, key, default_value: tp.Any = None, mutable: bool = False) -> tp.Any:
         if mutable:
             return super().get(key, default_value)
         else:
@@ -88,7 +86,7 @@ class Config(DictConfig):
         return find_field(self, key, default_value, all_result)
 
     def to_dict(self) -> tp.Dict[str, tp.Any]:
-        return OmegaConf.to_object(self)
+        return OmegaConf.to_container(self)
 
     def copy(self) -> "Config":
         return Config(copy(self))

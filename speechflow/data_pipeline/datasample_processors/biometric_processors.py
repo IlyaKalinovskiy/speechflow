@@ -17,7 +17,7 @@ from speechflow.data_pipeline.datasample_processors.data_types import AudioDataS
 from speechflow.data_pipeline.datasample_processors.tts_singletons import (
     MeanBioEmbeddings,
 )
-from speechflow.io import AudioChunk
+from speechflow.io import AudioChunk, tp_PATH
 from speechflow.utils.fs import get_root_dir
 from speechflow.utils.init import lazy_initialization
 
@@ -38,7 +38,7 @@ class VoiceBiometricProcessor(BaseDSProcessor):
     def __init__(
         self,
         model_type: tp.Literal["resemblyzer", "speechbrain", "wespeaker"] = "resemblyzer",
-        model_name: tp.Optional[tp.Union[str, Path]] = None,
+        model_name: tp.Optional[tp_PATH] = None,
         max_audio_duration: tp.Optional[float] = None,
         fast_resample: bool = True,
         random_crop: bool = False,
@@ -166,7 +166,9 @@ class VoiceBiometricProcessor(BaseDSProcessor):
         return ds.to_numpy()
 
     @lazy_initialization
-    def compute_sm_loss(self, audio, audio_gt, sample_rate: int):
+    def compute_sm_loss(
+        self, audio: torch.Tensor, audio_gt: torch.Tensor, sample_rate: int
+    ):
         if self._model_type.startswith("speechbrain"):
 
             def compute_feat(_waveform):
@@ -201,14 +203,16 @@ class VoiceBiometricProcessor(BaseDSProcessor):
                 feats.append(compute_feat(waveform))
             return torch.stack(feats)
 
-        _feat = get_feat(audio)
-        _sp_emb = compute_embedding(_feat)
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            _feat = get_feat(audio)
+            _sp_emb = compute_embedding(_feat)
 
-        with torch.no_grad():
-            _feat_gt = get_feat(audio_gt)
-            _sp_emb_gt = compute_embedding(_feat_gt)
+            with torch.no_grad():
+                _feat_gt = get_feat(audio_gt)
+                _sp_emb_gt = compute_embedding(_feat_gt)
 
-        return torch.mean(1.0 - F.cosine_similarity(_sp_emb, _sp_emb_gt.detach()), dim=0)
+        cos = F.cosine_similarity(_sp_emb, _sp_emb_gt.detach())
+        return 1.0 - (1.0 + cos) / 2.0
 
 
 @PipeRegistry.registry(inputs={"speaker_name"}, outputs={"speaker_emb_mean"})
@@ -242,5 +246,7 @@ if __name__ == "__main__":
                 ).speaker_emb
                 noise_emb = torch.from_numpy(noise_emb)
 
-            dist = F.cosine_similarity(clean_emb.unsqueeze(0), noise_emb.unsqueeze(0))
+            dist = 1.0 - F.cosine_similarity(
+                clean_emb.unsqueeze(0), noise_emb.unsqueeze(0)
+            )
             print(f"noise_scale: {noise_scale}, dist: {float(dist)}")

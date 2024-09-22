@@ -4,10 +4,12 @@ import logging
 import itertools
 
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import torch
+import torchaudio.functional as F
 
 from multilingual_text_parser import Doc, Sentence, TextParser, Token, TokenUtils
 from multilingual_text_parser.utils.model_loaders import load_transformer_model
@@ -910,10 +912,63 @@ class MultilingualPLBert(BaseDSProcessor):
 
     @torch.inference_mode()
     def _get_from_ssl_tokens(self, ds: tp.Union[TextDataSample, AudioDataSample]):
-        phonemes = ds.ssl_feat.tokens
+        phonemes = ds.ssl_feat.text
         phonemes_to_id = torch.LongTensor(self._preproc(phonemes)).to(self.device)
-        feat = self._pl_bert(phonemes_to_id.unsqueeze(0)).last_hidden_state.squeeze(0)
-        ds.plbert_feat = feat.cpu()
+        feat = self._pl_bert(phonemes_to_id.unsqueeze(0)).last_hidden_state
+        feat = feat.squeeze(0).cpu()
+
+        if ds.ssl_feat.logits is not None:
+            tokens_id = ds.ssl_feat.tokens_id
+            tokens_text = ds.ssl_feat.tokens_text
+            if " " in ds.ssl_feat.tokens_text:
+                sil_pos = ds.ssl_feat.tokens_text.index(" ")
+                sil_id = ds.ssl_feat.tokens_id[sil_pos]
+                tokens_id_wo_sil = [t for t in tokens_id if t != sil_id]
+                tokens_text_wo_sil = [t for t in tokens_text if t != " "]
+            else:
+                tokens_id_wo_sil = tokens_id
+                tokens_text_wo_sil = tokens_text
+
+            assert len(tokens_id_wo_sil) == len(tokens_text_wo_sil)
+            id_to_symb = {k: v for k, v in zip(tokens_id_wo_sil, tokens_text_wo_sil)}
+
+            feat_wo_sil = []
+            for idx, s in enumerate(phonemes):
+                if s != " ":
+                    feat_wo_sil.append(feat[idx])
+
+            blank_id = 0
+            logits = torch.from_numpy(ds.ssl_feat.logits).unsqueeze(0)
+            log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+            targets = torch.tensor([tokens_id_wo_sil], dtype=torch.int32)
+            input_lengths = torch.Tensor([log_probs.shape[1]])
+            target_lengths = torch.Tensor([targets.shape[1]])
+            alignments, _ = F.forced_align(
+                log_probs,
+                targets,
+                input_lengths=input_lengths,
+                target_lengths=target_lengths,
+                blank=blank_id,
+            )
+
+            feat_shape = (ds.ssl_feat.encoder_feat.shape[0], feat.shape[1])
+            feat = torch.zeros(feat_shape)
+            prev_t_id = alignments[0][0]
+            symb = ""
+            for i, t_id in enumerate(alignments[0].numpy()):
+                if prev_t_id != t_id and prev_t_id != blank_id:
+                    feat_wo_sil = feat_wo_sil[len(symb) :]
+
+                if t_id != blank_id:
+                    symb = id_to_symb[t_id]
+                    embs = feat_wo_sil[: len(symb)]
+                    feat[i, :] = torch.stack(embs, dim=0).sum(dim=0)
+
+                prev_t_id = t_id
+
+            assert not feat_wo_sil
+
+        ds.plbert_feat = feat
         return ds
 
     @PipeRegistry.registry(outputs={"plbert_feat"})

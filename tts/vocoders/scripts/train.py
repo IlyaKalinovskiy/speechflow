@@ -81,9 +81,9 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         info_file_path.write_bytes(pickle.dumps(dl_train.client.info))
         saver.to_save["files"]["info_file_name"] = info_file_name
 
-    expr_name = cfg_model["experiment"].class_name
-    if "Vocos" in expr_name:
-        pl_engine_cls = getattr(vocos, expr_name)
+    engine_type = cfg_model["engine"].class_name
+    if "Vocos" in engine_type:
+        pl_engine_cls = getattr(vocos, engine_type)
 
         feat_cfg = cfg_model["model"].feature_extractor
 
@@ -108,9 +108,9 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         head_cls = getattr(vocos, head_cfg.class_name)
         head = init_class_from_config(head_cls, head_cfg.init_args)()
 
-        pl_engine = init_class_from_config(
-            pl_engine_cls, cfg_model["experiment"].init_args
-        )(feat, backbone, head, batch_processor, saver)
+        pl_engine = init_class_from_config(pl_engine_cls, cfg_model["engine"].init_args)(
+            feat, backbone, head, batch_processor, saver
+        )
     else:
         raise NotImplementedError
 

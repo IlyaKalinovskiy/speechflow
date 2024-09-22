@@ -148,7 +148,7 @@ preproc:
       type: MultilingualPLBert
       from_ssl_tokens: True
     timedim_interpolation:
-      features: [ssl_feat]
+      features: [ssl_feat, plbert_feat]
       shape_as: mel
     trim:
       type: SignalProcessor

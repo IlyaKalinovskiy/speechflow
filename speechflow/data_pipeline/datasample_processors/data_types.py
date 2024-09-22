@@ -40,7 +40,10 @@ class ImageDataSample(DataSample):
 @dataclass
 class SSLFeatures(ToTensor, ToNumpy, MovableToDevice):
     encoder_feat: tp_DATA = None
-    tokens: str = None
+    logits: tp_DATA = None
+    tokens_text: tp.Tuple[str, ...] = None
+    tokens_id: tp_DATA = None
+    text: str = None
 
     def __getitem__(self, item):
         return self.encoder_feat[item]
