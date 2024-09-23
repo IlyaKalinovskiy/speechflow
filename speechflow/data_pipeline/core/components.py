@@ -268,6 +268,13 @@ class PipelineComponents:
     def get_file_list(self) -> tp.Tuple[str, ...]:
         return self.sampler.dataset.get_file_list()
 
+    @check_path(assert_file_exists=True)
+    def metadata_from_file(
+        self, file_path: tp_PATH, label: tp.Optional[str] = None
+    ) -> tp.List[Metadata]:
+        metadata = self.dataset_parser.reader(file_path, label)
+        return metadata
+
     def metadata_to_datasample(
         self, metadata: tp.Union[tp.List[Metadata], Dataset]
     ) -> Dataset:

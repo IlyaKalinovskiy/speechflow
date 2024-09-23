@@ -3,7 +3,9 @@ import typing as tp
 
 from pathlib import Path
 
+from speechflow.data_pipeline.core.datasample import DataSample
 from speechflow.data_pipeline.core.dataset import Dataset
+from speechflow.data_pipeline.core.parser_types import Metadata
 
 
 class AbstractDatasetParser:
@@ -14,6 +16,14 @@ class AbstractDatasetParser:
     @abc.abstractmethod
     def __init__(self):
         """Everything that we need to init."""
+
+    def reader(
+        self, file_path: Path, label: tp.Optional[str] = None
+    ) -> tp.List[Metadata]:
+        raise NotImplementedError
+
+    def converter(self, metadata: Metadata) -> tp.List[DataSample]:
+        raise NotImplementedError
 
     @staticmethod
     @abc.abstractmethod
