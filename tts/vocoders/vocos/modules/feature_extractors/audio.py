@@ -159,7 +159,6 @@ class AudioFeatures(FeatureExtractor):
                 source=None,
                 source_dim=_get_feat_dim(style_feat_type),
                 style_emb_dim=style_emb_dim,
-                vp_output_dim=condition_emb_dim,
                 min_spec_len=128,
                 max_spec_len=512,
                 use_gmvae=style_use_gmvae,
@@ -184,7 +183,7 @@ class AudioFeatures(FeatureExtractor):
             self.style_enc = None
 
         if (use_energy or use_pitch) and use_range:
-            self.range_predictor = Regression(condition_emb_dim * 2, 3 * 2)
+            self.range_predictor = Regression(condition_emb_dim + style_emb_dim, 3 * 2)
         else:
             self.range_predictor = None
 
