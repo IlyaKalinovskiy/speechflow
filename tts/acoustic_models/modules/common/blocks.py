@@ -20,27 +20,19 @@ class VarianceEmbedding(nn.Module):
         n_bins: int = 256,
         emb_dim: int = 32,
         log_scale: bool = False,
-        with_postprocessing: bool = True,
+        activation_fn: str = "Tanh",
     ):
         super().__init__()
         v_min, v_max = interval
         self.log_scale = log_scale
-        self.with_postprocessing = with_postprocessing
 
         if self.log_scale:
             v_min, v_max = np.log1p(v_min), np.log1p(v_max)
+
         self.bins = torch.linspace(v_min, v_max, n_bins - 1)
 
         self.embedding = nn.Embedding(n_bins, emb_dim)
-
-        if with_postprocessing:
-            self.activation = nn.Tanh()
-            self.conv = nn.Conv1d(
-                in_channels=emb_dim,
-                out_channels=emb_dim,
-                kernel_size=(5,),
-                padding=2,
-            )
+        self.af = getattr(nn, activation_fn)()
 
     def forward(self, x: torch.Tensor):
         embedding = None
@@ -50,16 +42,14 @@ class VarianceEmbedding(nn.Module):
 
         if x.ndim == 2:
             y = torch.log1p(x) if self.log_scale else x
-            embedding = self.embedding(torch.bucketize(y, self.bins))
-            if self.with_postprocessing:
-                embedding = self.conv(embedding.transpose(1, 2))
-                embedding = self.activation(embedding.transpose(1, 2))
+            embedding = self.af(self.embedding(torch.bucketize(y, self.bins)))
 
         elif x.ndim == 3:
             temp = []
             for i in range(x.shape[2]):
                 y = torch.log1p(x[:, :, i]) if self.log_scale else x[:, :, i]
-                temp.append(self.embedding(torch.bucketize(y, self.bins)))
+                temp.append(self.af(self.embedding(torch.bucketize(y, self.bins))))
+
             embedding = torch.cat(temp, dim=2)
 
         return embedding.squeeze(1)
@@ -72,19 +62,21 @@ class Regression(nn.Module):
         out_dim: int,
         hidden_dim: int = 256,
         p_dropout: float = 0.1,
+        activation_fn: str = "Identity",
     ):
         super().__init__()
         self.linear1 = nn.Linear(in_features=in_dim, out_features=hidden_dim)
-        self.af = nn.LeakyReLU(0.2)
+        self.af1 = nn.LeakyReLU(0.2)
         self.dropout = nn.Dropout(p_dropout)
         self.linear2 = nn.Linear(in_features=hidden_dim, out_features=out_dim)
+        self.af2 = getattr(nn, activation_fn)()
 
     def forward(self, x, x_mask=None):
         if x.ndim == 2:
             x = x.unsqueeze(1)
 
-        y = self.af(self.linear1(x).transpose(2, 1))
-        y = self.linear2(self.dropout(y.transpose(2, 1)))
+        y = self.af1(self.linear1(x).transpose(2, 1))
+        y = self.af2(self.linear2(self.dropout(y.transpose(2, 1))))
         return y
 
 

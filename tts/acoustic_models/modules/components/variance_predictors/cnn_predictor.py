@@ -101,10 +101,6 @@ class CNNPredictor(Component):
     def forward_step(
         self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
     ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
-        precompute_name = f"imputer_{kwargs.get('name')}_precompute"
-        if precompute_name in kwargs["model_inputs"].additional_inputs:
-            return kwargs["model_inputs"].additional_inputs[precompute_name], {}, {}
-
         encoder_output = self.encode(x, x_lengths, model_inputs, **kwargs)
 
         if not self.params.as_encoder:

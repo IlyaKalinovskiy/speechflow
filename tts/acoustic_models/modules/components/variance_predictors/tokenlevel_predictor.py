@@ -26,6 +26,7 @@ class TokenLevelPredictorParams(VariancePredictorParams):
     word_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
     token_encoder_type: str = "VarianceEncoder"
     token_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
+    activation_fn: str = "Identity"
     add_lm_feat: bool = False
     use_mtm: bool = False  # masked token modeling
     var_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
@@ -46,20 +47,21 @@ class TokenLevelPredictor(Component):
         def _init_encoder(
             _enc_cls, _enc_params_cls, _encoder_params, _input_dim, _output_dim=None
         ):
+            if _output_dim is None:
+                _output_dim = params.vp_output_dim
+
             _enc_params = _enc_params_cls.init_from_parent_params(params, _encoder_params)
             _enc_params.encoder_num_blocks = params.vp_num_blocks
             _enc_params.encoder_num_layers = params.vp_num_layers
             _enc_params.encoder_inner_dim = params.vp_inner_dim
-            _enc_params.encoder_output_dim = (
-                params.vp_output_dim if _output_dim is None else _output_dim
-            )
+            _enc_params.encoder_output_dim = _output_dim
             return _enc_cls(_enc_params, _input_dim)
 
         enc_cls, enc_params_cls = TTS_ENCODERS[params.token_encoder_type]
 
         if params.add_lm_feat:
             self.lm_proj = nn.Linear(params.lm_feat_dim, input_dim, bias=False)
-            self.token_proj = nn.Linear(
+            self.pre_proj = nn.Linear(
                 input_dim + params.vp_inner_dim, input_dim, bias=False
             )
 
@@ -70,27 +72,32 @@ class TokenLevelPredictor(Component):
 
             self.hard_lr = SoftLengthRegulator(hard=True)
         else:
-            self.token_proj = nn.Identity()
+            self.pre_proj = nn.Identity()
 
         if params.use_mtm:
+            assert self.params.var_params.as_embedding  # type: ignore
             emb_dim = params.var_params.emb_dim  # type: ignore
             self.mtm_embeddings = VarianceEmbedding(
-                interval=(0, params.var_params.interval[1]),  # type: ignore
+                interval=params.var_params.interval,  # type: ignore
                 n_bins=params.var_params.n_bins,  # type: ignore
                 log_scale=params.var_params.log_scale,  # type: ignore
                 emb_dim=emb_dim,  # type: ignore
             )
+            self.mtm_pre_proj = Regression(input_dim, emb_dim)
             self.mtm_encoder = _init_encoder(
                 enc_cls, enc_params_cls, params.token_encoder_params, 2 * emb_dim, emb_dim
             )
-            self.mtm_proj = Regression(input_dim, emb_dim)
+            self.mtm_proj = Regression(params.vp_inner_dim, emb_dim, activation_fn="Tanh")
 
-            input_dim += 2 * emb_dim
+            input_dim += emb_dim
         else:
             self.mtm_encoder = None
 
         self.token_encoder = _init_encoder(
             enc_cls, enc_params_cls, params.token_encoder_params, input_dim
+        )
+        self.token_proj = Regression(
+            params.vp_inner_dim, params.vp_output_dim, activation_fn=params.activation_fn
         )
         self.lr = SoftLengthRegulator()
 
@@ -102,7 +109,7 @@ class TokenLevelPredictor(Component):
         self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
     ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
         name = kwargs.get("name")
-        target_by_tokens = kwargs.get("target")
+        target_by_tokens = kwargs.get("target").squeeze(-1)
         losses = {}
 
         word_length = model_inputs.additional_inputs.get("word_lengths")
@@ -123,47 +130,47 @@ class TokenLevelPredictor(Component):
             x_by_tokens = x
 
         if self.mtm_encoder is not None and target_by_tokens is not None:
-            target_mask = target_by_tokens
+            m = model_inputs.masks["text"]
+            inv_m = ~m.unsqueeze(-1)
 
-            mtm_embs = self.mtm_embeddings(target_mask)
             mtm_target_embs = self.mtm_embeddings(target_by_tokens)
+            mtm_target_embs_mask = mtm_target_embs * m.unsqueeze(-1) - 1 * inv_m
 
-            mtm_x = torch.cat([mtm_embs, self.mtm_proj(x_by_tokens.detach())], dim=-1)
-            mtm_predict, _ = self.mtm_encoder.process_content(
+            x_proj = self.mtm_pre_proj(x_by_tokens.detach())
+            mtm_x = torch.cat([mtm_target_embs_mask, x_proj], dim=-1)
+            _, mtm_enc_ctx = self.mtm_encoder.process_content(
                 mtm_x, x_lengths, model_inputs
             )
-
-            if model_inputs.imputer_masks is not None:
-                m = ~model_inputs.imputer_masks["text"]
-                mtm_predict = mtm_predict * m.unsqueeze(-1)
-                mtm_target_embs = mtm_target_embs * m.unsqueeze(-1)
+            mtm_predict_embs = self.mtm_proj(mtm_enc_ctx)
 
             if self.training:
-                losses[f"{name}_mtm_loss"] = F.mse_loss(
-                    mtm_predict, mtm_target_embs.detach()
+                losses[f"{name}_mtm_loss_by_tokens"] = F.mse_loss(
+                    mtm_predict_embs * inv_m, (mtm_target_embs * inv_m).detach()
                 )
 
-            x_by_tokens = torch.cat([x_by_tokens, mtm_embs, mtm_predict.detach()], dim=-1)
+            merger_embs = mtm_target_embs * m.unsqueeze(-1) + mtm_predict_embs * inv_m
+            x_by_tokens = torch.cat([x_by_tokens, merger_embs.detach()], dim=-1)
 
-        tk_proj = self.token_proj(x_by_tokens)
-        tk_predict, tk_ctx = self.token_encoder.process_content(
+        tk_proj = self.pre_proj(x_by_tokens)
+        _, enc_ctx = self.token_encoder.process_content(
             tk_proj, model_inputs.input_lengths, model_inputs
         )
-
-        context = tk_ctx
-        var_predict = tk_predict.squeeze(-1)
+        predict = self.token_proj(enc_ctx).squeeze(-1)
 
         if self.training:
-            if target_by_tokens.ndim == 2:
-                target_by_tokens = target_by_tokens.unsqueeze(-1)
+            if self.params.var_params.log_scale:  # type: ignore
+                target_by_tokens = torch.log1p(target_by_tokens)
 
-            losses[f"{name}_loss_by_tokens"] = F.l1_loss(tk_predict, target_by_tokens)
+            losses[f"{name}_loss_by_tokens"] = F.l1_loss(predict, target_by_tokens)
+
+        if self.params.var_params.log_scale:  # type: ignore
+            predict = torch.expm1(predict)
 
         return (
-            var_predict.squeeze(-1),
+            predict,
             {
-                f"{name}_vp_context": context,
-                f"{name}_vp_predict": var_predict,
+                f"{name}_vp_context": enc_ctx,
+                f"{name}_vp_predict": predict,
                 f"{name}_vp_target": kwargs.get("target"),
             },
             losses,
@@ -216,6 +223,8 @@ class TokenLevelPredictorWithDiscriminator(TokenLevelPredictor, Component):
                 var_fake.transpose(1, -1),
                 model_inputs.global_step,
             )
-            var_losses.update({f"{name}_{k}": v for k, v in disc_losses.items()})
+            var_losses.update(
+                {f"{name}_{k}_by_tokens": v for k, v in disc_losses.items()}
+            )
 
         return var_predict, var_content, var_losses

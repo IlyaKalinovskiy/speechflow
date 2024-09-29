@@ -482,7 +482,7 @@ class HierarchicalVarianceAdaptor(Component):
 
             if (
                 self.training
-                and self.va_variance_params[name].with_loss
+                and self.va_variance_params[name].use_loss
                 and name in variance_losses
             ):
                 loss_type = self.va_variance_params[name].loss_type

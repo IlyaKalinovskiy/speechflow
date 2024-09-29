@@ -181,7 +181,7 @@ class VariancePredictorParams(EmbeddingParams):
 
 
 class VarianceParams(BaseTorchModelParams):
-    predictor_type: str = "VariancePredictor"
+    predictor_type: str = "CNNPredictor"
     predictor_params: VariancePredictorParams = None  # type: ignore
     dim: int = 1
     target: str = None
@@ -203,7 +203,7 @@ class VarianceParams(BaseTorchModelParams):
     begin_iter: int = 0
     end_iter: int = 1_000_000
     skip: bool = False
-    with_loss: bool = False
+    use_loss: bool = False
     loss_type: str = "l1_loss"
 
     def model_post_init(self, __context: tp.Any):
@@ -224,7 +224,7 @@ class VarianceParams(BaseTorchModelParams):
             self.use_target = False
             self.detach_output = False
             self.as_embedding = False
-            self.with_loss = False
+            self.use_loss = False
         else:
             self.predictor_params.vp_output_dim = self.dim
 

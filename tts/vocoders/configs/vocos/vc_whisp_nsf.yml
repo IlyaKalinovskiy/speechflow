@@ -1,9 +1,9 @@
 ### Model configuration ###
 
-experiment_name: whisp_vocos
+experiment_name: whisp_vocos_nsf
 
 dirs:
-  logging: vq_vocoder_experiments
+  logging: whisp_experiments
 
 seed: 1234
 
@@ -21,7 +21,7 @@ trainer:
   accelerator: { default: gpu, debug: cpu }
   devices: { default: [auto], debug: 1 }
   max_steps: 8000000
-  accumulate_grad_batches: 1
+  accumulate_grad_batches: 4
   limit_val_batches: 100
   log_every_n_steps: 100
   # resume_from_checkpoint: /path/to/checkpoint
@@ -54,7 +54,7 @@ engine:
     # cdpam_model_device: cuda:1
 
     # automatic evaluation
-    evaluate_utmos: true
+    evaluate_utmos: false
     evaluate_pesq: true
     evaluate_periodicty: true
 
@@ -79,10 +79,10 @@ model:
         use_pitch: true
         use_plbert: true
         use_averages: true
-        use_range: false
+        use_range: true
         use_sf_encoder: true
-        use_vq: true
-        vq_num_quantizers: 4
+        use_vq: false
+        vq_num_quantizers: 3
         vq_codebook_size: 256
         use_auxiliary_classification_loss: true
         use_auxiliary_mel_loss: true
@@ -91,7 +91,7 @@ model:
     class_name: VocosResNetBackbone
     init_args:
       input_channels: 256
-      dim: 1024
+      dim: 512
       num_blocks: 4
       # intermediate_dim: 1536
       # num_layers: 12
@@ -99,5 +99,5 @@ model:
   head:
     class_name: NSFHead
     init_args:
-      dim: 1024
+      dim: 512
       style_emb_dim: 128
