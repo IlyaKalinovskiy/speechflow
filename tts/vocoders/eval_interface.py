@@ -18,7 +18,6 @@ from speechflow.data_pipeline.datasample_processors.data_types import (
     TTSDataSample,
 )
 from speechflow.io import AudioChunk, Config, check_path, tp_PATH
-from speechflow.logging import trace
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.dictutils import find_field
 from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
@@ -261,6 +260,8 @@ if __name__ == "__main__":
         from pathlib import Path
 
         from tqdm import tqdm
+
+        from speechflow.logging import trace
 
         root_dir = Path("/data3/i.kalinovskiy")
         voc_path = (
