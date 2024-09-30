@@ -2,13 +2,12 @@ import typing as tp
 
 import torch
 
-from pydantic import Field
 from torch import nn
 
 from speechflow.utils.tensor_utils import apply_mask, get_mask_from_lengths
 from tts.acoustic_models.modules.common.layers import Conv, LearnableSwish
 from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
-from tts.acoustic_models.modules.params import VariancePredictorParams
+from tts.acoustic_models.modules.params import VarianceParams, VariancePredictorParams
 
 __all__ = ["CNNPredictor", "CNNPredictorParams"]
 
@@ -17,7 +16,7 @@ class CNNPredictorParams(VariancePredictorParams):
     kernel_sizes: tp.Tuple[int, ...] = (3, 7, 13, 3)
     dropout: float = 0.1
     as_encoder: bool = False
-    var_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
+    var_params: VarianceParams = VarianceParams()
 
 
 class CNNPredictor(Component):

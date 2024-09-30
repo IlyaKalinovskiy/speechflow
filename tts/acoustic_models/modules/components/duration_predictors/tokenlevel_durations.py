@@ -10,7 +10,7 @@ from speechflow.utils.tensor_utils import apply_mask, get_mask_from_lengths
 from tts.acoustic_models.modules.common import SoftLengthRegulator
 from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.components.discriminators import SignalDiscriminator
-from tts.acoustic_models.modules.params import VariancePredictorParams
+from tts.acoustic_models.modules.params import VarianceParams, VariancePredictorParams
 
 __all__ = [
     "TokenLevelDP",
@@ -28,7 +28,7 @@ class TokenLevelDPParams(VariancePredictorParams):
     add_lm_feat: bool = False
     add_noise: bool = False
     every_iter: int = 2
-    var_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
+    var_params: VarianceParams = VarianceParams()
 
 
 class TokenLevelDP(Component):

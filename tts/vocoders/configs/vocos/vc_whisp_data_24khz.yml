@@ -183,8 +183,8 @@ processor:
       functions: [VoiceBiometricProcessor, SpeechQualityAssessment,
                   PitchProcessor, SSLProcessor, MultilingualPLBert]
       mode: file_path
-      skip_samples_without_dump: true
-    debug: ~
+      # skip_samples_without_dump: true
+    # debug: ~
 
 sampler:
   train:

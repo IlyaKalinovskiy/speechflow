@@ -10,7 +10,7 @@ from tts.acoustic_models.modules.common import VarianceEmbedding
 from tts.acoustic_models.modules.common.blocks import Regression
 from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.components.discriminators import SignalDiscriminator
-from tts.acoustic_models.modules.params import VariancePredictorParams
+from tts.acoustic_models.modules.params import VarianceParams, VariancePredictorParams
 
 __all__ = [
     "FrameLevelPredictor",
@@ -28,7 +28,7 @@ class FrameLevelPredictorParams(VariancePredictorParams):
         False  # improving the target feature through prediction over SSL model
     )
     use_mtm: bool = False  # masked token modeling
-    var_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
+    var_params: VarianceParams = VarianceParams()
 
 
 class FrameLevelPredictor(Component):

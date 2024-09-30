@@ -80,12 +80,12 @@ model:
         use_plbert: true
         use_averages: true
         use_range: true
-        use_sf_encoder: true
+        use_sf_encoder: false
         use_vq: true
         vq_num_quantizers: 3
         vq_codebook_size: 256
         use_auxiliary_classification_loss: true
-        use_auxiliary_mel_loss: true
+        use_auxiliary_mel_loss: false
 
   backbone:
     class_name: VocosResNetBackbone

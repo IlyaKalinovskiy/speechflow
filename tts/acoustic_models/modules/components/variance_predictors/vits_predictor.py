@@ -4,7 +4,6 @@ import typing as tp
 
 import torch
 
-from pydantic import Field
 from torch import nn
 
 from speechflow.training.saver import ExperimentSaver
@@ -20,7 +19,7 @@ from tts.acoustic_models.modules.common.vits.normalizing_flow import (
 )
 from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
 from tts.acoustic_models.modules.data_types import ComponentInput, ComponentOutput
-from tts.acoustic_models.modules.params import VariancePredictorParams
+from tts.acoustic_models.modules.params import VarianceParams, VariancePredictorParams
 
 RESYNT = False
 
@@ -51,7 +50,7 @@ class VITSPredictorParams(VariancePredictorParams):
     c_kl_content: float = 2.0
     c_kl_audio: float = 0.05
     init_from_checkpoint: str = None
-    var_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
+    var_params: VarianceParams = VarianceParams()
 
     def model_post_init(self, __context: tp.Any):
         if isinstance(self.mode, str):

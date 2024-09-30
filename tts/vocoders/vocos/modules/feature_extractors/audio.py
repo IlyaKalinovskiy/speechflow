@@ -31,6 +31,7 @@ from tts.acoustic_models.modules.components.variance_predictors import (
     FrameLevelPredictorWithDiscriminatorParams,
 )
 from tts.acoustic_models.modules.data_types import ComponentInput
+from tts.acoustic_models.modules.params import VarianceParams
 from tts.vocoders.data_types import VocoderForwardInput
 from tts.vocoders.vocos.modules.feature_extractors.base import FeatureExtractor
 
@@ -183,7 +184,9 @@ class AudioFeatures(FeatureExtractor):
             self.style_enc = None
 
         if (use_energy or use_pitch) and use_range:
-            self.range_predictor = Regression(condition_emb_dim + style_emb_dim, 3 * 2)
+            self.range_predictor = Regression(
+                condition_emb_dim + style_emb_dim, 3 * 2, activation_fn="ReLU"
+            )
         else:
             self.range_predictor = None
 
@@ -228,9 +231,11 @@ class AudioFeatures(FeatureExtractor):
             energy_predictor_params = FrameLevelPredictorWithDiscriminatorParams(
                 frame_encoder_type=encoder_type,
                 frame_encoder_params=var_encoder_params,
+                activation_fn="ReLU",
                 vp_hidden_channels=encoder_inner_dim,
                 vp_num_layers=encoder_num_layers,
                 vp_output_dim=1,
+                var_params=VarianceParams(log_scale=False),
             )
             self.energy_predictor = FrameLevelPredictorWithDiscriminator(
                 energy_predictor_params, in_dim
@@ -242,9 +247,11 @@ class AudioFeatures(FeatureExtractor):
             pitch_predictor_params = FrameLevelPredictorWithDiscriminatorParams(
                 frame_encoder_type=encoder_type,
                 frame_encoder_params=var_encoder_params,
+                activation_fn="ReLU",
                 vp_inner_channels=encoder_inner_dim,
                 vp_num_layers=encoder_num_layers,
                 vp_output_dim=1,
+                var_params=VarianceParams(log_scale=True),
                 use_ssl_adjustment=use_ssl_adjustment,
                 ssl_feat_dim=ssl_feat_dim,
             )
@@ -475,8 +482,8 @@ class AudioFeatures(FeatureExtractor):
                 ],
                 dim=-1,
             )
-            ranges = F.relu(self.range_predictor(feat)).reshape(-1, 2, 3)
-            losses.update({"range_loss": 0.001 * F.mse_loss(ranges, target_ranges)})
+            ranges = self.range_predictor(feat).reshape(-1, 2, 3)
+            losses.update({"range_loss": 0.1 * F.mse_loss(ranges, target_ranges)})
 
             inputs.energy = inputs.energy * re[:, 2:3] + re[:, 0:1]
             inputs.pitch = inputs.pitch * rp[:, 2:3] + rp[:, 0:1]

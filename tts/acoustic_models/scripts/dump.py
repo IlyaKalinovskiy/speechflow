@@ -470,7 +470,7 @@ def main(
                         np.save(labels_filename.as_posix(), labels)
 
                 if data_loader.dataset_size != sample_counter:
-                    print(
+                    LOGGER.info(
                         f"Not all data was dumped! "
                         f"(expected quantity: {data_loader.dataset_size}, actual quantity: {sample_counter})"
                     )
