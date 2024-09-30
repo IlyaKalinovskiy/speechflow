@@ -199,7 +199,7 @@ class DataServer(ProcessWorker):
                     uid = request["client_uid"]
                     samplers = self._sync_samplers.setdefault(uid, {})
                     for subset in self._pipe.subsets:
-                        samplers[subset] = self._pipe[subset].sampler.clone()
+                        samplers[subset] = self._pipe[subset].sampler.copy()
             else:
                 response.update(self._info_for_worker)
                 if self._gpus:

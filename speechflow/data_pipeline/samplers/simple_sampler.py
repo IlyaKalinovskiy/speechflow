@@ -186,7 +186,7 @@ class SimpleSampler(AbstractDataSampler):
         chunk = self.add_neighbors(chunk)
         return chunk
 
-    def clone(self):
+    def copy(self):
         data = self._data
         current_data = self._current_data
         self._data = None

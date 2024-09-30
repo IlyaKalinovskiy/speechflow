@@ -686,7 +686,7 @@ class NemoMelProcessor(BaseSpectrogramProcessor):
 class PitchProcessor(BaseSpectrogramProcessor):
     def __init__(
         self,
-        method: str = "pyworld",
+        method: tp.Literal["pyworld", "torchcrepe", "yingram"] = "pyworld",
         f0_min: float = 80,
         f0_max: float = 880,
         n_bins: int = 80,
@@ -710,7 +710,7 @@ class PitchProcessor(BaseSpectrogramProcessor):
         ds = super().process(ds)
 
         if ds.audio_chunk.sr != 16000 and self.method in ["yin", "torchcrepe"]:
-            audio_chunk = ds.audio_chunk.resample(16000)
+            audio_chunk = ds.audio_chunk.resample(16000, fast=True)
         else:
             audio_chunk = ds.audio_chunk
 
@@ -764,19 +764,24 @@ class PitchProcessor(BaseSpectrogramProcessor):
 
         elif self.method == "torchcrepe":
             with torch.inference_mode():
-                f0, harmonicity = torchcrepe.predict(
-                    torch.from_numpy(waveform).unsqueeze(0),
+                waveform = torch.from_numpy(waveform).unsqueeze(0)
+                f0, periodicity = torchcrepe.predict(
+                    waveform,
                     sample_rate,
                     None,
                     self.f0_min,
                     self.f0_max,
                     batch_size=self.torchcrepe_batch_size,
-                    return_harmonicity=True,
+                    return_periodicity=True,
                     model=self.torchcrepe_model,
                     device=self.device,
                 )
-            harmonicity = torchcrepe.filter.mean(harmonicity, 3)
-            f0 = torchcrepe.threshold.At(0.2)(f0, harmonicity)
+            periodicity = torchcrepe.filter.mean(periodicity, win_length=3)
+            periodicity = torchcrepe.threshold.Silence(-60.0)(
+                periodicity, waveform, sample_rate
+            )
+            f0 = torchcrepe.threshold.At(0.2)(f0, periodicity)
+            f0 = torchcrepe.filter.mean(f0, win_length=3)
             f0 = f0.squeeze(0).cpu().numpy()
             f0[np.isnan(f0)] = 0.0
 
@@ -1116,16 +1121,16 @@ def signal_enhancement(
 )
 def clip(
     ds: SpectrogramDataSample,
-    attributes: tp.Union[str, tp.List[str]] = "pitch",
-    a_min: float = 10.0,
-    a_max: tp.Optional[float] = None,
+    attributes: tp.Union[str, tp.List[str]],
+    min_value: tp.Optional[float] = None,
+    max_value: tp.Optional[float] = None,
 ):
     """Clip acoustic attributes. Better applied before normalization.
 
     :param ds: SpecDataSample
     :param attributes: str, list
-    :param a_min: Minimum value. If None, clipping is not performed on the corresponding edge.
-    :param a_max: Maximum value. If None, clipping is not performed on the corresponding edge.
+    :param min_value: Minimum value. If None, clipping is not performed on the corresponding edge.
+    :param max_value: Maximum value. If None, clipping is not performed on the corresponding edge.
 
     """
 
@@ -1134,7 +1139,7 @@ def clip(
         if not hasattr(ds, attr):
             raise KeyError(f"Attribute '{attr}' not found in SpecDataSample.")
         value = getattr(ds, attr)
-        value = np.clip(value, a_min=a_min, a_max=a_max)
+        value = np.clip(value, a_min=min_value, a_max=max_value)
         setattr(ds, attr, value)
     return ds
 
@@ -1146,13 +1151,14 @@ def clip(
 def normalize(
     ds: SpectrogramDataSample,
     attributes: tp.Union[str, tp.List[str]],
-    normalize_by: str = "sample",  # sample or speaker or constant
+    normalize_by: tp.Literal["constant", "sample", "speaker"] = "sample",
     ranges: StatisticsRange = None,  # type: ignore
     normalize_aggregate: bool = False,
-    method: str = "minmax",  # minmax, z-norm
-    clip: bool = False,
-    min_value: float = 0.0,
-    max_value: float = 1.0,
+    method: tp.Literal["minmax", "z-norm"] = "minmax",
+    filter_outliers: bool = False,
+    quantile: float = 0.98,
+    min_value: tp.Optional[float] = None,
+    max_value: tp.Optional[float] = None,
 ):
     """
     :param ds: SpecDataSample
@@ -1161,13 +1167,16 @@ def normalize(
     :param ranges: StatisticsRange singleton
     :param normalize_aggregate: bool
     :param method: normalization algorithm
-    :param clip:
-        Either `sample` or `speaker`.
-    :param min_value:
-    :param max_value:
+    :param filter_outliers: bool
+    :param quantile: float
+    :param min_value: float
+    :param max_value: float
 
     """
     assert normalize_by in ["sample", "speaker", "constant"]
+
+    def reject_outliers(x, m: float = 2.0):
+        return x[abs(x - np.mean(x)) < m * np.std(x)]
 
     attributes = [attributes] if isinstance(attributes, str) else attributes
     if ds.ranges is None:
@@ -1193,22 +1202,41 @@ def normalize(
 
         if normalize_by != "constant":
 
-            if method == "minmax":
-                if normalize_by == "speaker":
-                    a_min, a_max = ranges.get_range(attr, ds.speaker_name)  # type: ignore
-                elif normalize_by == "sample":
-                    a_min, a_max = values.min(), values.max()
+            if method in ["minmax", "quantile"]:
+                if method == "minmax":
+                    if normalize_by == "speaker":
+                        a_min, a_max = ranges.get_range(attr, ds.speaker_name)  # type: ignore
+                    elif normalize_by == "sample":
+                        if filter_outliers:
+                            clip_values = reject_outliers(values)
+                        else:
+                            clip_values = values
+                        a_min, a_max = clip_values.min(), clip_values.max()
+                    else:
+                        a_min = a_max = 0
                 else:
-                    raise ValueError(f"{attr} ranges must be defined.")
+                    if normalize_by == "speaker":
+                        raise NotImplementedError
+                    elif normalize_by == "sample":
+                        if filter_outliers:
+                            clip_values = reject_outliers(values)
+                        else:
+                            clip_values = values
+                        a_min = np.quantile(clip_values, 1 - quantile)
+                        a_max = np.quantile(clip_values, quantile)
+                    else:
+                        a_min = a_max = 0
 
                 if abs(a_max - a_min) < 1.0:
-                    raise ValueError(f"{attr} range is equal to zero.")
+                    raise ValueError(f"variation {attr} is equal to zero.")
+
+                if min_value is not None:
+                    a_min = min_value
+                if max_value is not None:
+                    a_max = max_value
 
                 values -= a_min
                 values /= a_max - a_min
-
-                if normalize_by == "speaker" and clip:
-                    values = np.clip(values, a_min=0.0, a_max=None)
 
                 ds.ranges[attr] = np.asarray(
                     [a_min, a_max, a_max - a_min], dtype=np.float32
@@ -1218,37 +1246,36 @@ def normalize(
                 if normalize_by == "speaker":
                     a_mean, a_var = ranges.get_stat(attr, ds.speaker_name)  # type: ignore
                 elif normalize_by == "sample":
-                    a_mean, a_var = values.mean(), values.var()
+                    if filter_outliers:
+                        clip_values = reject_outliers(values)
+                    else:
+                        clip_values = values
+                    if min_value is not None:
+                        clip_values = clip_values[clip_values >= min_value]
+                    if max_value is not None:
+                        clip_values = clip_values[clip_values <= max_value]
+                    a_mean, a_var = clip_values.mean(), clip_values.var()
                 else:
-                    raise ValueError(f"{attr} ranges must be defined.")
+                    a_mean = a_var = 0
 
                 if a_mean < 1.0 or a_var < 1.0:
                     raise ValueError(f"variation {attr} is equal to zero.")
 
                 a_std = np.sqrt(a_var) * 4
 
-                if attr == "pitch":
-                    index_nonzero = np.abs(values) > 1.0e-6
-                else:
-                    index_nonzero = np.abs(values) >= 0
+                values -= a_mean
+                values /= a_std
 
-                values[index_nonzero] -= a_mean
-                values[index_nonzero] /= a_std
-
-                if not clip:
-                    ds.ranges[attr] = np.asarray(
-                        [a_mean, a_mean, a_std], dtype=np.float32
-                    )
-                else:
-                    values[index_nonzero] = np.clip(values[index_nonzero], -1.0, 1.0)
-                    values[index_nonzero] = (values[index_nonzero] + 1.0) / 2.0
-
+                ds.ranges[attr] = np.asarray([a_mean, a_mean, a_std], dtype=np.float32)
             else:
                 raise ValueError(f"{method} algorithm not defined.")
 
         else:
             values -= min_value
             values /= max_value - min_value
+            ds.ranges[attr] = np.asarray(
+                [min_value, max_value, max_value - min_value], dtype=np.float32
+            )
 
         if normalize_aggregate:
             getattr(ds, "aggregate")[attr] = values
@@ -1266,8 +1293,8 @@ def average_by_time(
     ds: SpectrogramDataSample,
     attributes: tp.Union[str, tp.List[str]],
     use_quantile: bool = False,
-    quantile: float = 0.05,
-    min_val: float = 1e-2,
+    quantile: float = 0.95,
+    min_value: float = 1e-2,
 ):
     def reject_outliers(x, m: float = 2.0):
         return x[abs(x - np.mean(x)) < m * np.std(x)]
@@ -1286,12 +1313,12 @@ def average_by_time(
         values = getattr(ds, attr)
         assert values.ndim == 1
 
-        values = values[values > min_val]
+        values = values[values > min_value]
 
         if len(values) > 0:
             if use_quantile:
-                val_min = np.quantile(values, quantile)
-                val_max = np.quantile(values, 1 - quantile)
+                val_min = np.quantile(values, 1 - quantile)
+                val_max = np.quantile(values, quantile)
                 val_clip = np.clip(values, val_min, val_max)
             else:
                 val_clip = reject_outliers(values)
@@ -1389,29 +1416,36 @@ def __plot_spectrogram(audio_chunk, spec_proc, mel_proc):
 
 
 def __plot_1d_features(audio_chunk, spec_proc, mel_proc, pitch_proc):
+    if not isinstance(pitch_proc, list):
+        pitch_proc = [pitch_proc]
+
     ds = SpectrogramDataSample(audio_chunk=audio_chunk)
     ds = spec_proc.process(ds)
     ds = mel_proc.process(ds)
-    ds = pitch_proc.process(ds)
 
-    fig, ax = plt.subplots(2, 1, dpi=160, facecolor="w")
-    __plot2d(ds.mel, "mel", fig, ax, 0)
-    __plot2d(ds.mel, "mel", fig, ax, 1)
+    fig, ax = plt.subplots(1 + len(pitch_proc), 1, dpi=160, facecolor="w")
+    for i in range(len(ax)):
+        __plot2d(ds.mel, "mel", fig, ax, i)
 
     x = np.arange(ds.mel.shape[0])
     n_mels = ds.get_param_val("n_mels")
 
     energy = n_mels - 1 - ds.energy
-    pitch = n_mels - 1 - ds.pitch / ds.pitch.max() * 60
     spectral_flatness = n_mels - 1 - ds.spectral_flatness * 20
     spectral_tilt = n_mels - 1 - ds.spectral_tilt * 40
-    ax[1].plot(x, energy, c="r", lw=1, label="energy")
-    ax[1].plot(x, spectral_flatness, c="b", lw=1, label="spectral_flatness")
-    ax[1].plot(x, spectral_tilt, c="y", lw=1, label="spectral_tilt")
-    ax[0].plot(x, pitch, c="indigo", lw=1, label="pitch")
+    ax[0].plot(x, energy, c="r", lw=1, label="energy")
+    ax[0].plot(x, spectral_flatness, c="b", lw=1, label="spectral_flatness")
+    ax[0].plot(x, spectral_tilt, c="y", lw=1, label="spectral_tilt")
 
-    ax[0].legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, fontsize="small")
-    ax[1].legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, fontsize="small")
+    for i, _proc in enumerate(pitch_proc):
+        ds = _proc.process(ds.copy())
+        pitch = n_mels - 1 - ds.pitch / ds.pitch.max() * 60
+        ax[i + 1].plot(x, pitch, c="indigo", lw=1, label=f"pitch[{_proc.method}]")
+
+    for i in range(len(ax)):
+        ax[i].legend(
+            loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, fontsize="small"
+        )
 
 
 def __plot_2d_features(audio_chunk, spec_proc, mel_proc, pitch_proc, lpc_proc):
@@ -1454,12 +1488,15 @@ if __name__ == "__main__":
     _spec_proc = __get_spec_proc(1024, 256, 1024, 80)
     _mel_proc = __get_mel_proc(80)
     _pitch_proc_1 = __get_pitch_proc("pyworld")
-    _pitch_proc_2 = __get_pitch_proc("yingram")
+    _pitch_proc_2 = __get_pitch_proc("torchcrepe")
+    _pitch_proc_3 = __get_pitch_proc("yingram")
     _lpc_proc = __get_lpc_proc(100)
 
     __plot_spectrogram(_audio_chunk, _spec_proc, _mel_proc)
-    __plot_1d_features(_audio_chunk, _spec_proc, _mel_proc, _pitch_proc_1)
-    __plot_2d_features(_audio_chunk, _spec_proc, _mel_proc, _pitch_proc_2, _lpc_proc)
+    __plot_1d_features(
+        _audio_chunk, _spec_proc, _mel_proc, [_pitch_proc_1, _pitch_proc_2]
+    )
+    __plot_2d_features(_audio_chunk, _spec_proc, _mel_proc, _pitch_proc_3, _lpc_proc)
 
     _audio_chunk = AudioChunk(file_path=_file_path).load(sr=16000).trim(end=8)
     _librosa_spec_proc = __get_spec_proc(512, 160, 400, 80)

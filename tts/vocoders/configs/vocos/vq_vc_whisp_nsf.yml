@@ -11,7 +11,7 @@ batch:
   type: VocoderBatchProcessor
 
 data_loaders:
-  batch_size: { default: 4, debug: 2 }
+  batch_size: { default: 8, debug: 2 }
   epoch_len: { train: 10000, test: ~ }
   min_batch_size: 2
   min_prefetch_factor: { default: 50, debug: 1 }

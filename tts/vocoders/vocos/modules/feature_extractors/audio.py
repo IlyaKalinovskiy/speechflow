@@ -184,9 +184,7 @@ class AudioFeatures(FeatureExtractor):
             self.style_enc = None
 
         if (use_energy or use_pitch) and use_range:
-            self.range_predictor = Regression(
-                condition_emb_dim + style_emb_dim, 3 * 2, activation_fn="ReLU"
-            )
+            self.range_predictor = Regression(condition_dim, 3 * 2)
         else:
             self.range_predictor = None
 
@@ -475,13 +473,7 @@ class AudioFeatures(FeatureExtractor):
             re = inputs.ranges["energy"]
             rp = inputs.ranges["pitch"]
             target_ranges = torch.stack([re, rp], dim=1)
-            feat = torch.cat(
-                [
-                    conditions["speaker_emb"],
-                    conditions["style_emb"],
-                ],
-                dim=-1,
-            )
+            feat = torch.cat(list(conditions.values()), dim=-1)
             ranges = self.range_predictor(feat).reshape(-1, 2, 3)
             losses.update({"range_loss": 0.1 * F.mse_loss(ranges, target_ranges)})
 
