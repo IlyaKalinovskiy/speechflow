@@ -293,7 +293,7 @@ class AudioFeatures(FeatureExtractor):
                 condition_dim=condition_dim,
                 condition_type=condition_type,
             )
-            self.encoder = enc_cls(enc_params, _get_feat_dim(input_feat_type))
+            self.encoder = enc_cls(enc_params, in_dim)
 
         # ----- init additional modules -----
 
