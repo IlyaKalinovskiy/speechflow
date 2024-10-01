@@ -102,7 +102,10 @@ class FrameLevelPredictor(Component):
         self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
     ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
         name = kwargs.get("name")
-        target_by_frames = kwargs.get("target").squeeze(-1)
+        target_by_frames = kwargs.get("target")
+        if target_by_frames is not None:
+            target_by_frames = target_by_frames.squeeze(-1)
+
         losses = {}
 
         if self.mtm_encoder is not None and target_by_frames is not None:

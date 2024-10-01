@@ -109,7 +109,10 @@ class TokenLevelPredictor(Component):
         self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
     ) -> tp.Tuple[torch.Tensor, tp.Dict[str, tp.Any], tp.Dict[str, tp.Any]]:
         name = kwargs.get("name")
-        target_by_tokens = kwargs.get("target").squeeze(-1)
+        target_by_tokens = kwargs.get("target")
+        if target_by_tokens is not None:
+            target_by_tokens = target_by_tokens.squeeze(-1)
+
         losses = {}
 
         word_length = model_inputs.additional_inputs.get("word_lengths")

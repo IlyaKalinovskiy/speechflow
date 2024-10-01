@@ -184,7 +184,7 @@ class AudioFeatures(FeatureExtractor):
             self.style_enc = None
 
         if (use_energy or use_pitch) and use_range:
-            self.range_predictor = Regression(condition_dim, 3 * 2)
+            self.range_predictor = Regression(condition_dim, 3 * 2, activation_fn="ReLU")
         else:
             self.range_predictor = None
 
@@ -454,7 +454,7 @@ class AudioFeatures(FeatureExtractor):
                 name="energy",
             )
             losses.update(e_losses)
-            if not self.training:
+            if not self.training and inputs.energy is None:
                 inputs.energy = e_output
 
         if self.pitch_predictor is not None:
@@ -466,16 +466,27 @@ class AudioFeatures(FeatureExtractor):
                 name="pitch",
             )
             losses.update(p_losses)
-            if not self.training:
+            if not self.training and inputs.pitch is None:
                 inputs.pitch = p_output
 
         if self.range_predictor is not None:
-            re = inputs.ranges["energy"]
-            rp = inputs.ranges["pitch"]
-            target_ranges = torch.stack([re, rp], dim=1)
             feat = torch.cat(list(conditions.values()), dim=-1)
-            ranges = self.range_predictor(feat).reshape(-1, 2, 3)
-            losses.update({"range_loss": 0.1 * F.mse_loss(ranges, target_ranges)})
+            ranges_predict = self.range_predictor(feat).reshape(-1, 2, 3)
+
+            if self.training:
+                re = inputs.ranges["energy"]
+                rp = inputs.ranges["pitch"]
+                target_ranges = torch.stack([re, rp], dim=1)
+                losses.update(
+                    {"range_loss": 0.001 * F.mse_loss(ranges_predict, target_ranges)}
+                )
+            else:
+                if inputs.ranges is None:
+                    re = ranges_predict[:, 0]
+                    rp = ranges_predict[:, 1]
+                else:
+                    re = inputs.ranges["energy"]
+                    rp = inputs.ranges["pitch"]
 
             inputs.energy = inputs.energy * re[:, 2:3] + re[:, 0:1]
             inputs.pitch = inputs.pitch * rp[:, 2:3] + rp[:, 0:1]
