@@ -384,6 +384,47 @@ class PipelineComponents:
 
         return new_pipeline_components
 
+    @staticmethod
+    def _remove_handler(
+        handlers: tp.List,
+        name: str,
+        init_params: tp.Optional[tp.Dict[str, tp.Any]] = None,
+    ) -> tp.List:
+        new_handlers = []
+        for proc in handlers:
+            if name in str(proc):
+                if init_params and set(init_params.keys()).issubset(
+                    proc.init_params.keys()
+                ):
+                    if all(proc.init_params[k] == v for k, v in init_params.items()):
+                        continue
+                else:
+                    continue
+
+            new_handlers.append(proc)
+
+        return new_handlers
+
+    def remove_metadata_handler(
+        self, name: str, init_params: tp.Optional[tp.Dict[str, tp.Any]] = None
+    ) -> "PipelineComponents":
+        new_pipeline_components = copy(self)
+        handlers = new_pipeline_components.metadata_preprocessing
+        new_pipeline_components.metadata_preprocessing = self._remove_handler(
+            handlers, name, init_params
+        )
+        return new_pipeline_components
+
+    def remove_data_handler(
+        self, name: str, init_params: tp.Optional[tp.Dict[str, tp.Any]] = None
+    ) -> "PipelineComponents":
+        new_pipeline_components = copy(self)
+        handlers = new_pipeline_components.data_preprocessing
+        new_pipeline_components.data_preprocessing = self._remove_handler(
+            handlers, name, init_params
+        )
+        return new_pipeline_components
+
     def filter(
         self,
         specified_metadata_handlers: tp.AbstractSet[str] = frozenset(),
