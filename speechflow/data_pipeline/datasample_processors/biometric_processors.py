@@ -203,13 +203,12 @@ class VoiceBiometricProcessor(BaseDSProcessor):
                 feats.append(compute_feat(waveform))
             return torch.stack(feats)
 
-        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            _feat = get_feat(audio)
-            _sp_emb = compute_embedding(_feat)
+        _feat = get_feat(audio)
+        _sp_emb = compute_embedding(_feat)
 
-            with torch.no_grad():
-                _feat_gt = get_feat(audio_gt)
-                _sp_emb_gt = compute_embedding(_feat_gt)
+        with torch.no_grad():
+            _feat_gt = get_feat(audio_gt)
+            _sp_emb_gt = compute_embedding(_feat_gt)
 
         cos = F.cosine_similarity(_sp_emb, _sp_emb_gt.detach())
         return 1.0 - (1.0 + cos) / 2.0

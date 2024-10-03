@@ -31,6 +31,7 @@ def _fix_json_string(string: str) -> str:
     string = string.replace("': [", '": [').replace("], '", '], "')
     string = string.replace("': true, '", '": true, "')
     string = string.replace("': false, '", '": false, "')
+    string = string.replace("': null,", '": null,')
     string = string.replace("\\'", "'")
     string = string.replace(", '", ', "')
     return string

@@ -281,7 +281,7 @@ class DataSample(ToDict, ToTensor, ToNumpy, Serialize):
             value = getattr(self, name)
         return value
 
-    def update(self, data: dict):
+    def update(self, data: tp.Union[tp.Dict, "DataSample"]):
         if isinstance(data, DataSample):
             data = data.to_dict()
 

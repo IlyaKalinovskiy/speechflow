@@ -410,7 +410,9 @@ class Aligner:
             path_list=file_list, n_processes=self._n_processes
         )
         name = self._data_pipeline.subsets[0]
-        dataset = self._data_pipeline[name].metadata_to_datasample(dataset)
+        dataset = self._data_pipeline[name].metadata_to_datasample(
+            dataset, as_dataset=True
+        )
         self._data_pipeline[name].set_dataset(dataset)
 
         with init_data_loader(
@@ -430,7 +432,7 @@ class Aligner:
     def align_sega(self, file_path: tp.Union[str, Path]):
         pipe = self._data_pipeline[self._data_pipeline.subsets[0]]
         md = {"file_path": Path(file_path), "sega": AudioSegPreview.load(file_path)}
-        ds = pipe.metadata_to_datasample([md]).to_list()[0]
+        ds = pipe.metadata_to_datasample([md])[0]
         ds.speaker_id = self._speaker_id_map.get(ds.speaker_name, 0)
         ds.lang_id = self._lang_id_map[ds.lang]
         batch = pipe.datasample_to_batch([ds])

@@ -305,11 +305,10 @@ class CDPAMLoss(nn.Module):
         y_hat = (y_hat * 32768.0).unsqueeze(1)
         y = (y * 32768.0).unsqueeze(1)
 
-        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            _, enc_hat, _ = self.cdpam.model.base_encoder.forward(y_hat)
+        _, enc_hat, _ = self.cdpam.model.base_encoder.forward(y_hat)
 
-            with torch.no_grad():
-                _, enc_gt, _ = self.cdpam.model.base_encoder.forward(y)
+        with torch.no_grad():
+            _, enc_gt, _ = self.cdpam.model.base_encoder.forward(y)
 
         enc_hat = F.normalize(enc_hat.float(), dim=1)
         enc_gt = F.normalize(enc_gt.float(), dim=1)

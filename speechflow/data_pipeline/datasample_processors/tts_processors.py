@@ -34,7 +34,6 @@ __all__ = [
     "aggregate_by_phoneme",
     "curvature_estimate_by_phoneme",
     "transcription_by_frames",
-    "phonemes_by_frames",
     "reverse",
     "random_chunk",
     "ContoursExtractor",
@@ -825,10 +824,6 @@ def transcription_by_frames(ds: TTSDataSample):
     ds.transcription_id_by_frames = np.array(ext_transcription_id)
     assert ds.magnitude.shape[0] == ds.transcription_id_by_frames.shape[0]
     return ds
-
-
-# TODO: support legacy pipeline
-phonemes_by_frames = transcription_by_frames
 
 
 @PipeRegistry.registry(inputs={"mel", "transcription"}, outputs={"mel", "transcription"})

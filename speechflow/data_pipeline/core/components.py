@@ -16,6 +16,7 @@ from speechflow.data_pipeline import (
 )
 from speechflow.data_pipeline.core import (
     Batch,
+    DataSample,
     Dataset,
     PipeRegistry,
     Singleton,
@@ -276,23 +277,24 @@ class PipelineComponents:
         return metadata
 
     def metadata_to_datasample(
-        self, metadata: tp.Union[tp.List[Metadata], Dataset]
-    ) -> Dataset:
+        self, metadata: tp.Union[tp.List[Metadata], Dataset], as_dataset: bool = False
+    ) -> tp.Union[tp.List[DataSample], Dataset]:
         metadata = self.dataset_parser.do_preprocessing(
             metadata, self.metadata_preprocessing
         )
-        return self.dataset_parser.to_datasample(metadata)
+        dataset = self.dataset_parser.to_datasample(metadata)
+        return dataset if as_dataset else dataset.to_list()
 
     def preprocessing_datasample(
-        self, samples: tp.List[tp.Any], skip_corrupted_samples: bool = True
-    ) -> tp.List[tp.Any]:
+        self, samples: tp.List[DataSample], skip_corrupted_samples: bool = True
+    ) -> tp.List[DataSample]:
         return self.data_processor.do_preprocessing(
             samples,
             self.data_preprocessing,
             skip_corrupted_samples=skip_corrupted_samples,
         )
 
-    def to_batch(self, samples: tp.List[tp.Any]) -> Batch:
+    def to_batch(self, samples: tp.List[DataSample]) -> Batch:
         collated_samples = self.collate(samples) if self.collate else None
         return Batch(
             size=len(samples),
@@ -301,7 +303,7 @@ class PipelineComponents:
         )
 
     def datasample_to_batch(
-        self, samples: tp.List[tp.Any], skip_corrupted_samples: bool = True
+        self, samples: tp.List[DataSample], skip_corrupted_samples: bool = True
     ) -> Batch:
         samples = self.preprocessing_datasample(samples, skip_corrupted_samples)
         collated_samples = self.collate(samples) if self.collate else None
@@ -316,7 +318,7 @@ class PipelineComponents:
     ) -> Batch:
         samples = self.metadata_to_datasample(metadatas)
         return self.datasample_to_batch(
-            samples.to_list(), skip_corrupted_samples=skip_corrupted_samples
+            samples, skip_corrupted_samples=skip_corrupted_samples
         )
 
     def with_ignored_fields(
