@@ -6,6 +6,7 @@ import multiprocessing as mp
 
 from collections import defaultdict
 from dataclasses import dataclass
+from os import environ as env
 
 import psutil
 
@@ -13,8 +14,11 @@ from speechflow.concurrency import ProcessWorker
 from speechflow.data_pipeline.core import DataPipeline
 from speechflow.data_server.patterns import ZMQPatterns, ZMQServer
 from speechflow.data_server.pool import WorkerPool
+from speechflow.data_server.system_messages import DataLoaderMessages as DLM
+from speechflow.data_server.system_messages import DataServerMessages as DSM
 from speechflow.io import Config, check_path, tp_PATH
 from speechflow.logging import log_to_file, trace
+from speechflow.utils.checks import str_to_bool
 from speechflow.utils.gpu_info import get_freer_gpu
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.profiler import Profiler
@@ -131,7 +135,7 @@ class DataServer(ProcessWorker):
         self._zmq_server.close()
         LOGGER.info(trace(self, message=f"Finish DataServer {self._addr_for_clients}"))
 
-    def status_info(self, timeout: float = 600):
+    def status_info(self, timeout: int = 3600):
         if self._timer.get_time() > timeout:
             mem = psutil.virtual_memory()
             info = (
@@ -151,33 +155,33 @@ class DataServer(ProcessWorker):
         info = f"[{client_id}] info: {text}"
         message = [message[0], b"", info.encode()]
         self._zmq_server.frontend.send_multipart(message)
-        if text not in ["true", "request queue exceeded"]:
+        if str_to_bool(env.get("VERBOSE", "False")):
             log_to_file(trace(self, f"{subset}: {info}" if subset else info))
 
     def is_reject_request(self, message, queue_info: SamplingStatus) -> bool:
         if self.num_workers == 0:
-            self.send_info_message(message, "workers not found", queue_info.subset)
+            self.send_info_message(message, DSM.NO_WORKERS, queue_info.subset)
             return True
 
         if self._total_batch_in_processing >= 4 * self.num_workers:
-            self.send_info_message(message, "server overload", queue_info.subset)
+            self.send_info_message(message, DSM.OVERLOAD, queue_info.subset)
             return True
 
         if not queue_info.is_last_batch and queue_info.num_batch_in_processing > 0:
-            self.send_info_message(message, "request queue exceeded", queue_info.subset)
+            self.send_info_message(message, DSM.QUEUE_EXCEEDED, queue_info.subset)
             return True
 
         if queue_info.is_last_batch and queue_info.num_batch_in_processing > 0:
             self.send_info_message(
                 message,
-                f"end of an epoch has been reached "
-                f"[num_batch_in_processing={queue_info.num_batch_in_processing}]",
+                f"{DSM.EPOCH_ENDING}"
+                f" [num_batch_in_processing={queue_info.num_batch_in_processing}]",
                 queue_info.subset,
             )
             return True
 
         if queue_info.is_last_batch and queue_info.num_batch_in_processing == 0:
-            self.send_info_message(message, "epoch complete", queue_info.subset)
+            self.send_info_message(message, DSM.EPOCH_COMPLETE, queue_info.subset)
             return True
 
         return False
@@ -210,12 +214,12 @@ class DataServer(ProcessWorker):
             self._zmq_server.frontend.send_multipart(message)
             self._subscribers[request["sub_type"]] += 1
 
-        elif request["message"] == "is_ready":
+        elif request["message"] == DLM.IS_READY:
             queue_info = self._work_queues[self._uid_map[message[0]]]
             if not self.is_reject_request(message, queue_info):
-                self.send_info_message(message, "true", queue_info.subset)
+                self.send_info_message(message, DSM.READY, queue_info.subset)
 
-        elif request["message"] == "batch":
+        elif request["message"] == DLM.GET_BATCH:
             subset = request["subset_name"]
             batch_size = request["batch_size"]
             batch_num = request.get("batch_num", 1)
@@ -252,7 +256,7 @@ class DataServer(ProcessWorker):
                     message + Serialize.dumps(samples)
                 )
 
-        elif request["message"] in ["receiving_completed", "abort_processing", "reset"]:
+        elif request["message"] in [DLM.EPOCH_COMPLETE, DLM.ABORT, DLM.RESET]:
             status = self._work_queues[self._uid_map[message[0]]]
             if status.batches:
                 self._zmq_server.frontend.send_multipart(message + status.batches)
@@ -260,18 +264,16 @@ class DataServer(ProcessWorker):
             status.is_last_batch = False
             status.batches = []
             status.num_batch_in_processing = 0
-            self.send_info_message(message, "queue cleared", status.subset)
+            self.send_info_message(message, DSM.QUEUE_CLEARED, status.subset)
 
-            if request["message"] == "abort_processing":
+            if request["message"] == DLM.ABORT:
                 self._total_batch_in_processing = 0
-                self.send_info_message(
-                    message, "abort processing the current batch", status.subset
-                )
+                self.send_info_message(message, DSM.ABORT, status.subset)
 
-            if request["message"] == "reset":
+            if request["message"] == DLM.RESET:
                 self._total_batch_in_processing = 0
                 self._pipe[request["subset_name"]].sampler.reset()
-                self.send_info_message(message, "reset sampler state", status.subset)
+                self.send_info_message(message, DSM.RESET, status.subset)
                 for item in self._sync_samplers.values():
                     item[request["subset_name"]].reset()
 
@@ -291,7 +293,7 @@ class DataServer(ProcessWorker):
 
                 queue_info = self._work_queues.get(self._uid_map[message[0]])
                 if queue_info is None:
-                    self.send_info_message(message, "batch skipped")
+                    self.send_info_message(message, DSM.SKIP_BATCH)
                     return
 
                 queue_info.num_batch_in_processing = max(
@@ -310,7 +312,7 @@ class DataServer(ProcessWorker):
                         queue_info.batches.append(message[2])
 
                 if queue_info.num_batch_in_processing == 0 and queue_info.is_last_batch:
-                    self.send_info_message(message, "epoch complete", queue_info.subset)
+                    self.send_info_message(message, DSM.EPOCH_COMPLETE, queue_info.subset)
 
                 self._batch_counter += 1
 

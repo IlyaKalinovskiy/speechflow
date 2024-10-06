@@ -4,12 +4,16 @@ import logging
 import argparse
 
 from collections import deque
+from os import environ as env
 from threading import Event, Thread
 
 from speechflow.data_pipeline.core import Batch
 from speechflow.data_server.client import DataClient
+from speechflow.data_server.system_messages import DataLoaderMessages as DLM
+from speechflow.data_server.system_messages import DataServerMessages as DSM
 from speechflow.io import Config, check_path, tp_PATH
 from speechflow.logging import log_to_file, trace
+from speechflow.utils.checks import str_to_bool
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.profiler import Profiler
 from speechflow.utils.serialize import Serialize
@@ -114,17 +118,18 @@ class DataLoader:
 
         return init_class_from_config(DataLoader, cfg)()
 
+    def _log_to_file(self, text: str):
+        if str_to_bool(env.get("VERBOSE", "False")):
+            message = f"[{self._uid}][{self.subset_name}]: {text}"
+            log_to_file(trace(self, self.subset_name, message=message))
+
     def _send_info_message(self, text: str):
         self._info_client.send({"message": text, "subset_name": self.subset_name})
-        log_to_file(trace(self, self.subset_name, message=f"[{self._uid}]: {text}"))
+        self._log_to_file(text)
 
     def _is_stop_iteration(self):
         if not self.non_stop and self._epoch_complete_event.is_set():
-            log_to_file(
-                trace(
-                    self, message=f"[{self._uid}]: stop iteration for {self.subset_name}"
-                )
-            )
+            self._log_to_file("stop iteration")
             raise StopIteration
 
     def _batch_request(self):
@@ -136,20 +141,21 @@ class DataLoader:
 
                 if self._async_supported:
                     response = self._info_client.request(
-                        message={"message": "is_ready"},
+                        message={"message": DLM.IS_READY},
                         deserialize=False,
                         timeout=1000,  # in milliseconds
                     )
+                    self._log_to_file(response)
                     if not response:
                         continue
                 else:
-                    response = [b"info: true"]
+                    response = [f"info: {DSM.READY}".encode()]
 
                 for _bytes in response:
 
                     def request_batch():
                         message = {
-                            "message": "batch",
+                            "message": DLM.GET_BATCH,
                             "subset_name": self.subset_name,
                             "batch_size": self.batch_size,
                             "batch_num": free_slots,
@@ -157,12 +163,13 @@ class DataLoader:
                         self._data_client.send(message)
 
                     if self.non_stop and (
-                        b"epoch complete" in _bytes or b"end of an epoch" in _bytes
+                        DSM.EPOCH_ENDING.encode() in _bytes
+                        or DSM.EPOCH_COMPLETE.encode() in _bytes
                     ):
-                        self._send_info_message("receiving_completed")
+                        self._send_info_message(DLM.EPOCH_COMPLETE)
                         self._epoch_complete_event.clear()
                         request_batch()
-                    elif b"true" in _bytes:
+                    elif DSM.READY.encode() in _bytes:
                         request_batch()
 
             except KeyboardInterrupt:
@@ -185,7 +192,7 @@ class DataLoader:
                 batch_list = []
                 is_epoch_complete = False
                 for _bytes in response:
-                    if b"epoch complete" in _bytes:
+                    if DSM.EPOCH_COMPLETE.encode() in _bytes:
                         is_epoch_complete = True
                         continue
                     elif _bytes == b"" or b"info:" in _bytes:
@@ -246,18 +253,15 @@ class DataLoader:
             assert self._request_task.is_alive(), "DataLoader has not been started!"
             self._is_stop_iteration()
 
-            if sleep > 1:
-                log_to_file(
-                    trace(self, self.subset_name, message="Batches receive too slowly!")
+            if sleep > 0:
+                LOGGER.warning(
+                    f"[{self._uid}][{self.subset_name}]: Batches receive too slowly!"
                 )
-                Profiler.sleep(sleep)
             else:
                 self.prefetch_factor = int(
                     min(self.prefetch_factor * 1.2, self.max_prefetch_factor)
                 )
-                message = f"[{self._uid}]: increase prefetch factor for {self.subset_name}: {self.prefetch_factor}"
-                log_to_file(trace(self, message=message))
-                Profiler.sleep(1.0)
+                self._log_to_file(f"increase prefetch factor ({self.prefetch_factor})")
 
             if sleep > 0 and sleep % 12 == 0 and self.non_stop:
                 self.abort_processing()
@@ -266,6 +270,7 @@ class DataLoader:
                     f"DataServer stopped responding for {self.subset_name} DataLoader!"
                 )
 
+            Profiler.sleep(sleep + 3)
             return self.next_batch(sleep + 3)
 
         batch = self._batch_queue.popleft()
@@ -278,14 +283,13 @@ class DataLoader:
         return batch
 
     def abort_processing(self):
-        self._send_info_message("abort_processing")
+        self._send_info_message(DLM.ABORT)
 
     def reset(self):
         self._batch_queue.clear()
         self._epoch_complete_event.clear()
-        self._send_info_message("reset")
+        self._send_info_message(DLM.RESET)
         self.prefetch_factor = self.min_prefetch_factor
-        log_to_file(trace(self, self.subset_name, message="reset"))
 
     def get_epoch_iterator(self) -> tp.Iterator[Batch]:
         self.reset()
