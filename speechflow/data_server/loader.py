@@ -138,7 +138,7 @@ class DataLoader:
                     response = self._info_client.request(
                         message={"message": "is_ready"},
                         deserialize=False,
-                        timeout=10000,  # in milliseconds
+                        timeout=1000,  # in milliseconds
                     )
                     if not response:
                         continue
@@ -171,13 +171,13 @@ class DataLoader:
             except Exception as e:
                 LOGGER.error(trace(self, e))
             finally:
-                Profiler.sleep(0.5)
+                Profiler.sleep(1)
 
     def _batch_receive(self):
         while not self._stop_event.is_set():
             try:
                 response = self._data_client.recv(
-                    deserialize=False, timeout=100  # in milliseconds
+                    deserialize=False, timeout=1000  # in milliseconds
                 )
                 if not response:
                     continue
