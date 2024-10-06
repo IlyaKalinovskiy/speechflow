@@ -2,7 +2,7 @@
 
 dirs:
   data_root: &data_root ../../../examples/simple_datasets/speech/SEGS
-  dump_folder: &dump_folder vc_whisp_24KHz
+  dump_folder: &dump_folder dump_vc_whisp_24KHz
 
 file_search:
   ext: .TextGridStage3
@@ -142,8 +142,8 @@ preproc:
       ssl_type: Hubert
       ssl_params:
         model_name: facebook/hubert-large-ls960-ft
-        pretrain_path: EN_epoch=0-step=4500.ckpt
-        vocab_path: EN_epoch=0-step=4500_vocab.json
+        pretrain_path: hubert_phoneme_en/epoch=0-step=4500.ckpt
+        vocab_path: hubert_phoneme_en/vocab.json
         # stream_mod:
         #   chunk_size: 6400
         #   context_size: [64000, 6550]

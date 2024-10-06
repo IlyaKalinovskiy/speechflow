@@ -62,6 +62,7 @@ apt-get install -y espeak-ng
 
 # make work directory
 mkdir /src
+mkdir /data
 
 chmod 777 /home
 

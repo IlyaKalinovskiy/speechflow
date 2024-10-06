@@ -14,8 +14,14 @@ else
 
   echo "### Build singularity container ###"
   sudo env "PATH=$PATH" singularity build --sandbox $IMG_NAME env/Singularityfile
+
+  sudo touch $IMG_NAME/usr/bin/nvidia-smi
+  sudo touch $IMG_NAME/usr/bin/nvidia-debugdump
+  sudo touch $IMG_NAME/usr/bin/nvidia-persistenced
+  sudo touch $IMG_NAME/usr/bin/nvidia-cuda-mps-control
+  sudo touch $IMG_NAME/usr/bin/nvidia-cuda-mps-server
 fi
 
 echo "### Install python packages ###"
-singularity run --writable --no-home -B .:/src --pwd /src $IMG_NAME pip install -r requirements.txt
-singularity run --writable --no-home -B .:/src --pwd /src $IMG_NAME sh libs/install.sh
+singularity run -w --no-home -B .:/src --pwd /src $IMG_NAME pip install -r requirements.txt
+singularity run -w --no-home -B .:/src --pwd /src $IMG_NAME sh libs/install.sh
