@@ -7,7 +7,6 @@ from speechflow.data_pipeline.core import DataPipeline, DataSample
 from speechflow.data_pipeline.core.dataset import Dataset
 from speechflow.data_server.helpers import LoaderParams, init_data_loader
 from speechflow.io import Config
-from speechflow.logging.server import LoggingServer
 
 
 @pytest.mark.parametrize("drop_non_full", [True, False])
@@ -27,28 +26,40 @@ def test_server(
     data = [DataSample(label=str(i)) for i in range(dataset_size)]
     data_pipeline["test"].set_dataset(Dataset(data))
 
-    with LoggingServer.ctx():
-        with init_data_loader(
-            loader_params=LoaderParams(
-                batch_size=batch_size, drop_non_full=drop_non_full, non_stop=non_stop
-            ),
-            data_pipeline=data_pipeline,
-            n_processes=n_processes,
-        ) as loaders:
-            loader = list(loaders.values())[0]
-            label_counter: dict = {}
-            for i in tqdm(range(num_epoch * len(loader))):
-                batch = loader.next_batch()
-                print(i)
-                for sample in batch.data_samples:
-                    label = f"L_{sample.label}"
-                    label_counter.setdefault(label, 0)
-                    label_counter[label] += 1
+    with init_data_loader(
+        loader_params=LoaderParams(
+            batch_size=batch_size, drop_non_full=drop_non_full, non_stop=non_stop
+        ),
+        data_pipeline=data_pipeline,
+        n_processes=n_processes,
+    ) as loaders:
+        loader = list(loaders.values())[0]
+        label_counter: dict = {}
 
-            val = np.asarray([value for value in label_counter.values()])
+        def update_counter(data_samples):
+            for sample in data_samples:
+                label = f"L_{sample.label}"
+                label_counter.setdefault(label, 0)
+                label_counter[label] += 1
+
+        if non_stop:
+            for i in tqdm(range(num_epoch * len(loader))):
+                update_counter(loader.next_batch().data_samples)
+        else:
+            for batch in loader:
+                update_counter(batch.data_samples)
+
+        val = np.asarray([value for value in label_counter.values()])
+        if non_stop:
+            assert int(val.mean()) == num_epoch
             assert dataset_size - len(label_counter) < batch_size
             assert abs(val.sum() - num_epoch * dataset_size) < num_epoch * batch_size
-            assert round(val.mean()) == num_epoch
+        else:
+            assert val.mean() == 1
+            if drop_non_full:
+                assert dataset_size - len(label_counter) < batch_size
+            else:
+                assert dataset_size == len(label_counter)
 
 
 if __name__ == "__main__":

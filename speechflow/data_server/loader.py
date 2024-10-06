@@ -4,7 +4,6 @@ import logging
 import argparse
 
 from collections import deque
-from os import environ as env
 from threading import Event, Thread
 
 from speechflow.data_pipeline.core import Batch
@@ -13,7 +12,7 @@ from speechflow.data_server.system_messages import DataLoaderMessages as DLM
 from speechflow.data_server.system_messages import DataServerMessages as DSM
 from speechflow.io import Config, check_path, tp_PATH
 from speechflow.logging import log_to_file, trace
-from speechflow.utils.checks import str_to_bool
+from speechflow.utils.checks import is_verbose_logging
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.profiler import Profiler
 from speechflow.utils.serialize import Serialize
@@ -119,7 +118,7 @@ class DataLoader:
         return init_class_from_config(DataLoader, cfg)()
 
     def _log_to_file(self, text: str):
-        if str_to_bool(env.get("VERBOSE", "False")):
+        if is_verbose_logging():
             message = f"[{self._uid}][{self.subset_name}]: {text}"
             log_to_file(trace(self, self.subset_name, message=message))
 
@@ -207,10 +206,9 @@ class DataLoader:
                     if not isinstance(batch, Batch):
                         continue
 
-                    if not batch.is_last and (
-                        (self.drop_non_full and batch.size != self.batch_size)
-                        or batch.size < self.min_batch_size
-                    ):
+                    if (
+                        self.drop_non_full and batch.size != self.batch_size
+                    ) or batch.size < self.min_batch_size:
                         message = (
                             f"batch size mismatch "
                             f"(expected size {self.batch_size} but received {batch.size})"

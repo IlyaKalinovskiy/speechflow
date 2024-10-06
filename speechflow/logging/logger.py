@@ -12,7 +12,7 @@ import numpy as np
 from speechflow.data_server.patterns import ZMQPatterns
 from speechflow.logging.filters import set_logging_filters
 from speechflow.logging.server import ProcessData, ProfilerData
-from speechflow.utils.checks import str_to_bool
+from speechflow.utils.checks import is_verbose_logging
 
 __all__ = ["create_logger"]
 
@@ -104,7 +104,7 @@ def create_logger(
     use_file_logging: bool = True,
     use_console_logging: bool = True,
 ):
-    if str_to_bool(env.get("VERBOSE", "False")):
+    if is_verbose_logging():
         console_level = logging.DEBUG
         file_level = logging.DEBUG
 
@@ -144,7 +144,7 @@ def create_logger(
             console_handler.setLevel(console_level)
             root_logger.addHandler(console_handler)
 
-    if not str_to_bool(env.get("VERBOSE", "False")):
+    if not is_verbose_logging():
         set_logging_filters(root_logger)
     else:
         LOGGER.debug("SET VERBOSE LOGGING")

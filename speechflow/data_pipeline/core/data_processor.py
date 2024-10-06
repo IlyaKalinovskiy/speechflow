@@ -18,7 +18,7 @@ from speechflow.data_pipeline.core.abstract import AbstractDataProcessor
 from speechflow.data_pipeline.core.dataset import DatasetItem
 from speechflow.io import Config, check_path, tp_PATH
 from speechflow.logging import log_to_file, trace
-from speechflow.utils.checks import str_to_bool
+from speechflow.utils.checks import is_verbose_logging, str_to_bool
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.profiler import ProfilerManager
 
@@ -67,7 +67,7 @@ class DumpProcessor:
         :param update_functions: functions that will be updated in the dump, remaining functions will not be
         recalculated.
         """
-        self._verbose_logging = str_to_bool(env.get("VERBOSE", "False"))
+        self.use_verbose_logging = is_verbose_logging()
 
         self.data_root = data_root
         self.folder_path = folder_path
@@ -190,7 +190,7 @@ class DumpProcessor:
         return True
 
     def load_samples(self, samples: tp.List[DataSample]) -> tp.List[DataSample]:
-        if not self._verbose_logging:
+        if not self.use_verbose_logging:
             num_samples = len(samples)
             samples = [
                 s for s in samples if self._get_sample_path(s) not in self.skip_samples
@@ -334,8 +334,8 @@ class DataProcessor(AbstractDataProcessor):
         else:
             self._dump_proc = None  # type: ignore
 
-        self._verbose_logging = str_to_bool(env.get("VERBOSE", "False"))
-        self._use_profiler = str_to_bool(env.get("DATAPIPE_PROFILING", "False"))
+        self.use_verbose_logging = is_verbose_logging()
+        self.use_profiler = str_to_bool(env.get("DATAPIPE_PROFILING", "False"))
 
     @staticmethod
     def apply(
@@ -375,7 +375,7 @@ class DataProcessor(AbstractDataProcessor):
             for sample in in_samples:
                 try:
                     processed_samples = DataProcessor.apply(
-                        sample, preproc_fn, self._dump_proc, self._use_profiler
+                        sample, preproc_fn, self._dump_proc, self.use_profiler
                     )
                     out_samples.extend(processed_samples)
                 except Exception as e:
@@ -415,7 +415,7 @@ class DataProcessor(AbstractDataProcessor):
 
             if self._dump_proc:
                 with ProfilerManager(
-                    "load_samples", group="DUMP", enable=self._use_profiler
+                    "load_samples", group="DUMP", enable=self.use_profiler
                 ):
                     in_samples = self._dump_proc.load_samples(in_samples)
                     if len(in_samples) == 0:
@@ -426,11 +426,11 @@ class DataProcessor(AbstractDataProcessor):
 
             if self._dump_proc:
                 with ProfilerManager(
-                    "dump_samples", group="DUMP", enable=self._use_profiler
+                    "dump_samples", group="DUMP", enable=self.use_profiler
                 ):
                     self._dump_proc.dump_samples(out_samples)
 
-            with ProfilerManager("collated", group="PIPE", enable=self._use_profiler):
+            with ProfilerManager("collated", group="PIPE", enable=self.use_profiler):
                 collated_samples = (
                     self._collate_fn(out_samples) if self._collate_fn else None
                 )

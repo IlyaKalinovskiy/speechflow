@@ -6,7 +6,6 @@ import multiprocessing as mp
 
 from collections import defaultdict
 from dataclasses import dataclass
-from os import environ as env
 
 import psutil
 
@@ -18,7 +17,7 @@ from speechflow.data_server.system_messages import DataLoaderMessages as DLM
 from speechflow.data_server.system_messages import DataServerMessages as DSM
 from speechflow.io import Config, check_path, tp_PATH
 from speechflow.logging import log_to_file, trace
-from speechflow.utils.checks import str_to_bool
+from speechflow.utils.checks import is_verbose_logging
 from speechflow.utils.gpu_info import get_freer_gpu
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.profiler import Profiler
@@ -155,7 +154,7 @@ class DataServer(ProcessWorker):
         info = f"[{client_id}] info: {text}"
         message = [message[0], b"", info.encode()]
         self._zmq_server.frontend.send_multipart(message)
-        if str_to_bool(env.get("VERBOSE", "False")):
+        if is_verbose_logging():
             log_to_file(trace(self, f"{subset}: {info}" if subset else info))
 
     def is_reject_request(self, message, queue_info: SamplingStatus) -> bool:

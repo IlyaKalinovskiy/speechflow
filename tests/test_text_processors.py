@@ -58,7 +58,7 @@ def test_parse_book(
             chunk_size = chunk_size_min
             timer = Profiler()
             while len(all_text) > chunk_size:
-                if max_test_time > 0 and timer.get_time() > float(max_test_time):
+                if max_test_time > 0 and timer.get_time() > max_test_time:
                     break
 
                 try:

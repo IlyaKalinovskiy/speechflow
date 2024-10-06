@@ -3,14 +3,22 @@ import inspect
 import functools
 import subprocess
 
-__all__ = ["check_install", "check_ismethod", "check_isfunction", "str_to_bool"]
+from os import environ as env
+
+__all__ = [
+    "check_install",
+    "check_ismethod",
+    "check_isfunction",
+    "str_to_bool",
+    "is_verbose_logging",
+]
 
 
 def check_install(*args):
     try:
         subprocess.check_output(args, stderr=subprocess.STDOUT)
         return True
-    except OSError as e:
+    except OSError:
         return False
 
 
@@ -51,3 +59,7 @@ def str_to_bool(val: str) -> bool:
         return False
     else:
         raise ValueError(f"invalid truth value {val!r}")
+
+
+def is_verbose_logging():
+    return str_to_bool(env.get("VERBOSE", "False"))
