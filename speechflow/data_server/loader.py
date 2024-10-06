@@ -43,7 +43,7 @@ class DataLoader:
         )
         self._uid = self._info_client.uid[:6]
         self._request_task = Thread(target=self._batch_request)
-        self._receive_tasks = [Thread(target=self._batch_receive) for _ in range(2)]
+        self._receive_task = Thread(target=self._batch_receive)
 
         if subset_name not in self._data_client.info["subsets"]:
             raise KeyError(f"subset {subset_name} not provided by data server!")
@@ -233,14 +233,15 @@ class DataLoader:
         self._stop_event.clear()
         self._epoch_complete_event.clear()
         self._request_task.start()
-        [t.start() for t in self._receive_tasks]
+        self._receive_task.start()
 
     def finish(self):
         self._stop_event.set()
         try:
             if self._request_task.is_alive():
                 self._request_task.join(timeout=1)
-            [t.join(timeout=1) for t in self._receive_tasks if t.is_alive()]
+            if self._receive_task.is_alive():
+                self._receive_task.join(timeout=1)
         except RuntimeError:
             pass
         except Exception as e:
