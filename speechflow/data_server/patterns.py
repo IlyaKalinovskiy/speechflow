@@ -59,35 +59,29 @@ class ZMQClient:
         self.socket.close()
 
     def send(self, message, serialize: bool = True):
-        try:
-            self.socket.send_pyobj(
-                message, flags=zmq.NOBLOCK
-            ) if serialize else self.socket.send(message, flags=zmq.NOBLOCK)
-        except Exception as e:
-            raise e
+        self.socket.send_pyobj(
+            message, flags=zmq.NOBLOCK
+        ) if serialize else self.socket.send(message, flags=zmq.NOBLOCK)
 
     def recv(
         self,
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
     ):
-        try:
-            if timeout is not None and self.socket.poll(timeout=timeout) == 0:
-                return None
-            else:
-                list_bytes = self.socket.recv_multipart()
-                if deserialize:
-                    list_obj = [pickle.loads(item) for item in list_bytes if item != b""]
-                    if len(list_obj) == 0:
-                        return None
-                    elif len(list_obj) == 1:
-                        return list_obj[0]
-                    else:
-                        return list_obj
+        if timeout is not None and self.socket.poll(timeout=timeout) == 0:
+            return None
+        else:
+            list_bytes = self.socket.recv_multipart()
+            if deserialize:
+                list_obj = [pickle.loads(item) for item in list_bytes if item != b""]
+                if len(list_obj) == 0:
+                    return None
+                elif len(list_obj) == 1:
+                    return list_obj[0]
                 else:
-                    return list_bytes
-        except Exception as e:
-            raise e
+                    return list_obj
+            else:
+                return list_bytes
 
     def request(
         self,
@@ -103,13 +97,10 @@ class ZMQClient:
         self.socket.send_string(message, flags=zmq.NOBLOCK)
 
     def recv_string(self, timeout: tp.Optional[int] = None):  # in milliseconds
-        try:
-            if timeout is not None and self.socket.poll(timeout=timeout) == 0:  # wait
-                return None  # timeout reached before any events were queued
-            else:
-                return self.socket.recv_string()  # events queued within our time limit
-        except Exception as e:
-            raise e
+        if timeout is not None and self.socket.poll(timeout=timeout) == 0:  # wait
+            return None  # timeout reached before any events were queued
+        else:
+            return self.socket.recv_string()  # events queued within our time limit
 
     def request_as_string(
         self, message: str, timeout: tp.Optional[int] = None  # in milliseconds

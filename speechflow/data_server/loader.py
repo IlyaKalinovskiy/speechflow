@@ -117,10 +117,15 @@ class DataLoader:
 
         return init_class_from_config(DataLoader, cfg)()
 
-    def _log_to_file(self, text: str):
-        if is_verbose_logging():
-            message = f"[{self._uid}][{self.subset_name}]: {text}"
-            log_to_file(trace(self, self.subset_name, message=message))
+    def _log_to_file(self, text: tp.Union[str, bytes]):
+        try:
+            if is_verbose_logging():
+                if isinstance(text, bytes):
+                    text = text[:20]
+                message = f"[{self._uid}][{self.subset_name}]: {text}"
+                log_to_file(trace(self, message=message))
+        except Exception as e:
+            LOGGER.error(trace(self, e))
 
     def _send_info_message(self, text: str):
         self._info_client.send({"message": text, "subset_name": self.subset_name})
@@ -144,13 +149,14 @@ class DataLoader:
                         deserialize=False,
                         timeout=1000,  # in milliseconds
                     )
-                    self._log_to_file(response)
+                    self._log_to_file(DLM.IS_READY)
                     if not response:
                         continue
                 else:
                     response = [f"info: {DSM.READY}".encode()]
 
                 for _bytes in response:
+                    self._log_to_file(_bytes)
 
                     def request_batch():
                         message = {
@@ -160,6 +166,7 @@ class DataLoader:
                             "batch_num": free_slots,
                         }
                         self._data_client.send(message)
+                        self._log_to_file(str(message))
 
                     if self.non_stop and (
                         DSM.EPOCH_ENDING.encode() in _bytes
@@ -191,6 +198,8 @@ class DataLoader:
                 batch_list = []
                 is_epoch_complete = False
                 for _bytes in response:
+                    self._log_to_file(_bytes)
+
                     if DSM.EPOCH_COMPLETE.encode() in _bytes:
                         is_epoch_complete = True
                         continue
@@ -213,7 +222,7 @@ class DataLoader:
                             f"batch size mismatch "
                             f"(expected size {self.batch_size} but received {batch.size})"
                         )
-                        LOGGER.debug(trace(self, message=message))
+                        self._log_to_file(message)
                     else:
                         if self.pin_memory and batch.collated_samples is not None:
                             batch.collated_samples.pin_memory()
@@ -222,12 +231,15 @@ class DataLoader:
 
                 if is_epoch_complete:
                     self._epoch_complete_event.set()
+                    self._log_to_file("epoch complete")
 
             except KeyboardInterrupt:
                 LOGGER.error(trace(self, "Interrupt received, stopping ..."))
                 break
             except Exception as e:
                 LOGGER.error(trace(self, e))
+            finally:
+                Profiler.sleep(0.1)
 
     def start(self):
         self._stop_event.clear()

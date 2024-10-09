@@ -75,14 +75,22 @@ class DataClient:
     ):
         message["client_uid"] = self._uid
         with self._request_lock:
-            return self._zmq_client.request(
-                message, deserialize=deserialize, timeout=timeout
-            )
+            try:
+                return self._zmq_client.request(
+                    message, deserialize=deserialize, timeout=timeout
+                )
+            except Exception as e:
+                LOGGER.error(trace(self, e))
+
+        return []
 
     def send(self, message):
         message["client_uid"] = self._uid
         with self._send_lock:
-            self._zmq_client.send(message)
+            try:
+                self._zmq_client.send(message)
+            except Exception as e:
+                LOGGER.error(trace(self, e))
 
     def recv(
         self,
@@ -90,8 +98,11 @@ class DataClient:
         timeout: tp.Optional[int] = None,  # in milliseconds
     ):
         with self._recv_lock:
-            self._zmq_client.pool(timeout=timeout)
-            if self._zmq_client.is_ready():
-                return self._zmq_client.recv(deserialize)
+            try:
+                self._zmq_client.pool(timeout=timeout)
+                if self._zmq_client.is_ready():
+                    return self._zmq_client.recv(deserialize)
+            except Exception as e:
+                LOGGER.error(trace(self, e))
 
         return []
