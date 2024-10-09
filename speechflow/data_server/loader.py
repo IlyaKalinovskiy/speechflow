@@ -158,9 +158,8 @@ class DataLoader:
                     response = [f"info: {DSM.READY}".encode()]
 
                 for _bytes in response:
-                    self._log_to_file(_bytes)
 
-                    def send_message():
+                    def _send_message():
                         message = {
                             "message": DLM.GET_BATCH,
                             "subset_name": self.subset_name,
@@ -176,9 +175,9 @@ class DataLoader:
                     ):
                         self._send_info_message(DLM.EPOCH_COMPLETE)
                         self._epoch_complete_event.clear()
-                        send_message()
+                        _send_message()
                     elif DSM.READY.encode() in _bytes:
-                        send_message()
+                        _send_message()
 
             except KeyboardInterrupt:
                 LOGGER.error(trace(self, "Interrupt received, stopping ..."))
