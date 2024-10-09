@@ -17,7 +17,7 @@ from speechflow.data_pipeline.core import Batch, DataSample, PipeRegistry
 from speechflow.data_pipeline.core.abstract import AbstractDataProcessor
 from speechflow.data_pipeline.core.dataset import DatasetItem
 from speechflow.io import Config, check_path, tp_PATH
-from speechflow.logging import log_to_file, trace
+from speechflow.logging import trace
 from speechflow.utils.checks import is_verbose_logging, str_to_bool
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.profiler import ProfilerManager
@@ -206,7 +206,7 @@ class DumpProcessor:
             samples = [s for s in samples if self._get_filename(s).exists()]
             if num_samples != len(samples):
                 message = f"{num_samples - len(samples)} samples thrown out because no dump was found for them!"
-                log_to_file(trace(self, message=message))
+                LOGGER.debug(trace(self, message=message))
 
         for sample in samples:
             file_path = self._get_filename(sample)
@@ -374,13 +374,13 @@ class DataProcessor(AbstractDataProcessor):
             out_samples = []
             for sample in in_samples:
                 try:
-                    processed_samples = DataProcessor.apply(
+                    processed_samples = self.apply(
                         sample, preproc_fn, self._dump_proc, self.use_profiler
                     )
                     out_samples.extend(processed_samples)
                 except Exception as e:
                     trace_message = trace(
-                        DataProcessor,
+                        self,
                         exception=e,
                         message=f"Filepath: {sample.file_path}",
                     )
@@ -445,8 +445,6 @@ class DataProcessor(AbstractDataProcessor):
 
         except Exception as e:
             LOGGER.error(trace(self, e))
-            log_to_file(e)
-            return None
 
 
 if __name__ == "__main__":

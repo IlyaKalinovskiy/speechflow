@@ -13,7 +13,6 @@ from speechflow.data_pipeline.core.datasample import (
     Pinnable,
 )
 from speechflow.data_pipeline.core.exceptions import NoDataSamplesError
-from speechflow.logging import log_to_file, trace
 from speechflow.utils.pad_utils import pad_1d, pad_2d
 
 __all__ = ["BaseCollate", "BaseCollateOutput"]
@@ -75,7 +74,6 @@ class BaseCollate:
 
     def collate(self, batch: tp.List[DataSample]) -> BaseCollateOutput:
         if len(batch) == 0:
-            log_to_file(trace(self, message="No DataSamples in batch."))
             raise NoDataSamplesError("No DataSamples in batch.")
 
         for ds in batch:

@@ -1,5 +1,6 @@
 import math
 import typing as tp
+import inspect
 import logging
 import argparse
 
@@ -121,9 +122,10 @@ class DataLoader:
         try:
             if is_verbose_logging():
                 if isinstance(text, bytes):
-                    text = text[:20]
+                    text = text[:80]
+                fn_name = f"{self.__class__.__name__}.{inspect.stack()[1][3]}"
                 message = f"[{self._uid}][{self.subset_name}]: {text}"
-                log_to_file(trace(self, message=message))
+                log_to_file(trace(fn_name, message=message))
         except Exception as e:
             LOGGER.error(trace(self, e))
 
@@ -158,7 +160,7 @@ class DataLoader:
                 for _bytes in response:
                     self._log_to_file(_bytes)
 
-                    def request_batch():
+                    def send_message():
                         message = {
                             "message": DLM.GET_BATCH,
                             "subset_name": self.subset_name,
@@ -174,9 +176,9 @@ class DataLoader:
                     ):
                         self._send_info_message(DLM.EPOCH_COMPLETE)
                         self._epoch_complete_event.clear()
-                        request_batch()
+                        send_message()
                     elif DSM.READY.encode() in _bytes:
-                        request_batch()
+                        send_message()
 
             except KeyboardInterrupt:
                 LOGGER.error(trace(self, "Interrupt received, stopping ..."))
