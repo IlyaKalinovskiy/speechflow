@@ -121,7 +121,4 @@ class RNNEncoder(CNNEncoder):
 
         y = self.proj(x)
 
-        outputs = EncoderOutput.copy_from(inputs)
-        outputs = outputs.set_content(y)
-        outputs.hidden_state = x
-        return outputs
+        return EncoderOutput.copy_from(inputs).set_content(y).set_hidden_state(x)

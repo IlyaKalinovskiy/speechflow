@@ -64,6 +64,7 @@ model:
     init_args:
         input_feat_type: ssl_feat
         ssl_feat_dim: 1024
+        encoder_type: CBHGEncoder
         encoder_num_layers: 2
         energy_interval: [0, 1.5]  # [0, 150]
         pitch_interval: [0, 1.5]  # [0, 880]
@@ -88,13 +89,13 @@ model:
         use_auxiliary_mel_loss: false
 
   backbone:
-    class_name: VocosResNetBackbone
+    class_name: VocosBackbone
     init_args:
       input_channels: 256
       dim: 512
       num_blocks: 4
-      # intermediate_dim: 1536
-      # num_layers: 12
+      intermediate_dim: 1536
+      adanorm_condition_dim: 324
 
   head:
     class_name: NSFHead

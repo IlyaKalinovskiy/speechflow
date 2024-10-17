@@ -127,6 +127,10 @@ ComponentOutput = ComponentInput
 class EncoderOutput(ComponentOutput):
     hidden_state: Tensor = None
 
+    def set_hidden_state(self, x: Tensor):
+        self.hidden_state = x
+        return self
+
 
 @dataclass
 class VarianceAdaptorOutput(ComponentOutput):
@@ -142,6 +146,10 @@ class VarianceAdaptorOutput(ComponentOutput):
 class DecoderOutput(ComponentOutput):
     hidden_state: Tensor = None
     gate: Tensor = None
+
+    def set_hidden_state(self, x: Tensor):
+        self.hidden_state = x
+        return self
 
 
 @dataclass

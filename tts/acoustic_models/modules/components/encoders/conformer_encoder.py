@@ -1,7 +1,6 @@
-from torch import nn
 from torchaudio.models import Conformer
 
-from tts.acoustic_models.modules.common.blocks import ConvPrenet
+from tts.acoustic_models.modules.common.blocks import ConvPrenet, Regression
 from tts.acoustic_models.modules.common.pos_encoder import PositionalEncoding
 from tts.acoustic_models.modules.components.encoders.cnn_encoder import (
     CNNEncoder,
@@ -45,7 +44,7 @@ class ConformerEncoder(CNNEncoder):
             dropout=params.p_dropout,
         )
 
-        self.proj = nn.Linear(params.encoder_inner_dim, self.params.encoder_output_dim)
+        self.proj = Regression(params.encoder_inner_dim, self.params.encoder_output_dim)
 
     @property
     def output_dim(self):
@@ -64,4 +63,4 @@ class ConformerEncoder(CNNEncoder):
         z, _ = self.encoder(x, x_lens)
         y = self.proj(z)
 
-        return EncoderOutput.copy_from(inputs).set_content(y)
+        return EncoderOutput.copy_from(inputs).set_content(y).set_hidden_state(z)

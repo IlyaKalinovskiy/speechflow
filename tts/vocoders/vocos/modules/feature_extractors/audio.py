@@ -83,6 +83,7 @@ class AudioFeatures(FeatureExtractor):
         use_lang_emb: bool = False,
         use_speaker_emb: bool = False,
         use_speech_quality_emb: bool = False,
+        use_encoder_condition: bool = False,
         use_style: bool = False,
         use_energy: bool = False,
         use_pitch: bool = False,
@@ -97,6 +98,9 @@ class AudioFeatures(FeatureExtractor):
         use_inverse_grad: bool = False,
     ):
         super().__init__()
+
+        max_input_length = 1024 * 4
+        max_output_length = 1024 * 4
 
         def _get_feat_dim(feat_name: str) -> int:
             if feat_name == "linear_spectrogram":
@@ -206,8 +210,8 @@ class AudioFeatures(FeatureExtractor):
                     "condition": condition,
                     "condition_dim": condition_dim,
                     "condition_type": condition_type,
-                    "max_input_length": 2048 * 2,
-                    "max_output_length": 2048 * 2,
+                    "max_input_length": max_input_length,
+                    "max_output_length": max_output_length,
                 },
                 encoder_output_dim=vq_emb_dim,
                 tag="vq_encoder",
@@ -220,10 +224,18 @@ class AudioFeatures(FeatureExtractor):
         # ----- init 1d predictors -----
 
         var_encoder_params = {
-            "condition": condition,
-            "condition_dim": condition_dim,
-            "condition_type": condition_type,
+            "max_input_length": max_input_length,
+            "max_output_length": max_output_length,
         }
+
+        if use_encoder_condition:
+            var_encoder_params.update(
+                {
+                    "condition": condition,
+                    "condition_dim": condition_dim,
+                    "condition_type": condition_type,
+                }
+            )
 
         if use_energy:
             energy_predictor_params = FrameLevelPredictorWithDiscriminatorParams(
@@ -272,15 +284,17 @@ class AudioFeatures(FeatureExtractor):
                 encoder_inner_dim=encoder_inner_dim,
                 encoder_num_layers=encoder_num_layers,
                 encoder_output_dim=output_dim,
-                condition=tuple(condition),
-                condition_dim=condition_dim,
-                condition_type=condition_type,
                 var_as_embedding=(True, True),
                 var_interval=(energy_interval, pitch_interval),
                 var_log_scale=(False, True),
-                max_input_length=2048 * 2,
-                max_output_length=2048 * 2,
+                max_input_length=max_input_length,
+                max_output_length=max_output_length,
             )
+            if use_encoder_condition:
+                enc_params.condition = tuple(condition)
+                enc_params.condition_dim = condition_dim
+                enc_params.condition_type = condition_type
+
             self.encoder = SFEncoder(enc_params, in_dim)
         else:
             enc_cls, enc_params_cls = TTS_ENCODERS[encoder_type]
@@ -289,10 +303,14 @@ class AudioFeatures(FeatureExtractor):
                 encoder_num_layers=encoder_num_layers,
                 encoder_inner_dim=encoder_inner_dim,
                 encoder_output_dim=output_dim,
-                condition=tuple(condition),
-                condition_dim=condition_dim,
-                condition_type=condition_type,
+                max_input_length=max_input_length,
+                max_output_length=max_output_length,
             )
+            if use_encoder_condition:
+                enc_params.condition = tuple(condition)
+                enc_params.condition_dim = condition_dim
+                enc_params.condition_type = condition_type
+
             self.encoder = enc_cls(enc_params, in_dim)
 
         # ----- init additional modules -----
@@ -541,4 +559,5 @@ class AudioFeatures(FeatureExtractor):
             additional_content["pitch"] = inputs.pitch
             additional_content["style_emb"] = conditions["style_emb"]
 
+        additional_content["condition_emb"] = torch.cat(list(conditions.values()), dim=-1)
         return output.transpose(1, -1), losses, additional_content

@@ -139,12 +139,10 @@ class CBHG(nn.Module):
         if rnn_channels is None:
             rnn_channels = in_channels
 
-        self.padding = torch.FloatTensor(1, out_channels, 1).zero_()
-
         # List of all rnns to call `flatten_parameters()` on
         self._to_flatten = []
 
-        self.bank_kernels = [i + 1 for i in range(conv_banks_num)]
+        self.bank_kernels = [kernel_size * (i + 1) for i in range(conv_banks_num)]
         self.conv1d_bank = nn.ModuleList()
         for k in self.bank_kernels:
             padding = math.ceil((k - 1) / 2)
@@ -203,7 +201,6 @@ class CBHG(nn.Module):
 
     def forward(self, x, seq_lengths=None):
         x = x.transpose(2, 1)
-        is_pad = True
 
         # Although we `_flatten_parameters()` on init, when using DataParallel
         # the model gets replicated, making it no longer guaranteed that the
@@ -218,7 +215,7 @@ class CBHG(nn.Module):
         for idx, conv in enumerate(self.conv1d_bank):
             c = conv(x)
             if idx % 2 == 0:
-                c = F.pad(c, [0, 1]) if is_pad else torch.cat((c, self.padding), dim=2)
+                c = F.pad(c, [0, 1])
             conv_bank.append(c)
 
         # Stack along the channel axis

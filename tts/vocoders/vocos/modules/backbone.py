@@ -36,7 +36,7 @@ class VocosBackbone(Backbone):
         input_channels (int): Number of input features channels.
         dim (int): Hidden dimension of the model.
         intermediate_dim (int): Intermediate dimension used in ConvNeXtBlock.
-        num_layers (int): Number of ConvNeXtBlock layers.
+        num_blocks (int): Number of ConvNeXtBlock layers.
         layer_scale_init_value (float, optional): Initial value for layer scaling. Defaults to `1 / num_layers`.
         adanorm_num_embeddings (int, optional): Number of embeddings for AdaLayerNorm.
                                                 None means non-conditional model. Defaults to None.
@@ -48,28 +48,28 @@ class VocosBackbone(Backbone):
         input_channels: int,
         dim: int,
         intermediate_dim: int,
-        num_layers: int,
+        num_blocks: int,
         layer_scale_init_value: Optional[float] = None,
-        adanorm_num_embeddings: Optional[int] = None,
+        adanorm_condition_dim: Optional[int] = None,
     ):
         super().__init__()
         self.input_channels = input_channels
         self.embed = nn.Conv1d(input_channels, dim, kernel_size=7, padding=3)
-        self.adanorm = adanorm_num_embeddings is not None
-        if adanorm_num_embeddings:
-            self.norm = AdaLayerNorm(adanorm_num_embeddings, dim, eps=1e-6)
+        self.adanorm = adanorm_condition_dim is not None
+        if adanorm_condition_dim:
+            self.norm = AdaLayerNorm(adanorm_condition_dim, dim, eps=1e-6)
         else:
             self.norm = nn.LayerNorm(dim, eps=1e-6)
-        layer_scale_init_value = layer_scale_init_value or 1 / num_layers
+        layer_scale_init_value = layer_scale_init_value or 1 / num_blocks
         self.convnext = nn.ModuleList(
             [
                 ConvNeXtBlock(
                     dim=dim,
                     intermediate_dim=intermediate_dim,
                     layer_scale_init_value=layer_scale_init_value,
-                    adanorm_num_embeddings=adanorm_num_embeddings,
+                    adanorm_condition_dim=adanorm_condition_dim,
                 )
-                for _ in range(num_layers)
+                for _ in range(num_blocks)
             ]
         )
         self.final_layer_norm = nn.LayerNorm(dim, eps=1e-6)
@@ -82,16 +82,16 @@ class VocosBackbone(Backbone):
             nn.init.constant_(m.bias, 0)
 
     def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
-        bandwidth_id = kwargs.get("bandwidth_id", None)
+        condition_emb = kwargs.get("condition_emb", None)
         x = self.embed(x)
         if self.adanorm:
-            assert bandwidth_id is not None
-            x = self.norm(x.transpose(1, 2), cond_embedding_id=bandwidth_id)
+            assert condition_emb is not None
+            x = self.norm(x.transpose(1, 2), cond_emb=condition_emb)
         else:
             x = self.norm(x.transpose(1, 2))
         x = x.transpose(1, 2)
         for conv_block in self.convnext:
-            x = conv_block(x, cond_embedding_id=bandwidth_id)
+            x = conv_block(x, cond_emb=condition_emb)
         x = self.final_layer_norm(x.transpose(1, 2))
         return x
 

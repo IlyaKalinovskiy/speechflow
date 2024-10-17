@@ -20,4 +20,4 @@ class DummyEncoder(Component):
         return self.input_dim
 
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
-        return inputs
+        return inputs  # type: ignore

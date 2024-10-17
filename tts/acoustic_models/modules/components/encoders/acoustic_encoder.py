@@ -3,6 +3,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from tts.acoustic_models.modules.common.blocks import Regression
 from tts.acoustic_models.modules.common.layers import Conv
 from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.data_types import ComponentInput, EncoderOutput
@@ -25,23 +26,21 @@ class AcousticEncoder(Component):
 
     def __init__(self, params: AcousticEncoderParams, input_dim: int):
         super().__init__(params, input_dim)
-        hidden_dim = params.encoder_inner_dim
+        inner_dim = params.encoder_inner_dim
         output_dim = params.encoder_output_dim
-        self.prenet = PreNet(input_dim, hidden_dim, output_dim)
+        self.prenet = PreNet(input_dim, inner_dim, output_dim)
         self.convs = nn.Sequential(
-            nn.Conv1d(output_dim, hidden_dim, 5, 1, 2),
+            nn.Conv1d(output_dim, inner_dim, 5, 1, 2),
             nn.ReLU(),
-            nn.InstanceNorm1d(hidden_dim),
-            nn.ConvTranspose1d(hidden_dim, hidden_dim, 4, 2, 1)
+            nn.InstanceNorm1d(inner_dim),
+            nn.ConvTranspose1d(inner_dim, inner_dim, 4, 2, 1)
             if params.upsample
             else nn.Identity(),
-            nn.Conv1d(hidden_dim, hidden_dim, 5, 1, 2),
+            nn.Conv1d(inner_dim, inner_dim, 5, 1, 2),
             nn.ReLU(),
-            nn.InstanceNorm1d(hidden_dim),
-            nn.Conv1d(hidden_dim, output_dim, 5, 1, 2),
-            nn.ReLU(),
-            nn.InstanceNorm1d(output_dim),
+            nn.InstanceNorm1d(inner_dim),
         )
+        self.proj = Regression(inner_dim, output_dim)
 
     @property
     def output_dim(self):
@@ -51,9 +50,10 @@ class AcousticEncoder(Component):
         x, x_lens, x_mask = self.get_content_and_mask(inputs)
 
         x = self.prenet(x)
-        y = self.convs(x.transpose(1, -1)).transpose(1, -1)
+        z = self.convs(x.transpose(1, -1)).transpose(1, -1)
+        y = self.proj(z)
 
-        return EncoderOutput.copy_from(inputs).set_content(y)
+        return EncoderOutput.copy_from(inputs).set_content(y).set_hidden_state(z)
 
 
 class PreNet(nn.Module):
