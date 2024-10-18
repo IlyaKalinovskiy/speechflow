@@ -23,7 +23,6 @@ __all__ = [
     "SSLFeatures",
     "Whisper",
     "Wav2Vec",
-    "Hubert",
     "WavLM",
     "ECAPABiometric",
 ]
@@ -315,56 +314,6 @@ class Wav2Vec(BaseSSLModel):
         return self.postprocessing(ssl_feat)
 
 
-class Hubert(Wav2Vec):
-    def _init_model(
-        self,
-        model_name: str,
-        feature_type: str,
-        pretrain_path: tp_PATH,
-        vocab_path: tp_PATH,
-    ):
-        if vocab_path is not None:
-            tokenizer = transformers.Wav2Vec2CTCTokenizer(
-                vocab_file=vocab_path.as_posix(),
-                unk_token="<unk>",
-                pad_token="<pad>",
-                word_delimiter_token="|",
-            )
-        else:
-            tokenizer = None
-
-        self.model = transformers.HubertForCTC.from_pretrained(model_name)
-        self.feature_extractor = transformers.Wav2Vec2FeatureExtractor.from_pretrained(
-            model_name
-        )
-        self.processor = transformers.Wav2Vec2Processor(
-            feature_extractor=self.feature_extractor, tokenizer=tokenizer
-        )
-
-        self.model.lm_head = torch.nn.Linear(1024, 64)
-
-        if pretrain_path is not None:
-            checkpoint = torch.load(pretrain_path, map_location="cpu")
-            state_dict = {
-                k.replace("model.wav2vec2.", "hubert.")
-                .replace("aux", "lm_head")
-                .replace("encoder.feature_projection", "feature_projection")
-                .replace("transformer.", "")
-                .replace(
-                    "model.mask_generator.mask_embedding", "hubert.masked_spec_embed"
-                ): v
-                for k, v in checkpoint["state_dict"].items()
-                if "logit_generator" not in k
-            }
-            try:
-                self.model.load_state_dict(state_dict, strict=True)
-            except Exception:
-                self.model.load_state_dict(state_dict, strict=False)
-
-        self.model.eval()
-        self.model.to(self.device)
-
-
 class WavLM(BaseSSLModel):
     def __init__(
         self,
@@ -507,36 +456,19 @@ class ECAPABiometric(BaseSSLModel):
 
 
 if __name__ == "__main__":
-    if 1:
-        from speechflow.utils.profiler import Profiler
+    from speechflow.utils.profiler import Profiler
 
-        _wav_path = get_root_dir() / "tests/data/test_audio.wav"
-        _audio_chunk = AudioChunk(_wav_path, end=3.9).load()
+    _wav_path = get_root_dir() / "tests/data/test_audio.wav"
+    _audio_chunk = AudioChunk(_wav_path, end=3.9).load()
 
-        for _ssl_cls in [Whisper, Wav2Vec, WavLM, ECAPABiometric]:
-            try:
-                _ssl_model = _ssl_cls()
-            except Exception:
-                continue
+    for _ssl_cls in [Whisper, Wav2Vec, WavLM, ECAPABiometric]:
+        try:
+            _ssl_model = _ssl_cls()
+        except Exception:
+            continue
 
-            with Profiler(_ssl_cls.__name__) as prof:
-                _ssl_feat = _ssl_model(_audio_chunk)
+        with Profiler(_ssl_cls.__name__) as prof:
+            _ssl_feat = _ssl_model(_audio_chunk)
 
-            print(f"{_ssl_cls.__name__}: {_ssl_feat.encoder_feat.shape}")
-            assert _ssl_feat.encoder_feat.shape[-1] == _ssl_model.embedding_dim
-    else:
-        from pathlib import Path
-
-        _hubert = Hubert(
-            model_name="facebook/hubert-large-ls960-ft",
-            pretrain_path="epoch=0-step=4500.ckpt",
-            vocab_path="vocab.json",
-            stream_mod={"chunk_size": 6400, "context_size": [64000, 6550]},
-        )
-
-        _flist = Path("test").glob("*.wav")
-        for _wav_path in _flist:
-            _audio_chunk = AudioChunk(_wav_path).load()
-            _ssl_feat = _hubert(_audio_chunk)
-            print(f"{_hubert.__class__.__name__}: {_ssl_feat.encoder_feat.shape}")
-            print(f"{_wav_path.as_posix()}: {_ssl_feat.tokens}")
+        print(f"{_ssl_cls.__name__}: {_ssl_feat.encoder_feat.shape}")
+        assert _ssl_feat.encoder_feat.shape[-1] == _ssl_model.embedding_dim

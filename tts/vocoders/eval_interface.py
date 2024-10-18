@@ -245,44 +245,13 @@ class VocoderEvaluationInterface(VocoderLoader):
 
 
 if __name__ == "__main__":
-    if 1:
-        from speechflow.utils.fs import get_root_dir
+    from speechflow.utils.fs import get_root_dir
 
-        test_file_path = get_root_dir() / "tests/data/test_audio.wav"
+    test_file_path = get_root_dir() / "tests/data/test_audio.wav"
 
-        voc = VocoderEvaluationInterface(
-            ckpt_path="mel_vocos_checkpoint_epoch=79_step=400000_val_loss=4.9470.ckpt"
-        )
+    voc = VocoderEvaluationInterface(
+        ckpt_path="mel_vocos_checkpoint_epoch=79_step=400000_val_loss=4.9470.ckpt"
+    )
 
-        voc_out = voc.resynthesize(test_file_path, lang="RU")
-        voc_out.audio_chunk.save("resynt.wav", overwrite=True)
-    else:
-        from pathlib import Path
-
-        from tqdm import tqdm
-
-        from speechflow.logging import trace
-
-        root_dir = Path("/data3/i.kalinovskiy")
-        voc_path = (
-            root_dir / "vocos_checkpoint_epoch=22_step=575000_val_loss=10.0199.ckpt"
-        )
-        test_files = root_dir / "eng_spontan/wav_16k"
-        result_path = root_dir / "eng_spontan/result"
-        ref_file = root_dir / "4922.wav"
-
-        voc = VocoderEvaluationInterface(voc_path, device="cpu")
-        Path(result_path).mkdir(parents=True, exist_ok=True)
-
-        file_list = list(Path(test_files).glob("*.wav"))
-        for wav_file in tqdm(file_list):
-            result_file_name = Path(result_path) / wav_file.name
-            if result_file_name.exists():
-                continue
-
-            try:
-                voc_out = voc.resynthesize(wav_file, ref_file, lang="EN")
-                voc_out.audio_chunk.save(result_file_name, overwrite=True)
-                # print(voc_out.additional_content["vq_codes"].squeeze().cpu().numpy())
-            except Exception as e:
-                print(trace("", e))
+    voc_out = voc.resynthesize(test_file_path, lang="RU")
+    voc_out.audio_chunk.save("resynt.wav", overwrite=True)

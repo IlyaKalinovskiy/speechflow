@@ -25,9 +25,6 @@ from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing 
     audio_codecs,
     ssl_models,
 )
-from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing.praat_sound_effects import (
-    PraatSoundEffects,
-)
 from speechflow.data_pipeline.datasample_processors.data_types import (
     AudioDataSample,
     SSLFeatures,
@@ -79,13 +76,6 @@ class SignalProcessor(BaseAudioProcessor):
         backend: ComputeBackend = ComputeBackend.librosa,
     ):
         super().__init__(pipe, pipe_cfg, backend)
-
-        if "whisper" in pipe:
-            self._sound_effects = init_class_from_config(
-                PraatSoundEffects, pipe_cfg.section("whisper")
-            )()
-        else:
-            self._sound_effects = None
 
     @PipeRegistry.registry(
         inputs={"file_path", "audio_chunk"},
@@ -302,21 +292,6 @@ class SignalProcessor(BaseAudioProcessor):
         else:
             noise = noise.astype(np.int16)
         ds.audio_chunk.data += noise
-        return ds
-
-    def whisper(self, ds: AudioDataSample, p: float = 1.0):
-        if random.random() > p:
-            return ds
-
-        whisp_wav_path = ds.audio_chunk.file_path.with_suffix(".whisp.wav")
-        if whisp_wav_path.exists():
-            tmp = ds.audio_chunk.file_path
-            ds.audio_chunk.file_path = whisp_wav_path
-            ds.audio_chunk.load(sr=ds.audio_chunk.sr, dtype=ds.audio_chunk.dtype)
-            ds.audio_chunk.file_path = tmp
-            return ds
-
-        ds.audio_chunk = self._sound_effects.whisper(ds.audio_chunk)
         return ds
 
     @staticmethod
