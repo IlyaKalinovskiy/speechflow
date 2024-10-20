@@ -190,10 +190,10 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
                 inputs = inputs.prompt
                 name = name.replace("prompt.", "")
 
-            detach = True
+            detach = False
             name, *modifiers = name.split("<", 1)
-            if modifiers and "no_detach" in modifiers[0]:
-                detach = False
+            if modifiers and "detach" in modifiers[0]:
+                detach = True
 
             if ref is not None and name in ref.model_feats:
                 feat = ref.get_model_feat(name, device=inputs.device)

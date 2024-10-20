@@ -15,7 +15,7 @@ class ConvNeXtBlock(nn.Module):
         intermediate_dim (int): Dimensionality of the intermediate layer.
         layer_scale_init_value (float, optional): Initial value for the layer scale. None means no scaling.
             Defaults to None.
-        adanorm_condition_dim (int, optional): Number of embeddings for AdaLayerNorm.
+        condition_dim (int, optional): Number of embeddings for AdaLayerNorm.
             None means non-conditional LayerNorm. Defaults to None.
 
     """
@@ -25,15 +25,15 @@ class ConvNeXtBlock(nn.Module):
         dim: int,
         intermediate_dim: int,
         layer_scale_init_value: float,
-        adanorm_condition_dim: Optional[int] = None,
+        condition_dim: Optional[int] = None,
     ):
         super().__init__()
         self.dwconv = nn.Conv1d(
             dim, dim, kernel_size=7, padding=3, groups=dim
         )  # depthwise conv
-        self.adanorm = adanorm_condition_dim is not None
-        if adanorm_condition_dim:
-            self.norm = AdaLayerNorm(adanorm_condition_dim, dim, eps=1e-5)
+        self.adanorm = condition_dim is not None
+        if condition_dim:
+            self.norm = AdaLayerNorm(condition_dim, dim, eps=1e-5)
         else:
             self.norm = nn.LayerNorm(dim, eps=1e-5)
         self.pwconv1 = nn.Linear(

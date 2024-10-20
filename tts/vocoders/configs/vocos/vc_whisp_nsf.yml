@@ -64,14 +64,19 @@ model:
     init_args:
         input_feat_type: ssl_feat
         ssl_feat_dim: 1024
-        encoder_type: CBHGEncoder
-        encoder_num_layers: 2
-        energy_interval: [0, 1.5]  # [0, 150]
-        pitch_interval: [0, 1.5]  # [0, 880]
+        output_dim: 512
+        feat_encoder_type: CBHGEncoder
+        feat_encoder_use_condition: false
+        vp_encoder_type: AdainEncoder
+        vp_encoder_use_condition: true
+        vq_encoder_type: RNNEncoder
+        vq_encoder_use_condition: true
         style_encoder_type: StyleTTS2
         style_feat_type: mel_spectrogram
         style_emb_dim: 128
         style_use_gmvae: false
+        energy_interval: [0, 1.5]  # [0, 150]
+        pitch_interval: [0, 1.5]  # [0, 880]
         use_lang_emb: false
         use_speaker_emb: true
         use_speech_quality_emb: true
@@ -81,7 +86,6 @@ model:
         use_plbert: true
         use_averages: true
         use_range: true
-        use_sf_encoder: false
         use_vq: false
         vq_num_quantizers: 3
         vq_codebook_size: 256
@@ -91,14 +95,14 @@ model:
   backbone:
     class_name: VocosBackbone
     init_args:
-      input_channels: 256
-      dim: 512
+      input_channels: 512
+      dim: 1024
       num_blocks: 4
       intermediate_dim: 1536
-      adanorm_condition_dim: 324
+      condition_dim: 324
 
   head:
     class_name: NSFHead
     init_args:
-      dim: 512
-      style_emb_dim: 128
+      dim: 1024
+      condition_dim: 324
