@@ -53,11 +53,32 @@ class AudioFeatures(FeatureExtractor):
         ssl_feat_dim: int = 1024,
         style_emb_dim: int = 192,
         condition_emb_dim: int = 64,
-        encoder_type: str = "RNNEncoder",
-        encoder_num_blocks: int = 1,
-        encoder_num_layers: int = 1,
-        encoder_inner_dim: int = 512,
-        condition_type: tp.Literal["cat", "adanorm"] = "cat",
+        # feat encoder
+        feat_encoder_type: str = "RNNEncoder",
+        feat_encoder_num_blocks: int = 1,
+        feat_encoder_num_layers: int = 1,
+        feat_encoder_inner_dim: int = 512,
+        feat_encoder_use_condition: bool = True,
+        feat_condition_type: tp.Literal["cat", "adanorm"] = "cat",
+        # variance predictor encoder
+        vp_encoder_type: str = "RNNEncoder",
+        vp_encoder_num_blocks: int = 1,
+        vp_encoder_num_layers: int = 1,
+        vp_encoder_inner_dim: int = 512,
+        vp_encoder_use_condition: bool = True,
+        vp_condition_type: tp.Literal["cat", "adanorm"] = "cat",
+        # vq encoder
+        vq_encoder_type: str = "RNNEncoder",
+        vq_encoder_num_blocks: int = 1,
+        vq_encoder_num_layers: int = 1,
+        vq_encoder_inner_dim: int = 512,
+        vq_encoder_use_condition: bool = True,
+        vq_condition_type: tp.Literal["cat", "adanorm"] = "cat",
+        vq_type: tp.Literal["vq", "rvq", "rfsq", "rlfq"] = "rlfq",
+        vq_emb_dim: int = 256,
+        vq_codebook_size: int = 1024,
+        vq_num_quantizers: int = 1,
+        # style encoder
         style_encoder_type: tp.Literal[
             "SimpleStyle", "StyleSpeech", "StyleTTS2"
         ] = "StyleSpeech",
@@ -71,19 +92,17 @@ class AudioFeatures(FeatureExtractor):
         style_use_gmvae: bool = False,
         style_use_fsq: bool = False,
         style_gmvae_n_components: int = 16,
-        vq_type: tp.Literal["vq", "rvq", "rfsq", "rlfq"] = "rlfq",
-        vq_emb_dim: int = 256,
-        vq_codebook_size: int = 1024,
-        vq_num_quantizers: int = 1,
+        # variances
         energy_interval: tp.Tuple[float, float] = (0, 150),
         pitch_interval: tp.Tuple[float, float] = (0, 850),
         average_energy_interval: tp.Tuple[float, float] = (0, 150),
         average_pitch_interval: tp.Tuple[float, float] = (0, 850),
+        # Multilingual PL-BERT
         plbert_emb_dim: int = 768,
+        # flags
         use_lang_emb: bool = False,
         use_speaker_emb: bool = False,
         use_speech_quality_emb: bool = False,
-        use_encoder_condition: bool = False,
         use_style: bool = False,
         use_energy: bool = False,
         use_pitch: bool = False,
@@ -91,7 +110,6 @@ class AudioFeatures(FeatureExtractor):
         use_ssl_adjustment: bool = False,
         use_averages: bool = False,
         use_range: bool = False,
-        use_sf_encoder: bool = False,
         use_vq: bool = False,
         use_auxiliary_classification_loss: bool = False,
         use_auxiliary_mel_loss: bool = False,
@@ -124,14 +142,14 @@ class AudioFeatures(FeatureExtractor):
 
         if use_lang_emb:
             self.lang_embs = nn.Embedding(n_langs, condition_emb_dim)
-            condition.append("lang_emb<no_detach>")
+            condition.append("lang_emb")
             condition_dim += condition_emb_dim
         else:
             self.lang_embs = None
 
         if use_speaker_emb:
             self.speaker_proj = nn.Linear(speaker_emb_dim, condition_emb_dim)
-            condition.append("speaker_emb<no_detach>")
+            condition.append("speaker_emb")
             condition_dim += condition_emb_dim
         else:
             self.speaker_proj = None
@@ -144,7 +162,7 @@ class AudioFeatures(FeatureExtractor):
             self.avr_energy_emb = VarianceEmbedding(
                 interval=average_energy_interval, emb_dim=condition_emb_dim
             )
-            condition.append("avr_energy_emb<no_detach>")
+            condition.append("avr_energy_emb")
             condition_dim += condition_emb_dim
         else:
             self.avr_energy_emb = None
@@ -153,7 +171,7 @@ class AudioFeatures(FeatureExtractor):
             self.avr_pitch_emb = VarianceEmbedding(
                 interval=average_pitch_interval, emb_dim=condition_emb_dim, log_scale=True
             )
-            condition.append("avr_pitch_emb<no_detach>")
+            condition.append("avr_pitch_emb")
             condition_dim += condition_emb_dim
         else:
             self.avr_pitch_emb = None
@@ -182,7 +200,7 @@ class AudioFeatures(FeatureExtractor):
             else:
                 self.vae_scheduler = None
 
-            condition.append("style_emb<no_detach>")
+            condition.append("style_emb")
             condition_dim += style_emb_dim
         else:
             self.style_enc = None
@@ -197,22 +215,29 @@ class AudioFeatures(FeatureExtractor):
         # ----- init VQ encoder -----
 
         if use_vq:
+            vq_encoder_params = {
+                "encoder_inner_dim": vq_encoder_inner_dim,
+                "encoder_num_blocks": vq_encoder_num_blocks,
+                "encoder_num_layers": vq_encoder_num_layers,
+                "cnn_n_layers": 3,
+                "max_input_length": max_input_length,
+                "max_output_length": max_output_length,
+            }
+            if vq_encoder_use_condition:
+                vq_encoder_params.update(
+                    {
+                        "condition": condition,
+                        "condition_dim": condition_dim,
+                        "condition_type": vq_condition_type,
+                    }
+                )
+
             vq_enc_params = VQEncoderWithClassificationAdaptorParams(
                 vq_type=vq_type,
                 vq_codebook_size=vq_codebook_size,
                 vq_num_quantizers=vq_num_quantizers,
-                vq_encoder_type=encoder_type,
-                vq_encoder_params={
-                    "encoder_inner_dim": encoder_inner_dim,
-                    "encoder_num_blocks": encoder_num_blocks,
-                    "encoder_num_layers": encoder_num_layers,
-                    "cnn_n_layers": 3,
-                    "condition": condition,
-                    "condition_dim": condition_dim,
-                    "condition_type": condition_type,
-                    "max_input_length": max_input_length,
-                    "max_output_length": max_output_length,
-                },
+                vq_encoder_type=vq_encoder_type,
+                vq_encoder_params=vq_encoder_params,
                 encoder_output_dim=vq_emb_dim,
                 tag="vq_encoder",
             )
@@ -228,22 +253,23 @@ class AudioFeatures(FeatureExtractor):
             "max_output_length": max_output_length,
         }
 
-        if use_encoder_condition:
+        if vp_encoder_use_condition:
             var_encoder_params.update(
                 {
                     "condition": condition,
                     "condition_dim": condition_dim,
-                    "condition_type": condition_type,
+                    "condition_type": vp_condition_type,
                 }
             )
 
         if use_energy:
             energy_predictor_params = FrameLevelPredictorWithDiscriminatorParams(
-                frame_encoder_type=encoder_type,
+                frame_encoder_type=vp_encoder_type,
                 frame_encoder_params=var_encoder_params,
                 activation_fn="ReLU",
-                vp_hidden_channels=encoder_inner_dim,
-                vp_num_layers=encoder_num_layers,
+                vp_hidden_channels=vp_encoder_inner_dim,
+                vp_encoder_num_blocks=vp_encoder_num_blocks,
+                vp_num_layers=vp_encoder_num_layers,
                 vp_output_dim=1,
                 var_params=VarianceParams(log_scale=False),
             )
@@ -255,11 +281,11 @@ class AudioFeatures(FeatureExtractor):
 
         if use_pitch:
             pitch_predictor_params = FrameLevelPredictorWithDiscriminatorParams(
-                frame_encoder_type=encoder_type,
+                frame_encoder_type=vp_encoder_type,
                 frame_encoder_params=var_encoder_params,
                 activation_fn="ReLU",
-                vp_inner_channels=encoder_inner_dim,
-                vp_num_layers=encoder_num_layers,
+                vp_inner_channels=vp_encoder_inner_dim,
+                vp_num_layers=vp_encoder_num_layers,
                 vp_output_dim=1,
                 var_params=VarianceParams(log_scale=True),
                 use_ssl_adjustment=use_ssl_adjustment,
@@ -278,11 +304,11 @@ class AudioFeatures(FeatureExtractor):
 
         # ----- init 1d source-filter encoder -----
 
-        if use_sf_encoder:
+        if feat_encoder_type == "SFEncoder":
             enc_params = SFEncoderParams(
-                base_encoder_type=encoder_type,
-                encoder_inner_dim=encoder_inner_dim,
-                encoder_num_layers=encoder_num_layers,
+                base_encoder_type=feat_encoder_type,
+                encoder_inner_dim=feat_encoder_inner_dim,
+                encoder_num_layers=feat_encoder_num_layers,
                 encoder_output_dim=output_dim,
                 var_as_embedding=(True, True),
                 var_interval=(energy_interval, pitch_interval),
@@ -290,28 +316,28 @@ class AudioFeatures(FeatureExtractor):
                 max_input_length=max_input_length,
                 max_output_length=max_output_length,
             )
-            if use_encoder_condition:
+            if feat_encoder_use_condition:
                 enc_params.condition = tuple(condition)
                 enc_params.condition_dim = condition_dim
-                enc_params.condition_type = condition_type
+                enc_params.condition_type = feat_condition_type
 
-            self.encoder = SFEncoder(enc_params, in_dim)
+            self.feat_encoder = SFEncoder(enc_params, in_dim)
         else:
-            enc_cls, enc_params_cls = TTS_ENCODERS[encoder_type]
+            enc_cls, enc_params_cls = TTS_ENCODERS[feat_encoder_type]
             enc_params = enc_params_cls(
-                encoder_num_blocks=encoder_num_blocks,
-                encoder_num_layers=encoder_num_layers,
-                encoder_inner_dim=encoder_inner_dim,
+                encoder_num_blocks=feat_encoder_num_blocks,
+                encoder_num_layers=feat_encoder_num_layers,
+                encoder_inner_dim=feat_encoder_inner_dim,
                 encoder_output_dim=output_dim,
                 max_input_length=max_input_length,
                 max_output_length=max_output_length,
             )
-            if use_encoder_condition:
+            if feat_encoder_type != "DummyEncoder" and feat_encoder_use_condition:
                 enc_params.condition = tuple(condition)
                 enc_params.condition_dim = condition_dim
-                enc_params.condition_type = condition_type
+                enc_params.condition_type = feat_condition_type
 
-            self.encoder = enc_cls(enc_params, in_dim)
+            self.feat_encoder = enc_cls(enc_params, in_dim)
 
         # ----- init additional modules -----
 
@@ -329,7 +355,7 @@ class AudioFeatures(FeatureExtractor):
                 }
             else:
                 addm_params.addm_apply_phoneme_classifier = {
-                    self.encoder.name: self.encoder.output_dim
+                    self.feat_encoder.name: self.feat_encoder.output_dim
                 }
 
             if use_vq and use_inverse_grad:
@@ -347,14 +373,14 @@ class AudioFeatures(FeatureExtractor):
             self.addm = None
 
         if use_auxiliary_mel_loss:
-            enc_cls, enc_params_cls = TTS_ENCODERS[encoder_type]
+            enc_cls, enc_params_cls = TTS_ENCODERS[feat_encoder_type]
             enc_params = enc_params_cls(
-                encoder_num_blocks=encoder_num_blocks,
-                encoder_num_layers=encoder_num_layers,
-                encoder_inner_dim=encoder_inner_dim,
+                encoder_num_blocks=feat_encoder_num_blocks,
+                encoder_num_layers=feat_encoder_num_layers,
+                encoder_inner_dim=feat_encoder_inner_dim,
                 encoder_output_dim=mel_spectrogram_dim,
             )
-            self.mel_predictor = enc_cls(enc_params, self.encoder.output_dim)
+            self.mel_predictor = enc_cls(enc_params, self.feat_encoder.output_dim)
         else:
             self.mel_predictor = None
 
@@ -510,8 +536,8 @@ class AudioFeatures(FeatureExtractor):
             inputs.pitch = inputs.pitch * rp[:, 2:3] + rp[:, 0:1]
 
         enc_input = ComponentInput(content=x, content_lengths=x_lens, model_inputs=inputs)
-        enc_output = self.encoder(enc_input)
-        x = enc_output.content
+        enc_output = self.feat_encoder(enc_input)
+        x = self.feat_encoder.get_content(enc_output)[0]
 
         if self.training and self.addm is not None:
             if self.vq_enc is not None:
@@ -552,12 +578,10 @@ class AudioFeatures(FeatureExtractor):
             output = torch.stack(chunk)
             additional_content["energy"] = torch.stack(energy)
             additional_content["pitch"] = torch.stack(pitch)
-            additional_content["style_emb"] = conditions["style_emb"]
         else:
             output = x
             additional_content["energy"] = inputs.energy
             additional_content["pitch"] = inputs.pitch
-            additional_content["style_emb"] = conditions["style_emb"]
 
         additional_content["condition_emb"] = torch.cat(list(conditions.values()), dim=-1)
         return output.transpose(1, -1), losses, additional_content

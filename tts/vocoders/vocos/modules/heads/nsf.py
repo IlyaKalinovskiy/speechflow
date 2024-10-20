@@ -32,10 +32,10 @@ def padDiff(x):
 
 
 class AdaIN1d(nn.Module):
-    def __init__(self, style_dim, num_features):
+    def __init__(self, condition_dim, num_features):
         super().__init__()
         self.norm = nn.InstanceNorm1d(num_features, affine=False)
-        self.fc = nn.Linear(style_dim, num_features * 2)
+        self.fc = nn.Linear(condition_dim, num_features * 2)
 
     def forward(self, x, s):
         h = self.fc(s)
@@ -45,7 +45,7 @@ class AdaIN1d(nn.Module):
 
 
 class AdaINResBlock1(torch.nn.Module):
-    def __init__(self, channels, kernel_size=3, dilation=(1, 3, 5), style_dim=64):
+    def __init__(self, channels, kernel_size=3, dilation=(1, 3, 5), condition_dim=64):
         super().__init__()
         self.convs1 = nn.ModuleList(
             [
@@ -121,17 +121,17 @@ class AdaINResBlock1(torch.nn.Module):
 
         self.adain1 = nn.ModuleList(
             [
-                AdaIN1d(style_dim, channels),
-                AdaIN1d(style_dim, channels),
-                AdaIN1d(style_dim, channels),
+                AdaIN1d(condition_dim, channels),
+                AdaIN1d(condition_dim, channels),
+                AdaIN1d(condition_dim, channels),
             ]
         )
 
         self.adain2 = nn.ModuleList(
             [
-                AdaIN1d(style_dim, channels),
-                AdaIN1d(style_dim, channels),
-                AdaIN1d(style_dim, channels),
+                AdaIN1d(condition_dim, channels),
+                AdaIN1d(condition_dim, channels),
+                AdaIN1d(condition_dim, channels),
             ]
         )
 
@@ -380,7 +380,7 @@ class SourceModuleHnNSF(torch.nn.Module):
 class Generator(torch.nn.Module):
     def __init__(
         self,
-        style_dim,
+        condition_dim,
         resblock_kernel_sizes,
         upsample_rates,
         upsample_initial_channel,
@@ -431,10 +431,10 @@ class Generator(torch.nn.Module):
                         padding=(stride_f0 + 1) // 2,
                     )
                 )
-                self.noise_res.append(resblock(c_cur, 7, [1, 3, 5], style_dim))
+                self.noise_res.append(resblock(c_cur, 7, [1, 3, 5], condition_dim))
             else:
                 self.noise_convs.append(Conv1d(1, c_cur, kernel_size=1))
-                self.noise_res.append(resblock(c_cur, 11, [1, 3, 5], style_dim))
+                self.noise_res.append(resblock(c_cur, 11, [1, 3, 5], condition_dim))
 
         self.resblocks = nn.ModuleList()
         self.alphas = nn.ParameterList()
@@ -447,7 +447,7 @@ class Generator(torch.nn.Module):
             for j, (k, d) in enumerate(
                 zip(resblock_kernel_sizes, resblock_dilation_sizes)
             ):
-                self.resblocks.append(resblock(ch, k, d, style_dim))
+                self.resblocks.append(resblock(ch, k, d, condition_dim))
 
         self.conv_post = weight_norm(Conv1d(ch, 1, 7, 1, padding=3))
         self.ups.apply(init_weights)
@@ -496,7 +496,7 @@ class AdainResBlk1d(nn.Module):
         self,
         dim_in,
         dim_out,
-        style_dim=64,
+        condition_dim=64,
         actv=nn.LeakyReLU(0.2),
         upsample="none",
         dropout_p=0.0,
@@ -506,7 +506,7 @@ class AdainResBlk1d(nn.Module):
         self.upsample_type = upsample
         self.upsample = UpSample1d(upsample)
         self.learned_sc = dim_in != dim_out
-        self._build_weights(dim_in, dim_out, style_dim)
+        self._build_weights(dim_in, dim_out, condition_dim)
         self.dropout = nn.Dropout(dropout_p)
 
         if upsample == "none":
@@ -524,11 +524,11 @@ class AdainResBlk1d(nn.Module):
                 )
             )
 
-    def _build_weights(self, dim_in, dim_out, style_dim):
+    def _build_weights(self, dim_in, dim_out, condition_dim):
         self.conv1 = weight_norm(nn.Conv1d(dim_in, dim_out, 3, 1, 1))
         self.conv2 = weight_norm(nn.Conv1d(dim_out, dim_out, 3, 1, 1))
-        self.norm1 = AdaIN1d(style_dim, dim_in)
-        self.norm2 = AdaIN1d(style_dim, dim_out)
+        self.norm1 = AdaIN1d(condition_dim, dim_in)
+        self.norm2 = AdaIN1d(condition_dim, dim_out)
         if self.learned_sc:
             self.conv1x1 = weight_norm(nn.Conv1d(dim_in, dim_out, 1, 1, 0, bias=False))
 
@@ -570,8 +570,8 @@ class NSFHead(FourierHead):
     def __init__(
         self,
         dim: int = 512,
-        style_emb_dim: int = 64,
         inner_dim: int = 1024,
+        condition_dim: int = 64,
         upsample_initial_channel: int = 512,
         upsample_rates: tp.Tuple[int, ...] = (10, 4, 4, 2),  # for hop=320
         upsample_kernel_sizes: tp.Tuple[int, ...] = (20, 8, 8, 4),
@@ -587,26 +587,26 @@ class NSFHead(FourierHead):
             weight_norm(nn.Conv1d(dim, res_dim, kernel_size=1)),
         )
 
-        self.encode = AdainResBlk1d(dim + 2, inner_dim, style_emb_dim)
+        self.encode = AdainResBlk1d(dim + 2, inner_dim, condition_dim)
 
         self.decode = nn.ModuleList()
         self.decode.append(
-            AdainResBlk1d(inner_dim + res_dim + 2, inner_dim, style_emb_dim)
+            AdainResBlk1d(inner_dim + res_dim + 2, inner_dim, condition_dim)
         )
         self.decode.append(
-            AdainResBlk1d(inner_dim + res_dim + 2, inner_dim, style_emb_dim)
+            AdainResBlk1d(inner_dim + res_dim + 2, inner_dim, condition_dim)
         )
         self.decode.append(
-            AdainResBlk1d(inner_dim + res_dim + 2, inner_dim, style_emb_dim)
+            AdainResBlk1d(inner_dim + res_dim + 2, inner_dim, condition_dim)
         )
         self.decode.append(
             AdainResBlk1d(
-                inner_dim + res_dim + 2, upsample_initial_channel, style_emb_dim
+                inner_dim + res_dim + 2, upsample_initial_channel, condition_dim
             )
         )
 
         self.generator = Generator(
-            style_emb_dim,
+            condition_dim,
             resblock_kernel_sizes,
             upsample_rates,
             upsample_initial_channel,
@@ -616,7 +616,7 @@ class NSFHead(FourierHead):
 
     def forward(self, x, **kwargs):
         y = x.transpose(2, 1)
-        s = kwargs["style_emb"]
+        s = kwargs["condition_emb"]
         energy = kwargs["energy"]
         pitch = kwargs["pitch"]
 

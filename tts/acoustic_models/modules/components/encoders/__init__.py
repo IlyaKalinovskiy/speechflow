@@ -4,6 +4,7 @@ from .acoustic_encoder import (
     AcousticEncoderWithClassificationAdaptor,
     AcousticEncoderWithClassificationAdaptorParams,
 )
+from .adain_encoder import AdainEncoder, AdainEncoderParams
 from .cbhg_encoder import CBHGEncoder, CBHGEncoderParams
 from .conformer_encoder import ConformerEncoder, ConformerEncoderParams
 from .dummy_encoder import DummyEncoder, DummyEncoderParams

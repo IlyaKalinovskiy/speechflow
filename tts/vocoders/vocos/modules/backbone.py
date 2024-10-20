@@ -38,7 +38,7 @@ class VocosBackbone(Backbone):
         intermediate_dim (int): Intermediate dimension used in ConvNeXtBlock.
         num_blocks (int): Number of ConvNeXtBlock layers.
         layer_scale_init_value (float, optional): Initial value for layer scaling. Defaults to `1 / num_layers`.
-        adanorm_num_embeddings (int, optional): Number of embeddings for AdaLayerNorm.
+        condition_dim (int, optional): Number of embeddings for AdaLayerNorm.
                                                 None means non-conditional model. Defaults to None.
 
     """
@@ -50,14 +50,14 @@ class VocosBackbone(Backbone):
         intermediate_dim: int,
         num_blocks: int,
         layer_scale_init_value: Optional[float] = None,
-        adanorm_condition_dim: Optional[int] = None,
+        condition_dim: Optional[int] = None,
     ):
         super().__init__()
         self.input_channels = input_channels
         self.embed = nn.Conv1d(input_channels, dim, kernel_size=7, padding=3)
-        self.adanorm = adanorm_condition_dim is not None
-        if adanorm_condition_dim:
-            self.norm = AdaLayerNorm(adanorm_condition_dim, dim, eps=1e-6)
+        self.adanorm = condition_dim is not None
+        if condition_dim:
+            self.norm = AdaLayerNorm(condition_dim, dim, eps=1e-6)
         else:
             self.norm = nn.LayerNorm(dim, eps=1e-6)
         layer_scale_init_value = layer_scale_init_value or 1 / num_blocks
@@ -67,7 +67,7 @@ class VocosBackbone(Backbone):
                     dim=dim,
                     intermediate_dim=intermediate_dim,
                     layer_scale_init_value=layer_scale_init_value,
-                    adanorm_condition_dim=adanorm_condition_dim,
+                    condition_dim=condition_dim,
                 )
                 for _ in range(num_blocks)
             ]
