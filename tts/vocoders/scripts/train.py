@@ -14,6 +14,8 @@ THIS_PATH = Path(__file__).absolute()
 ROOT = THIS_PATH.parents[3]
 sys.path.append(ROOT.as_posix())
 
+from clearml import Task
+
 from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
     TTSTextProcessor,
 )
@@ -81,6 +83,10 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         info_file_path.write_bytes(pickle.dumps(dl_train.client.info))
         saver.to_save["files"]["info_file_name"] = info_file_name
 
+    clearml_task = Task.init(
+        task_name=experiment_path.name, project_name=experiment_path.parent.name
+    )
+
     engine_type = cfg_model["engine"].class_name
     if "Vocos" in engine_type:
         pl_engine_cls = getattr(vocos, engine_type)
@@ -109,7 +115,7 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         head = init_class_from_config(head_cls, head_cfg.init_args)()
 
         pl_engine = init_class_from_config(pl_engine_cls, cfg_model["engine"].init_args)(
-            feat, backbone, head, batch_processor, saver
+            feat, backbone, head, batch_processor, saver, clearml_task=clearml_task
         )
     else:
         raise NotImplementedError
