@@ -636,7 +636,7 @@ class NSFHead(FourierHead):
             if p_down:
                 pitch = nn.functional.conv1d(
                     pitch.unsqueeze(1),
-                    torch.ones(1, 1, p_down).to("cuda"),
+                    torch.ones(1, 1, p_down).to(pitch.device),
                     padding=p_down // 2,
                 )
                 pitch = pitch.squeeze(1) / p_down

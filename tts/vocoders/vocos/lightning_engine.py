@@ -1,3 +1,4 @@
+import io
 import math
 import typing as tp
 
@@ -7,7 +8,7 @@ import torchaudio
 import transformers
 import pytorch_lightning as pl
 
-from speechflow.io import tp_PATH
+from speechflow.io import AudioChunk, tp_PATH
 from speechflow.training.saver import ExperimentSaver
 from tts.vocoders.batch_processor import VocoderBatchProcessor
 from tts.vocoders.data_types import VocoderForwardInput
@@ -62,6 +63,7 @@ class VocosLightningEngine(pl.LightningModule):
         evaluate_utmos: bool = False,
         evaluate_pesq: bool = False,
         evaluate_periodicty: bool = False,
+        clearml_task=None,
     ):
         """
         Args:
@@ -119,6 +121,8 @@ class VocosLightningEngine(pl.LightningModule):
 
         self.train_discriminator = False
         self.base_mel_coeff = self.mel_loss_coeff = mel_loss_coeff
+
+        self.clearml_task = clearml_task
 
     def on_fit_start(self):
         self.batch_processor.set_device(self.device)
@@ -186,6 +190,43 @@ class VocosLightningEngine(pl.LightningModule):
             "spec_chunk": inputs.additional_inputs.get("spec_chunk"),
             "model_inputs": inputs,
         }
+
+    def log_image(self, tag, snd_tensor):
+        img = plot_spectrogram_to_numpy(snd_tensor.cpu().data.numpy())
+        self.logger.experiment.add_image(
+            tag,
+            img,
+            self.global_step,
+            dataformats="HWC",
+        )
+
+        if self.clearml_task is not None:
+            self.clearml_task.logger.report_image(
+                title=tag,
+                image=img,
+                iteration=self.global_step,
+                series="image color red",
+            )
+
+    def log_audio(self, tag, snd_tensor):
+        self.logger.experiment.add_audio(
+            tag,
+            snd_tensor.cpu().float(),
+            self.global_step,
+            self.hparams.sample_rate,
+        )
+
+        if self.clearml_task is not None:
+            audio_chunk = AudioChunk(
+                data=snd_tensor.cpu().float().data.numpy(), sr=self.hparams.sample_rate
+            )
+            self.clearml_task.logger.report_media(
+                title=tag,
+                stream=io.BytesIO(audio_chunk.tobytes()),
+                iteration=self.global_step,
+                file_extension="wav",
+                series="tada",
+            )
 
     def training_step(self, batch, batch_idx, optimizer_idx, **kwargs):
         inputs, targets, metadata = self.batch_processor(
@@ -285,34 +326,23 @@ class VocosLightningEngine(pl.LightningModule):
             self.log("generator/mel_loss", mel_loss)
 
             if self.global_step % 1000 == 0 and self.global_rank == 0:
-                self.logger.experiment.add_audio(
+                self.log_audio(
                     "train/audio_in",
-                    audio_input[0].data.float().cpu(),
-                    self.global_step,
-                    self.hparams.sample_rate,
+                    audio_input[0],
                 )
-                self.logger.experiment.add_audio(
+                self.log_audio(
                     "train/audio_pred",
-                    audio_hat[0].data.float().cpu(),
-                    self.global_step,
-                    self.hparams.sample_rate,
+                    audio_hat[0],
                 )
 
                 with torch.no_grad():
                     mel = safe_log(self.melspec_loss.mel_spec(audio_input[0]))
                     mel_hat = safe_log(self.melspec_loss.mel_spec(audio_hat[0]))
 
-                self.logger.experiment.add_image(
-                    "train/mel_target",
-                    plot_spectrogram_to_numpy(mel.data.cpu().numpy()),
-                    self.global_step,
-                    dataformats="HWC",
-                )
-                self.logger.experiment.add_image(
+                self.log_image("train/mel_target", mel)
+                self.log_image(
                     "train/mel_pred",
-                    plot_spectrogram_to_numpy(mel_hat.data.cpu().numpy()),
-                    self.global_step,
-                    dataformats="HWC",
+                    mel_hat,
                 )
 
             return loss
@@ -388,33 +418,16 @@ class VocosLightningEngine(pl.LightningModule):
     def validation_epoch_end(self, outputs):
         if self.global_rank == 0:
             *_, audio_in, audio_pred = outputs[0].values()
-            self.logger.experiment.add_audio(
-                "val_in",
-                audio_in.data.float().cpu().numpy(),
-                self.global_step,
-                self.hparams.sample_rate,
-            )
-            self.logger.experiment.add_audio(
-                "val_pred",
-                audio_pred.data.float().cpu().numpy(),
-                self.global_step,
-                self.hparams.sample_rate,
-            )
+            self.log_audio("val_in", audio_in)
+            self.log_audio("val_pred", audio_pred)
 
             mel_target = safe_log(self.melspec_loss.mel_spec(audio_in))
             mel_hat = safe_log(self.melspec_loss.mel_spec(audio_pred))
 
-            self.logger.experiment.add_image(
-                "val_mel_target",
-                plot_spectrogram_to_numpy(mel_target.data.cpu().numpy()),
-                self.global_step,
-                dataformats="HWC",
-            )
-            self.logger.experiment.add_image(
+            self.log_image("val_mel_target", mel_target)
+            self.log_image(
                 "val_mel_hat",
-                plot_spectrogram_to_numpy(mel_hat.data.cpu().numpy()),
-                self.global_step,
-                dataformats="HWC",
+                mel_hat,
             )
 
         avg_loss = torch.stack([x["val_loss"] for x in outputs]).mean()
