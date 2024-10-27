@@ -6,6 +6,8 @@ from itertools import combinations, product
 import torch
 import torch.nn as nn
 
+__all__ = ["VectorQuantizer", "VectorQuantizerOutput"]
+
 
 @dataclass
 class VectorQuantizerOutput:

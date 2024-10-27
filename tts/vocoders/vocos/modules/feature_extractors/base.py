@@ -1,14 +1,16 @@
 import torch
 
-from torch import nn
-
+from speechflow.training.base_model import BaseTorchModel, BaseTorchModelParams
 from tts.vocoders.data_types import VocoderForwardInput
 
 __all__ = ["FeatureExtractor"]
 
 
-class FeatureExtractor(nn.Module):
+class FeatureExtractor(BaseTorchModel):
     """Base class for feature extractors."""
+
+    def __init__(self, params: BaseTorchModelParams):
+        super().__init__(params)
 
     def forward(self, inputs: VocoderForwardInput, **kwargs) -> torch.Tensor:
         """Extract features from the given audio.

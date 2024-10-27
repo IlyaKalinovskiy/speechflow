@@ -43,7 +43,6 @@ class TokenLevelDP(Component):
 
         def _init_encoder(_enc_cls, _enc_params_cls, _encoder_params):
             _enc_params = _enc_params_cls.init_from_parent_params(params, _encoder_params)
-            _enc_params.encoder_num_blocks = params.vp_num_blocks
             _enc_params.encoder_num_layers = params.vp_num_layers
             _enc_params.encoder_inner_dim = params.vp_inner_dim
             _enc_params.encoder_output_dim = 1

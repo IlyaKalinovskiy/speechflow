@@ -36,13 +36,15 @@ def stack(input_ele, mel_max_length=None):
 
 @lru_cache(maxsize=16)
 @torch.no_grad()
-def get_mask_from_lengths(lengths, max_len=None):
+def get_mask_from_lengths(lengths, max_length=None):
     batch_size = lengths.shape[0]
-    if max_len is None:
-        max_len = torch.max(lengths)
+    if max_length is None:
+        max_length = torch.max(lengths)
 
-    ids = torch.arange(0, max_len).unsqueeze(0).expand(batch_size, -1).to(lengths.device)
-    mask = ids < lengths.unsqueeze(1).expand(-1, max_len)
+    ids = (
+        torch.arange(0, max_length).unsqueeze(0).expand(batch_size, -1).to(lengths.device)
+    )
+    mask = ids < lengths.unsqueeze(1).expand(-1, max_length)
     # assert (get_lengths_from_mask(mask) == lengths).all()
     return mask.detach()  # type: ignore
 
@@ -216,15 +218,21 @@ def run_rnn_on_padded_sequence(
     else:
         # pytorch tensor are not reversible, hence the conversion
         seq_lengths = seq_lengths.cpu()
-        seq = torch.nn.utils.rnn.pack_padded_sequence(
+        pack_seq = torch.nn.utils.rnn.pack_padded_sequence(
             seq, seq_lengths, batch_first=batch_first, enforce_sorted=enforce_sorted
         )
 
         rnn.flatten_parameters()
-        seq, _ = rnn(seq.float())
+        pack_seq, _ = rnn(pack_seq.float())
 
-        seq, _ = torch.nn.utils.rnn.pad_packed_sequence(seq, batch_first=batch_first)
-        return seq
+        out_seq, _ = torch.nn.utils.rnn.pad_packed_sequence(
+            pack_seq, batch_first=batch_first
+        )
+
+        if seq.shape[1] != out_seq.shape[1]:
+            out_seq = F.pad(out_seq, (0, 0, 0, seq.shape[1] - out_seq.shape[1], 0, 0))
+
+        return out_seq
 
 
 def tensor_masking(

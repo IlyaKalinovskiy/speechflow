@@ -19,6 +19,8 @@ import torch.nn as nn
 
 from torch import Tensor
 
+__all__ = ["PositionalEncoding"]
+
 
 class PositionalEncoding(nn.Module):
     """Positional Encoding proposed in "Attention Is All You Need". Since transformer

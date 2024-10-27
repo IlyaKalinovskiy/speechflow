@@ -1,1 +1,1 @@
-from .signal_discriminator import SignalDiscriminator
+from .signal_discriminator import *

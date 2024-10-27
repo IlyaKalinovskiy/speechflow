@@ -20,6 +20,11 @@ __all__ = [
 class AcousticEncoderParams(EncoderParams):
     upsample: bool = False
 
+    # projection
+    use_projection: bool = True
+    projection_p_dropout: float = 0.1
+    projection_activation_fn: str = "Identity"
+
 
 class AcousticEncoder(Component):
     params: AcousticEncoderParams
@@ -27,10 +32,11 @@ class AcousticEncoder(Component):
     def __init__(self, params: AcousticEncoderParams, input_dim: int):
         super().__init__(params, input_dim)
         inner_dim = params.encoder_inner_dim
-        output_dim = params.encoder_output_dim
-        self.prenet = PreNet(input_dim, inner_dim, output_dim)
+
+        self.prenet = PreNet(input_dim, inner_dim, inner_dim)
+
         self.convs = nn.Sequential(
-            nn.Conv1d(output_dim, inner_dim, 5, 1, 2),
+            nn.Conv1d(inner_dim, inner_dim, 5, 1, 2),
             nn.ReLU(),
             nn.InstanceNorm1d(inner_dim),
             nn.ConvTranspose1d(inner_dim, inner_dim, 4, 2, 1)
@@ -40,11 +46,23 @@ class AcousticEncoder(Component):
             nn.ReLU(),
             nn.InstanceNorm1d(inner_dim),
         )
-        self.proj = Regression(inner_dim, output_dim)
+
+        if params.use_projection:
+            self.proj = Regression(
+                inner_dim,
+                params.encoder_output_dim,
+                p_dropout=params.projection_p_dropout,
+                activation_fn=params.projection_activation_fn,
+            )
+        else:
+            self.proj = nn.Identity()
 
     @property
     def output_dim(self):
-        return self.params.encoder_output_dim
+        if self.params.use_projection:
+            return self.params.encoder_output_dim
+        else:
+            return self.params.encoder_inner_dim
 
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
         x, x_lens, x_mask = self.get_content_and_mask(inputs)

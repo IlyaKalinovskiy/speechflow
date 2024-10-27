@@ -10,7 +10,7 @@ from torch import nn
 from speechflow.utils.tensor_utils import run_rnn_on_padded_sequence
 from tts.acoustic_models.modules.common.layers import Conv, HighwayNetwork
 
-__all__ = ["VarianceEmbedding", "Regression", "ConvPrenet"]
+__all__ = ["VarianceEmbedding", "Regression", "ConvPrenet", "CBHG"]
 
 
 class VarianceEmbedding(nn.Module):
@@ -60,15 +60,14 @@ class Regression(nn.Module):
         self,
         in_dim: int,
         out_dim: int,
-        hidden_dim: int = 256,
         p_dropout: float = 0.1,
         activation_fn: str = "Identity",
     ):
         super().__init__()
-        self.linear1 = nn.Linear(in_features=in_dim, out_features=hidden_dim)
+        self.linear1 = nn.Linear(in_features=in_dim, out_features=in_dim)
         self.af1 = nn.LeakyReLU(0.2)
         self.dropout = nn.Dropout(p_dropout)
-        self.linear2 = nn.Linear(in_features=hidden_dim, out_features=out_dim)
+        self.linear2 = nn.Linear(in_features=in_dim, out_features=out_dim)
         self.af2 = getattr(nn, activation_fn)()
 
     def forward(self, x, x_mask=None):
@@ -127,17 +126,17 @@ class ConvPrenet(nn.Module):
 class CBHG(nn.Module):
     def __init__(
         self,
+        in_dim: int,
+        out_dim: int,
         conv_banks_num: int,
-        in_channels: int,
-        out_channels: int,
         highways_num: int,
         kernel_size: int = 3,
-        bidirectional_rnn: bool = True,
-        rnn_channels: tp.Optional[int] = None,
+        rnn_dim: tp.Optional[int] = None,
+        rnn_bidirectional: bool = True,
     ):
         super().__init__()
-        if rnn_channels is None:
-            rnn_channels = in_channels
+        if rnn_dim is None:
+            rnn_dim = in_dim
 
         # List of all rnns to call `flatten_parameters()` on
         self._to_flatten = []
@@ -147,8 +146,8 @@ class CBHG(nn.Module):
         for k in self.bank_kernels:
             padding = math.ceil((k - 1) / 2)
             conv = Conv(
-                in_channels,
-                out_channels,
+                in_dim,
+                out_dim,
                 kernel_size=k,
                 padding=padding,
                 bias=False,
@@ -160,8 +159,8 @@ class CBHG(nn.Module):
         self.maxpool = nn.MaxPool1d(kernel_size=2, stride=1, padding=0, ceil_mode=True)
 
         self.conv_project1 = Conv(
-            conv_banks_num * out_channels,
-            out_channels,
+            conv_banks_num * out_dim,
+            out_dim,
             kernel_size=kernel_size,
             padding=math.ceil((kernel_size - 1) / 2),
             bias=False,
@@ -169,8 +168,8 @@ class CBHG(nn.Module):
             use_activation=True,
         )
         self.conv_project2 = Conv(
-            out_channels,
-            in_channels,
+            out_dim,
+            in_dim,
             kernel_size=kernel_size,
             padding=math.ceil((kernel_size - 1) / 2),
             bias=False,
@@ -180,14 +179,14 @@ class CBHG(nn.Module):
 
         self.highways = nn.ModuleList()
         for i in range(highways_num):
-            hn = HighwayNetwork(in_channels)
+            hn = HighwayNetwork(in_dim)
             self.highways.append(hn)
 
         self.rnn = nn.GRU(
-            rnn_channels,
-            out_channels // (2 if bidirectional_rnn else 1),
+            rnn_dim,
+            out_dim // (2 if rnn_bidirectional else 1),
             batch_first=True,
-            bidirectional=bidirectional_rnn,
+            bidirectional=rnn_bidirectional,
         )
         self._to_flatten.append(self.rnn)
 

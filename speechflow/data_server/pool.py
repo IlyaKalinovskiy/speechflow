@@ -33,16 +33,16 @@ class WorkerPool:
         )
         return init_class_from_config(WorkerPool, cfg)()
 
-    def start(self, timeout: float = 0.1, tick: float = 0.05):
+    def start(self):
         for w in self._workers:
-            w.start(timeout, tick)
+            w.start(check_start=False)
 
         while True:
             if any([w.exitcode is not None and w.exitcode > 0 for w in self._workers]):
                 raise RuntimeError(f"{self.__class__.__name__} fails to start!")
             if all([w.is_started() for w in self._workers]):
                 break
-            time.sleep(1)
+            time.sleep(0.1)
 
     def join(self):
         for w in self._workers:
@@ -50,7 +50,7 @@ class WorkerPool:
 
     def finish(self):
         for w in self._workers:
-            w.finish()
+            w.finish(timeout=0.01)
 
 
 if __name__ == "__main__":

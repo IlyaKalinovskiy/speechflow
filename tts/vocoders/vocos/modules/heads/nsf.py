@@ -10,11 +10,117 @@ import torch.nn.functional as F
 from torch.nn import Conv1d, ConvTranspose1d
 from torch.nn.utils import remove_weight_norm, weight_norm
 
-from tts.vocoders.vocos.modules.heads.fourier import FourierHead
+from speechflow.training.base_model import BaseTorchModelParams
+from tts.vocoders.vocos.modules.heads.base import WaveformGenerator
 
-LRELU_SLOPE = 0.1
+__all__ = ["NSFHead", "NSFHeadParams"]
 
-__all__ = ["NSFHead"]
+
+class NSFHeadParams(BaseTorchModelParams):
+    input_dim: int = 512
+    inner_dim: int = 1024
+    condition_dim: int = 64
+    upsample_initial_channel: int = 512
+    upsample_rates: tp.Tuple[int, ...] = (10, 4, 4, 2)  # for hop=320
+    upsample_kernel_sizes: tp.Tuple[int, ...] = (20, 8, 8, 4)
+    resblock_kernel_sizes: tp.Tuple[int, ...] = (3, 7, 11)
+    resblock_dilation_sizes: tp.Tuple[int, ...] = ([1, 3, 5], [1, 3, 5], [1, 3, 5])
+
+
+class NSFHead(WaveformGenerator):
+    params: NSFHeadParams
+
+    def __init__(self, params: NSFHeadParams):
+        super().__init__(params)
+        res_dim = params.inner_dim // 16 - 2
+
+        self.energy_conv = weight_norm(nn.Conv1d(1, 1, kernel_size=3, padding=1))
+        self.pitch_conv = weight_norm(nn.Conv1d(1, 1, kernel_size=3, padding=1))
+        self.res_proj = nn.Sequential(
+            weight_norm(nn.Conv1d(params.input_dim, res_dim, kernel_size=1)),
+        )
+
+        self.encode = AdainResBlk1d(
+            params.input_dim + 2, params.inner_dim, params.condition_dim
+        )
+
+        self.decode = nn.ModuleList()
+        self.decode.append(
+            AdainResBlk1d(
+                params.inner_dim + res_dim + 2, params.inner_dim, params.condition_dim
+            )
+        )
+        self.decode.append(
+            AdainResBlk1d(
+                params.inner_dim + res_dim + 2, params.inner_dim, params.condition_dim
+            )
+        )
+        self.decode.append(
+            AdainResBlk1d(
+                params.inner_dim + res_dim + 2, params.inner_dim, params.condition_dim
+            )
+        )
+        self.decode.append(
+            AdainResBlk1d(
+                params.inner_dim + res_dim + 2,
+                params.upsample_initial_channel,
+                params.condition_dim,
+            )
+        )
+
+        self.generator = Generator(
+            params.condition_dim,
+            params.resblock_kernel_sizes,
+            params.upsample_rates,
+            params.upsample_initial_channel,
+            params.resblock_dilation_sizes,
+            params.upsample_kernel_sizes,
+        )
+
+    def forward(self, x, **kwargs):
+        y = x.transpose(2, 1)
+        s = kwargs["condition_emb"]
+        energy = kwargs["energy"]
+        pitch = kwargs["pitch"]
+
+        if self.training:
+            downlist = [0, 3, 7, 15]
+            e_down = downlist[random.randint(0, 3)]
+            if e_down:
+                energy = nn.functional.conv1d(
+                    energy.unsqueeze(1),
+                    torch.ones(1, 1, e_down).to(energy.device),
+                    padding=e_down // 2,
+                )
+                energy = energy.squeeze(1) / e_down
+
+            downlist = [0, 3, 7]
+            p_down = downlist[random.randint(0, 2)]
+            if p_down:
+                pitch = nn.functional.conv1d(
+                    pitch.unsqueeze(1),
+                    torch.ones(1, 1, p_down).to(pitch.device),
+                    padding=p_down // 2,
+                )
+                pitch = pitch.squeeze(1) / p_down
+
+        e = self.energy_conv(energy.unsqueeze(1))
+        p = self.pitch_conv(pitch.unsqueeze(1))
+
+        x = torch.cat([y, e, p], axis=1)
+        x = self.encode(x, s)
+        y_res = self.res_proj(y)
+
+        res = True
+        for block in self.decode:
+            if res:
+                x = torch.cat([x, y_res, e, p], axis=1)
+            x = block(x, s)
+            if block.upsample_type != "none":
+                res = False
+
+        x = self.generator(x, s, pitch)
+        return x.squeeze(1), None, {}
 
 
 def init_weights(m, mean=0.0, std=0.01):
@@ -564,97 +670,3 @@ class UpSample1d(nn.Module):
             return x
         else:
             return F.interpolate(x, scale_factor=2, mode="nearest")
-
-
-class NSFHead(FourierHead):
-    def __init__(
-        self,
-        dim: int = 512,
-        inner_dim: int = 1024,
-        condition_dim: int = 64,
-        upsample_initial_channel: int = 512,
-        upsample_rates: tp.Tuple[int, ...] = (10, 4, 4, 2),  # for hop=320
-        upsample_kernel_sizes: tp.Tuple[int, ...] = (20, 8, 8, 4),
-        resblock_kernel_sizes: tp.Tuple[int, ...] = (3, 7, 11),
-        resblock_dilation_sizes: tp.Tuple[int, ...] = ([1, 3, 5], [1, 3, 5], [1, 3, 5]),
-    ):
-        super().__init__()
-        res_dim = inner_dim // 16 - 2
-
-        self.energy_conv = weight_norm(nn.Conv1d(1, 1, kernel_size=3, padding=1))
-        self.pitch_conv = weight_norm(nn.Conv1d(1, 1, kernel_size=3, padding=1))
-        self.res_proj = nn.Sequential(
-            weight_norm(nn.Conv1d(dim, res_dim, kernel_size=1)),
-        )
-
-        self.encode = AdainResBlk1d(dim + 2, inner_dim, condition_dim)
-
-        self.decode = nn.ModuleList()
-        self.decode.append(
-            AdainResBlk1d(inner_dim + res_dim + 2, inner_dim, condition_dim)
-        )
-        self.decode.append(
-            AdainResBlk1d(inner_dim + res_dim + 2, inner_dim, condition_dim)
-        )
-        self.decode.append(
-            AdainResBlk1d(inner_dim + res_dim + 2, inner_dim, condition_dim)
-        )
-        self.decode.append(
-            AdainResBlk1d(
-                inner_dim + res_dim + 2, upsample_initial_channel, condition_dim
-            )
-        )
-
-        self.generator = Generator(
-            condition_dim,
-            resblock_kernel_sizes,
-            upsample_rates,
-            upsample_initial_channel,
-            resblock_dilation_sizes,
-            upsample_kernel_sizes,
-        )
-
-    def forward(self, x, **kwargs):
-        y = x.transpose(2, 1)
-        s = kwargs["condition_emb"]
-        energy = kwargs["energy"]
-        pitch = kwargs["pitch"]
-
-        if self.training:
-            downlist = [0, 3, 7, 15]
-            e_down = downlist[random.randint(0, 3)]
-            if e_down:
-                energy = nn.functional.conv1d(
-                    energy.unsqueeze(1),
-                    torch.ones(1, 1, e_down).to(energy.device),
-                    padding=e_down // 2,
-                )
-                energy = energy.squeeze(1) / e_down
-
-            downlist = [0, 3, 7]
-            p_down = downlist[random.randint(0, 2)]
-            if p_down:
-                pitch = nn.functional.conv1d(
-                    pitch.unsqueeze(1),
-                    torch.ones(1, 1, p_down).to(pitch.device),
-                    padding=p_down // 2,
-                )
-                pitch = pitch.squeeze(1) / p_down
-
-        e = self.energy_conv(energy.unsqueeze(1))
-        p = self.pitch_conv(pitch.unsqueeze(1))
-
-        x = torch.cat([y, e, p], axis=1)
-        x = self.encode(x, s)
-        y_res = self.res_proj(y)
-
-        res = True
-        for block in self.decode:
-            if res:
-                x = torch.cat([x, y_res, e, p], axis=1)
-            x = block(x, s)
-            if block.upsample_type != "none":
-                res = False
-
-        x = self.generator(x, s, pitch)
-        return x.squeeze(1), None, {}

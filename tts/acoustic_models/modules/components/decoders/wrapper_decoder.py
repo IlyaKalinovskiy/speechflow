@@ -1,3 +1,7 @@
+import typing as tp
+
+from pydantic import Field
+
 from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.data_types import (
     ComponentOutput,
@@ -13,8 +17,8 @@ __all__ = [
 
 
 class WrapperDecoderParams(DecoderParams):
-    base_decoder_type: str = "RNNEncoder"  # type: ignore
-    base_decoder_params: dict = None  # type: ignore
+    base_decoder_type: str = "RNNEncoder"
+    base_decoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
 
 
 class WrapperDecoder(Component):
@@ -40,7 +44,6 @@ class WrapperDecoder(Component):
         )
 
         if components == TTS_ENCODERS:
-            dec_params.encoder_num_blocks = params.decoder_num_blocks
             dec_params.encoder_num_layers = params.decoder_num_layers
             dec_params.encoder_inner_dim = params.decoder_inner_dim
             dec_params.encoder_output_dim = params.decoder_output_dim

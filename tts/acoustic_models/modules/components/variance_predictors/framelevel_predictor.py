@@ -50,7 +50,6 @@ class FrameLevelPredictor(Component):
                 _output_dim = params.vp_output_dim
 
             _enc_params = _enc_params_cls.init_from_parent_params(params, _encoder_params)
-            _enc_params.encoder_num_blocks = params.vp_num_blocks
             _enc_params.encoder_num_layers = params.vp_num_layers
             _enc_params.encoder_inner_dim = params.vp_inner_dim
             _enc_params.encoder_output_dim = _output_dim
@@ -206,7 +205,7 @@ class FrameLevelPredictorWithDiscriminator(FrameLevelPredictor, Component):
             var_real = var
             var_fake = var_content[f"{name}_vp_predict"]
             context = var_content[f"{name}_vp_context"]
-            mask = get_mask_from_lengths(x_lengths)
+            mask = get_mask_from_lengths(x_lengths, max_length=x.shape[1])
 
             if var_real.ndim == 2:
                 var_real = var_real.unsqueeze(-1)

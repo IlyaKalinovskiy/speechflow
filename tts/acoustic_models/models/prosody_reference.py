@@ -16,6 +16,8 @@ from speechflow.data_pipeline.datasample_processors.data_types import (
 from speechflow.io import AudioChunk
 from speechflow.utils.seed import set_random_seed
 
+__all__ = ["ProsodyReference"]
+
 REFERENECE_TYPE = tp.Union[
     int, str, Path, tp.Tuple[tp.Union[str, int], int], tp.Tuple[npt.NDArray, int]
 ]

@@ -5,23 +5,23 @@ import torch
 from torch.nn import functional as F
 
 from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
-from tts.acoustic_models.models.tts_model import ParallelTTSModel
+from tts.acoustic_models.models.tts_model import ParallelTTSModel, ParallelTTSParams
 from tts.acoustic_models.modules.common.blocks import Regression
 from tts.vocoders.data_types import VocoderForwardInput
 from tts.vocoders.vocos.modules.feature_extractors import FeatureExtractor
 
-__all__ = ["TTSFeatures"]
+__all__ = ["TTSFeatures", "TTSFeaturesParams"]
+
+
+class TTSFeaturesParams(ParallelTTSParams):
+    pass
 
 
 class TTSFeatures(FeatureExtractor):
-    def __init__(
-        self,
-        tts_cfg: tp.MutableMapping,
-        output_dim: int = 256,
-    ):
+    def __init__(self, tts_cfg: tp.Union[tp.MutableMapping, TTSFeaturesParams]):
         super().__init__()
         self._tts = ParallelTTSModel(tts_cfg)
-        self._mel_proj = Regression(output_dim, 80)
+        self._mel_proj = Regression(tts_cfg.decoder_output_dim, 80)
 
     def forward(self, inputs: VocoderForwardInput, **kwargs):
         if inputs.__class__.__name__ != "TTSForwardInputWithSSML":
@@ -78,6 +78,8 @@ class TTSFeatures(FeatureExtractor):
                 d = outputs.additional_content
             elif isinstance(outputs, TTSForwardInput):
                 d = outputs.additional_inputs
+            else:
+                raise TypeError(f"Type {type(outputs)} is not supported.")
 
             additional_content["energy"] = d["energy_postprocessed"]
             additional_content["pitch"] = d["pitch_postprocessed"]

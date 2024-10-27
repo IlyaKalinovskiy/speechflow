@@ -29,7 +29,7 @@ class BaseTorchModelParams(pydantic.BaseModel):
     def __contains__(self, key):
         return key in self.__dict__
 
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, __context: Any):
         pass
 
     @classmethod

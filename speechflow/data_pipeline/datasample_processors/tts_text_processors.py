@@ -953,6 +953,7 @@ class MultilingualPLBert(BaseDSProcessor):
 
             feat_shape = (ds.ssl_feat.encoder_feat.shape[0], feat.shape[1])
             feat = torch.zeros(feat_shape)
+            last_emb = torch.zeros(feat_shape[1])
             prev_t_id = alignments[0][0]
             symb = ""
             for i, t_id in enumerate(alignments[0].numpy()):
@@ -962,7 +963,10 @@ class MultilingualPLBert(BaseDSProcessor):
                 if t_id != blank_id:
                     symb = id_to_symb[t_id]
                     embs = feat_wo_sil[: len(symb)]
-                    feat[i, :] = torch.stack(embs, dim=0).sum(dim=0)
+                    last_emb = torch.stack(embs, dim=0).sum(dim=0)
+
+                if i < feat.shape[0]:
+                    feat[i, :] = last_emb
 
                 prev_t_id = t_id
 

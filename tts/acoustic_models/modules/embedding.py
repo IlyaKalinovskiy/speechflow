@@ -8,6 +8,8 @@ from tts.acoustic_models.modules.data_types import ComponentOutput
 from tts.acoustic_models.modules.embedding_calculator import EmbeddingCalculator
 from tts.acoustic_models.modules.params import EmbeddingParams
 
+__all__ = ["EmbeddingComponent"]
+
 
 class EmbeddingComponent(Component):
     params: EmbeddingParams

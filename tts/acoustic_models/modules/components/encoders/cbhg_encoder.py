@@ -19,6 +19,11 @@ class CBHGEncoderParams(EncoderParams):
     kernel_size: int = 3
     highways_num: int = 1
 
+    # projection
+    use_projection: bool = True
+    projection_p_dropout: float = 0.1
+    projection_activation_fn: str = "Identity"
+
 
 class CBHGEncoder(Component):
     params: CBHGEncoderParams
@@ -26,11 +31,10 @@ class CBHGEncoder(Component):
     def __init__(self, params: CBHGEncoderParams, input_dim):
         super().__init__(params, input_dim)
 
-        in_channels = input_dim
-        inner_channels = params.encoder_inner_dim
-        out_channels = params.encoder_output_dim
+        in_dim = input_dim
+        inner_dim = params.encoder_inner_dim
 
-        self.prenet = ConvPrenet(in_channels, inner_channels)
+        self.prenet = ConvPrenet(in_dim, inner_dim)
 
         self.bank_kernels = [
             params.kernel_size * (i + 1) for i in range(params.conv_banks_num)
@@ -39,8 +43,8 @@ class CBHGEncoder(Component):
         for k in self.bank_kernels:
             padding = math.ceil((k - 1) / 2)
             conv = Conv(
-                inner_channels,
-                inner_channels,
+                inner_dim,
+                inner_dim,
                 kernel_size=k,
                 padding=padding,
                 bias=False,
@@ -52,8 +56,8 @@ class CBHGEncoder(Component):
         self.maxpool = nn.MaxPool1d(kernel_size=2, stride=1, padding=0, ceil_mode=True)
 
         self.conv_project1 = Conv(
-            params.conv_banks_num * inner_channels,
-            inner_channels,
+            params.conv_banks_num * inner_dim,
+            inner_dim,
             kernel_size=params.kernel_size,
             padding=math.ceil((params.kernel_size - 1) / 2),
             bias=False,
@@ -61,8 +65,8 @@ class CBHGEncoder(Component):
             use_activation=True,
         )
         self.conv_project2 = Conv(
-            inner_channels,
-            inner_channels,
+            inner_dim,
+            inner_dim,
             kernel_size=params.kernel_size,
             padding=math.ceil((params.kernel_size - 1) / 2),
             bias=False,
@@ -72,14 +76,25 @@ class CBHGEncoder(Component):
 
         self.highways = nn.ModuleList()
         for i in range(params.highways_num):
-            hn = HighwayNetwork(inner_channels)
+            hn = HighwayNetwork(inner_dim)
             self.highways.append(hn)
 
-        self.proj = Regression(inner_channels, out_channels)
+        if params.use_projection:
+            self.proj = Regression(
+                inner_dim,
+                params.encoder_output_dim,
+                p_dropout=params.projection_p_dropout,
+                activation_fn=params.projection_activation_fn,
+            )
+        else:
+            self.proj = nn.Identity()
 
     @property
     def output_dim(self):
-        return self.params.encoder_output_dim
+        if self.params.use_projection:
+            return self.params.encoder_output_dim
+        else:
+            return self.params.encoder_inner_dim
 
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
         x, x_lens, x_mask = self.get_content_and_mask(inputs)

@@ -7,6 +7,8 @@ from contextlib import contextmanager
 import torch
 import torch.nn as nn
 
+__all__ = ["MixStyle"]
+
 
 def deactivate_mixstyle(m):
     if type(m) == MixStyle:

@@ -5,8 +5,8 @@ import torch
 from torch import nn
 
 from speechflow.utils.tensor_utils import run_rnn_on_padded_sequence
+from tts.acoustic_models.modules.common import AdaLayerNorm
 from tts.acoustic_models.modules.common.blocks import Regression
-from tts.acoustic_models.modules.common.layer_norm import AdaLayerNorm
 from tts.acoustic_models.modules.components.encoders.cnn_encoder import (
     CNNEncoder,
     CNNEncoderParams,
@@ -17,11 +17,19 @@ __all__ = ["RNNEncoder", "RNNEncoderParams"]
 
 
 class RNNEncoderParams(CNNEncoderParams):
+    # condition
     condition: tp.Tuple[str, ...] = ()
     condition_dim: int = 0
     condition_type: tp.Literal["cat", "adanorm"] = "cat"
-    bidirectional: bool = True
-    p_dropout: float = 0.1
+
+    # rnn
+    rnn_bidirectional: bool = True
+    rnn_p_dropout: float = 0.1
+
+    # projection
+    use_projection: bool = True
+    projection_p_dropout: float = 0.1
+    projection_activation_fn: str = "Identity"
 
 
 class RNNEncoder(CNNEncoder):
@@ -35,11 +43,11 @@ class RNNEncoder(CNNEncoder):
         if not params.condition:
             self.rnn = nn.LSTM(
                 in_dim,
-                params.encoder_inner_dim // (params.bidirectional + 1),
+                params.encoder_inner_dim // (params.rnn_bidirectional + 1),
                 num_layers=params.encoder_num_layers,
+                bidirectional=params.rnn_bidirectional,
+                dropout=params.rnn_p_dropout,
                 batch_first=True,
-                bidirectional=params.bidirectional,
-                dropout=params.p_dropout,
             )
         elif params.condition_type == "cat":
             self.rnns = nn.ModuleList()
@@ -52,11 +60,11 @@ class RNNEncoder(CNNEncoder):
                 self.rnns.append(
                     nn.LSTM(
                         in_dim,
-                        params.encoder_inner_dim // (params.bidirectional + 1),
+                        params.encoder_inner_dim // (params.rnn_bidirectional + 1),
                         num_layers=1,
+                        bidirectional=params.rnn_bidirectional,
+                        dropout=params.rnn_p_dropout,
                         batch_first=True,
-                        bidirectional=params.bidirectional,
-                        dropout=params.p_dropout,
                     )
                 )
         elif params.condition_type == "adanorm":
@@ -68,22 +76,22 @@ class RNNEncoder(CNNEncoder):
                     self.rnns.append(
                         nn.LSTM(
                             in_dim,
-                            params.encoder_inner_dim // (params.bidirectional + 1),
+                            params.encoder_inner_dim // (params.rnn_bidirectional + 1),
                             num_layers=1,
+                            bidirectional=params.rnn_bidirectional,
+                            dropout=params.rnn_p_dropout,
                             batch_first=True,
-                            bidirectional=params.bidirectional,
-                            dropout=params.p_dropout,
                         )
                     )
                 else:
                     self.rnns.append(
                         nn.LSTM(
                             params.encoder_inner_dim + params.condition_dim,
-                            params.encoder_inner_dim // (params.bidirectional + 1),
+                            params.encoder_inner_dim // (params.rnn_bidirectional + 1),
                             num_layers=1,
+                            bidirectional=params.rnn_bidirectional,
+                            dropout=params.rnn_p_dropout,
                             batch_first=True,
-                            bidirectional=params.bidirectional,
-                            dropout=params.p_dropout,
                         )
                     )
 
@@ -92,11 +100,22 @@ class RNNEncoder(CNNEncoder):
                         AdaLayerNorm(params.encoder_inner_dim, params.condition_dim)
                     )
 
-        self.proj = Regression(params.encoder_inner_dim, self.params.encoder_output_dim)
+        if params.use_projection:
+            self.proj = Regression(
+                params.encoder_inner_dim,
+                params.encoder_output_dim,
+                p_dropout=params.projection_p_dropout,
+                activation_fn=params.projection_activation_fn,
+            )
+        else:
+            self.proj = nn.Identity()
 
     @property
     def output_dim(self):
-        return self.params.encoder_output_dim
+        if self.params.use_projection:
+            return self.params.encoder_output_dim
+        else:
+            return self.params.encoder_inner_dim
 
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
         inputs = super().forward_step(inputs)
