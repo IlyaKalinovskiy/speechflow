@@ -40,14 +40,14 @@ parser:
 
 preproc:
   pipe: [load_audio, load_text_from_sega,
-         style, store_style, voice_bio, speech_quality,
+         voice_bio, speech_quality,
          spectrogram, melscale,
          energy, pitch, enhancement_energy, enhancement_pitch,
-         average_by_time, norm,  # energy_norm, pitch_norm,
+         average_by_time,  # norm,  # energy_norm, pitch_norm,
          add_pauses_from_timestamps, text,
          int_durations, calc_invert_durations, transcription_by_frames, float_durations,
          # to_whisper,
-         ssl, plbert, timedim_interpolation,
+         ssl, plbert,  # timedim_interpolation,
          # load_audio,
          trim, mu_law]
   pipe_cfg:
@@ -57,18 +57,9 @@ preproc:
       pipe_cfg:
         load:
           sample_rate: 24000
-    style:
-      type: VoiceBiometricProcessor
-      model_type: speechbrain
-      max_audio_duration: 5
-      random_crop: true
-    store_style:
-      type: store_field
-      key: speaker_emb
-      as_key: style_emb
     voice_bio:
       type: VoiceBiometricProcessor
-      model_type: wespeaker
+      model_type: speechbrain
       max_audio_duration: 5
       random_crop: true
     speech_quality:
@@ -141,6 +132,7 @@ preproc:
       type: SSLProcessor
       ssl_type: Hubert
       ssl_params:
+        feature_type: logits
         model_name: facebook/hubert-large-ls960-ft
         pretrain_path: hubert_phoneme_en/epoch=0-step=4500.ckpt
         vocab_path: hubert_phoneme_en/vocab.json
@@ -165,15 +157,17 @@ preproc:
       pipe: [mu_law_encode]
 
 singleton_handlers:
-  handlers: [SpeakerIDSetter, StatisticsRange]
+  handlers: [SpeakerIDSetter]
   SpeakerIDSetter: {}
   StatisticsRange:
     statistics_file: !join [*data_root, *dump_folder, ranges.json]
-  DatasetStatistics:
-    dump: !join [*data_root, *dump_folder]
 
 collate:
   type: TTSCollate
+  multiple:
+    spectrogram: 16
+    ssl_feat: 16
+    plbert_feat: 16
 
 processor:
   type: DataProcessor
@@ -187,7 +181,7 @@ processor:
                   PitchProcessor, SSLProcessor, MultilingualPLBert]
       mode: file_path
       skip_samples_without_dump: true
-    # debug: ~
+    debug: ~
 
 sampler:
   train:

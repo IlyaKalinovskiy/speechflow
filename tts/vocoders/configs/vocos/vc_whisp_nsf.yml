@@ -1,6 +1,6 @@
 ### Model configuration ###
 
-experiment_name: whisp_vocos_nsf
+experiment_name: whisp_vocos_rnn_adain_nsf
 
 dirs:
   logging: whisp_experiments
@@ -58,15 +58,20 @@ engine:
     evaluate_pesq: true
     evaluate_periodicty: true
 
+    use_clearml_logger: false
+
 model:
   feature_extractor:
     class_name: AudioFeatures
     init_args:
         input_feat_type: ssl_feat
-        ssl_feat_dim: 1024
-        output_dim: 512
-        feat_encoder_type: CBHGEncoder
-        feat_encoder_use_condition: false
+        ssl_feat_dim: 64
+        speaker_emb_dim: 192
+        output_dim: 1024
+        feat_encoder_type: RNNEncoder
+        feat_encoder_num_layers: 1
+        feat_encoder_inner_dim: 1024
+        feat_encoder_use_condition: true
         vp_encoder_type: AdainEncoder
         vp_encoder_use_condition: true
         vq_encoder_type: RNNEncoder
@@ -75,8 +80,8 @@ model:
         style_feat_type: mel_spectrogram
         style_emb_dim: 128
         style_use_gmvae: false
-        energy_interval: [0, 1.5]  # [0, 150]
-        pitch_interval: [0, 1.5]  # [0, 880]
+        energy_interval: [0, 150]  # [0, 150]
+        pitch_interval: [0, 880]  # [0, 880]
         use_lang_emb: false
         use_speaker_emb: true
         use_speech_quality_emb: true
@@ -85,24 +90,23 @@ model:
         use_pitch: true
         use_plbert: true
         use_averages: true
-        use_range: true
+        use_range: false
         use_vq: false
         vq_num_quantizers: 3
         vq_codebook_size: 256
-        use_auxiliary_classification_loss: false
-        use_auxiliary_mel_loss: false
+        use_upsample: true
+        use_auxiliary_classification_loss: true
+        use_auxiliary_mel_loss: true
 
   backbone:
-    class_name: VocosBackbone
+    class_name: VocosResNetBackbone
     init_args:
-      input_channels: 512
-      dim: 1024
-      num_blocks: 4
-      intermediate_dim: 1536
-      condition_dim: 324
+      input_dim: 1024
+      inner_dim: 1024
+      num_layers: 4
 
   head:
     class_name: NSFHead
     init_args:
-      dim: 1024
-      condition_dim: 324
+      input_dim: 1024
+      condition_dim: 388
