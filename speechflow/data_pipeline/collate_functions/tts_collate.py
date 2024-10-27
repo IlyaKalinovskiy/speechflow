@@ -10,7 +10,7 @@ from speechflow.data_pipeline.collate_functions.spectrogram_collate import (
     SpectrogramCollate,
     SpectrogramCollateOutput,
 )
-from speechflow.data_pipeline.collate_functions.utils import collate_sequence
+from speechflow.data_pipeline.collate_functions.utils import collate_sequence, collete_2d
 from speechflow.data_pipeline.core.datasample import ToNumpy, ToTensor
 from speechflow.data_pipeline.datasample_processors.data_types import (
     ProsodySSMLDataSample,
@@ -111,10 +111,6 @@ class TTSCollate(SpectrogramCollate):
         collated.transcription_id_by_frames, _ = collate_sequence(
             batch, "transcription_id_by_frames", pad_token_id, spec_multiple
         )
-        collated.lm_feat, collated.lm_feat_lengths = collate_sequence(batch, "lm_feat")
-        collated.plbert_feat, collated.plbert_feat_lengths = collate_sequence(
-            batch, "plbert_feat"
-        )
         collated.durations, _ = collate_sequence(batch, "durations")
         collated.invert_durations, _ = collate_sequence(
             batch, "invert_durations", multiple_values=spec_multiple
@@ -124,6 +120,13 @@ class TTSCollate(SpectrogramCollate):
         )
         collated.synt_lengths, collated.num_synt = collate_sequence(
             batch, "synt_lengths", pad_token_id
+        )
+
+        collated.lm_feat, collated.lm_feat_lengths = collete_2d(
+            batch, "lm_feat", multiple_values=self.multiple_values
+        )
+        collated.plbert_feat, collated.plbert_feat_lengths = collete_2d(
+            batch, "plbert_feat", multiple_values=self.multiple_values
         )
 
         collated.aggregated = {}

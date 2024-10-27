@@ -1,1 +1,1 @@
-from .gardtts_fa import GradTTSFA, GradTTSFAParams
+from .gardtts_fa import *

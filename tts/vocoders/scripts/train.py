@@ -7,14 +7,10 @@ from pathlib import Path
 
 import pytorch_lightning as pl
 
-from pytorch_lightning import seed_everything
-
 # required for multi-gpu training
 THIS_PATH = Path(__file__).absolute()
 ROOT = THIS_PATH.parents[3]
 sys.path.append(ROOT.as_posix())
-
-from clearml import Task
 
 from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
     TTSTextProcessor,
@@ -29,7 +25,7 @@ from speechflow.training.utils.config_prepare import model_config_prepare, train
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.profiler import Profiler
 from tts import vocoders
-from tts.vocoders import vocos
+from tts.vocoders.vocos.modules import VOCOS_BACKBONES, VOCOS_FEATURES, VOCOS_HEADS
 
 LOGGER = logging.getLogger("root")
 
@@ -37,7 +33,7 @@ LOGGER = logging.getLogger("root")
 def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
     experiment_path = Path(cfg_model["experiment_path"])
 
-    seed_everything(cfg_model.get("seed"))
+    pl.seed_everything(cfg_model.get("seed"))
 
     dl_train, dl_valid = data_loaders.values()
 
@@ -83,13 +79,9 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         info_file_path.write_bytes(pickle.dumps(dl_train.client.info))
         saver.to_save["files"]["info_file_name"] = info_file_name
 
-    clearml_task = Task.init(
-        task_name=experiment_path.name, project_name=experiment_path.parent.name
-    )
-
     engine_type = cfg_model["engine"].class_name
     if "Vocos" in engine_type:
-        pl_engine_cls = getattr(vocos, engine_type)
+        pl_engine_cls = getattr(vocoders.vocos, engine_type)
 
         feat_cfg = cfg_model["model"].feature_extractor
 
@@ -103,19 +95,24 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
             feat_cfg.init_args.n_langs = speaker_id_handler.n_langs
             feat_cfg.init_args.n_speakers = speaker_id_handler.n_speakers
 
-        feat_cls = getattr(vocos, feat_cfg.class_name)
-        feat = init_class_from_config(feat_cls, feat_cfg.init_args)()
+        feat_cls, feat_params_cls = VOCOS_FEATURES[feat_cfg.class_name]
+        feat_params = init_class_from_config(feat_params_cls, feat_cfg.init_args)()
+        feat = feat_cls(feat_params)
 
         backbone_cfg = cfg_model["model"].backbone
-        backbone_cls = getattr(vocos, backbone_cfg.class_name)
-        backbone = init_class_from_config(backbone_cls, backbone_cfg.init_args)()
+        backbone_cls, backbone_params_cls = VOCOS_BACKBONES[backbone_cfg.class_name]
+        backbone_params = init_class_from_config(
+            backbone_params_cls, backbone_cfg.init_args
+        )()
+        backbone = backbone_cls(backbone_params)
 
         head_cfg = cfg_model["model"].head
-        head_cls = getattr(vocos, head_cfg.class_name)
-        head = init_class_from_config(head_cls, head_cfg.init_args)()
+        head_cls, head_params_cls = VOCOS_HEADS[head_cfg.class_name]
+        head_params = init_class_from_config(head_params_cls, head_cfg.init_args)()
+        head = head_cls(head_params)
 
         pl_engine = init_class_from_config(pl_engine_cls, cfg_model["engine"].init_args)(
-            feat, backbone, head, batch_processor, saver, clearml_task=clearml_task
+            feat, backbone, head, batch_processor, saver
         )
     else:
         raise NotImplementedError

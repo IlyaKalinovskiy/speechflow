@@ -6,9 +6,9 @@ from torch import nn
 
 from speechflow.io import Config
 from tts.vocoders.data_types import VocoderForwardInput, VocoderForwardOutput
-from tts.vocoders.vocos.modules.backbone import Backbone
+from tts.vocoders.vocos.modules.backbones.backbone import Backbone
 from tts.vocoders.vocos.modules.feature_extractors import FeatureExtractor
-from tts.vocoders.vocos.modules.heads import FourierHead
+from tts.vocoders.vocos.modules.heads import BaseHead
 
 
 def instantiate_class(
@@ -55,7 +55,7 @@ class Vocos(nn.Module):
         self,
         feature_extractor: FeatureExtractor,
         backbone: Backbone,
-        head: FourierHead,
+        head: BaseHead,
     ):
         super().__init__()
         self.feature_extractor = feature_extractor

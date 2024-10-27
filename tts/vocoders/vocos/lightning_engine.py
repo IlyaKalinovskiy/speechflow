@@ -8,6 +8,8 @@ import torchaudio
 import transformers
 import pytorch_lightning as pl
 
+from clearml import Task
+
 from speechflow.io import AudioChunk, tp_PATH
 from speechflow.training.saver import ExperimentSaver
 from tts.vocoders.batch_processor import VocoderBatchProcessor
@@ -22,13 +24,13 @@ from tts.vocoders.vocos.losses import (
     MultiResolutionSTFTLoss,
     SpeakerSimilarityLoss,
 )
-from tts.vocoders.vocos.modules.backbone import Backbone
+from tts.vocoders.vocos.modules.backbones.base import Backbone
 from tts.vocoders.vocos.modules.discriminators import (
     MultiPeriodDiscriminator,
     MultiResolutionDiscriminator,
 )
 from tts.vocoders.vocos.modules.feature_extractors import FeatureExtractor
-from tts.vocoders.vocos.modules.heads import FourierHead
+from tts.vocoders.vocos.modules.heads.base import WaveformGenerator
 from tts.vocoders.vocos.utils.tensor_utils import safe_log
 
 __all__ = ["VocosLightningEngine"]
@@ -40,7 +42,7 @@ class VocosLightningEngine(pl.LightningModule):
         self,
         feature_extractor: FeatureExtractor,
         backbone: Backbone,
-        head: FourierHead,
+        head: WaveformGenerator,
         batch_processor: VocoderBatchProcessor,
         saver: ExperimentSaver,
         sample_rate: int,
@@ -63,13 +65,13 @@ class VocosLightningEngine(pl.LightningModule):
         evaluate_utmos: bool = False,
         evaluate_pesq: bool = False,
         evaluate_periodicty: bool = False,
-        clearml_task=None,
+        use_clearml_logger: bool = False,
     ):
         """
         Args:
             feature_extractor (FeatureExtractor): An instance of FeatureExtractor to extract features from audio signals.
             backbone (Backbone): An instance of Backbone model.
-            head (FourierHead):  An instance of Fourier head to generate spectral coefficients and reconstruct a waveform.
+            head (BaseHead):  An instance of Fourier head to generate spectral coefficients and reconstruct a waveform.
             batch_processor (VocoderBatchProcessor): An instance of VocoderBatchProcessor for convert batch to model inputs.
             sample_rate (int): Sampling rate of the audio signals.
             initial_learning_rate (float): Initial learning rate for the optimizer.
@@ -122,7 +124,12 @@ class VocosLightningEngine(pl.LightningModule):
         self.train_discriminator = False
         self.base_mel_coeff = self.mel_loss_coeff = mel_loss_coeff
 
-        self.clearml_task = clearml_task
+        if use_clearml_logger:
+            self.clearml_task = Task.init(
+                task_name=saver.expr_path.name, project_name=saver.expr_path.parent.name
+            )
+        else:
+            self.clearml_task = None
 
     def on_fit_start(self):
         self.batch_processor.set_device(self.device)

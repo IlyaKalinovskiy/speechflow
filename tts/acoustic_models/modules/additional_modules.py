@@ -12,8 +12,8 @@ from tts.acoustic_models.modules.common import (
     InverseGradSpeakerIDPredictor,
     InverseGradSpeakerPredictor,
     InverseGradStylePredictor,
+    Regression,
 )
-from tts.acoustic_models.modules.common.blocks import Regression
 from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.data_types import ComponentInput, ComponentOutput
 from tts.acoustic_models.modules.params import EmbeddingParams
@@ -53,7 +53,7 @@ class AdditionalModules(Component):
                 if emb_size is None:
                     emb_size = self.components_output_dim[name]()
                 self.inverse_speaker_classifier[name] = InverseGradSpeakerIDPredictor(
-                    in_dim=emb_size, n_speakers=params.n_speakers
+                    input_dim=emb_size, n_speakers=params.n_speakers
                 )
 
         if params.addm_apply_inverse_speaker_emb:
@@ -62,7 +62,7 @@ class AdditionalModules(Component):
                 if emb_size is None:
                     emb_size = self.components_output_dim[name]()
                 self.inverse_speaker_emb[name] = InverseGradSpeakerPredictor(
-                    in_dim=emb_size, target_dim=params.speaker_emb_dim
+                    input_dim=emb_size, target_dim=params.speaker_emb_dim
                 )
 
         if params.addm_apply_inverse_style_emb:
@@ -71,7 +71,7 @@ class AdditionalModules(Component):
                 if emb_size is None:
                     emb_size = self.components_output_dim[name]()
                 self.inverse_style_embedding[name] = InverseGradStylePredictor(
-                    in_dim=emb_size, target_dim=params.addm_style_emb_dim
+                    input_dim=emb_size, target_dim=params.addm_style_emb_dim
                 )
 
         if params.addm_apply_inverse_1d_feature:
@@ -82,7 +82,7 @@ class AdditionalModules(Component):
                     if emb_size is None:
                         emb_size = self.components_output_dim[name]()
                     self.inverse_1d_feature[feat][name] = InverseGrad1DPredictor(
-                        in_dim=emb_size
+                        input_dim=emb_size
                     )
 
         if params.addm_apply_inverse_phoneme_classifier:
@@ -115,6 +115,9 @@ class AdditionalModules(Component):
         if not self.training or self.params.addm_disable:
             return inputs
 
+        content = inputs.additional_content
+        losses = inputs.additional_losses
+
         def get_emb(_name: str):
             _emb = content.get(_name)
             # if isinstance(_emb, torch.Tensor):
@@ -131,9 +134,6 @@ class AdditionalModules(Component):
                     _loss += _module(_t, _target)
 
             return _loss
-
-        content = inputs.additional_content
-        losses = inputs.additional_losses
 
         if (
             self.params.addm_apply_inverse_speaker_classifier

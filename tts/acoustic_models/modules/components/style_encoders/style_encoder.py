@@ -22,8 +22,8 @@ class StyleEncoderParams(EmbeddingParams):
     source_dim: int = 80
     style_emb_dim: int = (128,)
     random_chunk: bool = False
-    min_spec_len: int = 256
-    max_spec_len: int = 512
+    min_spec_len: int = 128
+    max_spec_len: int = 256
     use_gmvae: bool = False
     gmvae_dim: int = 32
     gmvae_n_components: int = 16

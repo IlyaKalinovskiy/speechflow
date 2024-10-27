@@ -1,12 +1,15 @@
 import torch
 
-from torch import nn
+from speechflow.training.base_model import BaseTorchModel, BaseTorchModelParams
 
-__all__ = ["FourierHead"]
+__all__ = ["WaveformGenerator"]
 
 
-class FourierHead(nn.Module):
-    """Base class for inverse fourier modules."""
+class WaveformGenerator(BaseTorchModel):
+    """Base class for waveform generator modules."""
+
+    def __init__(self, params: BaseTorchModelParams):
+        super().__init__(params)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

@@ -99,7 +99,7 @@ class LoggingServer(ProcessWorker):
     def error(self):
         return self.logger.error
 
-    def start(self, timeout: float = 5.0, tick: float = 0.25):
+    def start(self, timeout: float = 5.0):
         from speechflow.logging.logger import create_logger
 
         try:
@@ -107,7 +107,7 @@ class LoggingServer(ProcessWorker):
                 LOGGER.warning(trace(self, message="LoggingServer already started"))
                 return
 
-            super().start(timeout, tick)
+            super().start()
 
             time.sleep(timeout)
             self._named_logger = create_logger(self._log_name)
@@ -119,8 +119,8 @@ class LoggingServer(ProcessWorker):
             self.finish()
             raise e
 
-    def finish(self, timeout: float = 5.0, tick: float = 0.25):
-        super().finish(timeout, tick)
+    def finish(self, timeout: float = 5.0):
+        super().finish(timeout)
         if self._named_logger:
             self._named_logger.handlers = []
 

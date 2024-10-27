@@ -15,9 +15,18 @@ __all__ = ["VarianceEncoder", "VarianceEncoderParams"]
 
 
 class VarianceEncoderParams(EncoderParams):
-    kernel_sizes: tp.Tuple[int, ...] = (3, 7, 13, 3)
-    bidirectional: bool = True
-    p_dropout: float = 0.1
+    # convolution block
+    conv_kernel_sizes: tp.Tuple[int, ...] = (3, 7, 13, 3)
+    conv_p_dropout: float = 0.1
+
+    # rnn
+    rnn_bidirectional: bool = True
+    rnn_p_dropout: float = 0.1
+
+    # projection
+    use_projection: bool = True
+    projection_p_dropout: float = 0.1
+    projection_activation_fn: str = "Identity"
 
 
 class VarianceEncoder(Component):
@@ -26,12 +35,9 @@ class VarianceEncoder(Component):
     def __init__(self, params: VarianceEncoderParams, input_dim):
         super().__init__(params, input_dim)
 
-        rnn_dim = params.encoder_inner_dim // (params.bidirectional + 1)
-        num_rnn_layers = params.encoder_num_layers
         filter_size = params.encoder_inner_dim
-        first_convs_kernel_sizes = params.kernel_sizes[:-1]
-        second_convs_kernel_sizes = params.kernel_sizes[-1]
-        dropout = params.p_dropout
+        first_convs_kernel_sizes = params.conv_kernel_sizes[:-1]
+        second_convs_kernel_sizes = params.conv_kernel_sizes[-1]
 
         self.first_convs = nn.ModuleList(
             [
@@ -46,7 +52,7 @@ class VarianceEncoder(Component):
                     ),
                     LearnableSwish(),
                     nn.LayerNorm(filter_size),
-                    nn.Dropout(dropout),
+                    nn.Dropout(params.conv_p_dropout),
                 )
                 for k in first_convs_kernel_sizes
             ]
@@ -63,22 +69,34 @@ class VarianceEncoder(Component):
             ),
             LearnableSwish(),
             nn.LayerNorm(filter_size),
-            nn.Dropout(dropout),
+            nn.Dropout(params.conv_p_dropout),
         )
 
         self.rnn = nn.LSTM(
             params.encoder_inner_dim,
-            rnn_dim,
-            num_layers=num_rnn_layers,
+            params.encoder_inner_dim // (params.rnn_bidirectional + 1),
+            num_layers=params.encoder_num_layers,
+            bidirectional=params.rnn_bidirectional,
+            dropout=params.rnn_p_dropout,
             batch_first=True,
-            bidirectional=params.bidirectional,
         )
 
-        self.proj = Regression(rnn_dim * 2, self.params.encoder_output_dim)
+        if params.use_projection:
+            self.proj = Regression(
+                params.encoder_inner_dim,
+                params.encoder_output_dim,
+                p_dropout=params.projection_p_dropout,
+                activation_fn=params.projection_activation_fn,
+            )
+        else:
+            self.proj = nn.Identity()
 
     @property
     def output_dim(self):
-        return self.params.encoder_output_dim
+        if self.params.use_projection:
+            return self.params.encoder_output_dim
+        else:
+            return self.params.encoder_inner_dim
 
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
         x, x_lens, x_mask = self.get_content_and_mask(inputs)
@@ -94,6 +112,7 @@ class VarianceEncoder(Component):
             after_second_conv += conv_1
 
         x = run_rnn_on_padded_sequence(self.rnn, after_second_conv, x_lens)
+
         y = self.proj(x)
 
         return EncoderOutput.copy_from(inputs).set_content(y).set_hidden_state(x)

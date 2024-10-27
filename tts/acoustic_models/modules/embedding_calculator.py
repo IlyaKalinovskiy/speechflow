@@ -14,6 +14,8 @@ from tts.acoustic_models.modules.common import VarianceEmbedding
 from tts.acoustic_models.modules.common.blocks import Regression
 from tts.acoustic_models.modules.params import EmbeddingParams
 
+__all__ = ["EmbeddingCalculator"]
+
 
 class EmbeddingCalculator(BaseTorchModel):
     params: EmbeddingParams

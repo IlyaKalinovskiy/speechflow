@@ -1,5 +1,6 @@
 import typing as tp
 
+from pydantic import Field
 from torch import nn
 from torch.nn import functional as F
 
@@ -23,11 +24,16 @@ __all__ = [
 
 
 class SFEncoderParams(EncoderParams):
+    # base encoder params
     base_encoder_type: str = "RNNEncoder"
-    base_encoder_params: dict = None  # type: ignore
+    base_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
+
+    # condition
     condition: tp.Tuple[str, ...] = ()
     condition_dim: int = 0
     condition_type: tp.Literal["cat", "adanorm"] = "cat"
+
+    # embedding bucketize
     var_as_embedding: tp.Tuple[bool, bool] = (False, False)
     var_interval: tp.Tuple[tp.Tuple[float, float], tp.Tuple[float, float]] = (
         (0, 150),

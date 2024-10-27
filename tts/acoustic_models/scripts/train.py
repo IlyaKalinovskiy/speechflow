@@ -7,9 +7,6 @@ from pathlib import Path
 
 import pytorch_lightning as pl
 
-from pytorch_lightning import seed_everything
-from pytorch_lightning.callbacks import LearningRateMonitor
-
 # required for multi-gpu training
 THIS_PATH = Path(__file__).absolute()
 ROOT = THIS_PATH.parents[3]
@@ -66,7 +63,7 @@ def update_model_config(cfg: Config, dl: DataLoader):
 def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
     experiment_path = Path(cfg_model["experiment_path"])
 
-    seed_everything(cfg_model.get("seed"))
+    pl.seed_everything(cfg_model.get("seed"))
 
     dl_train, dl_valid = data_loaders.values()
 
@@ -135,7 +132,7 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
 
     callbacks = [
         saver.get_checkpoint_callback(cfg=cfg_model["checkpoint"]),
-        LearningRateMonitor(logging_interval="epoch"),
+        pl.callbacks.LearningRateMonitor(logging_interval="epoch"),
     ]
 
     if cfg_model.get("callbacks"):

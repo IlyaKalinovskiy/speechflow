@@ -20,13 +20,13 @@ class ForwardPostnet(Component):
     def __init__(self, params: ForwardPostnetParams, input_dim: int):
         super().__init__(params, input_dim)
         self.cbhg = CBHG(
-            in_channels=self.input_dim,
-            out_channels=params.postnet_inner_dim,
+            in_dim=self.input_dim,
+            out_dim=params.postnet_inner_dim,
             conv_banks_num=params.n_convolutions,
             highways_num=params.highways,
             kernel_size=params.kernel_size,
-            bidirectional_rnn=True,
-            rnn_channels=self.input_dim,
+            rnn_bidirectional=True,
+            rnn_dim=self.input_dim,
         )
         self.linear = nn.Linear(params.postnet_inner_dim, params.postnet_output_dim)
 

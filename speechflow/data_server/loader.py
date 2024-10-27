@@ -185,7 +185,7 @@ class DataLoader:
             except Exception as e:
                 LOGGER.error(trace(self, e))
             finally:
-                Profiler.sleep(1)
+                Profiler.sleep(1.0)
 
     def _batch_receive(self):
         while not self._stop_event.is_set():

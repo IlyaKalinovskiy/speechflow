@@ -117,7 +117,6 @@ class EncoderParams(EmbeddingParams):
     """Encoder component parameters."""
 
     encoder_type: str = "ForwardEncoder"
-    encoder_num_blocks: int = 1
     encoder_num_layers: int = 2
     encoder_inner_dim: int = 512
     encoder_output_dim: int = 512
@@ -128,7 +127,6 @@ class DecoderParams(EmbeddingParams):
     """Decoder component parameters."""
 
     decoder_type: str = "ForwardDecoder"
-    decoder_num_blocks: int = 1
     decoder_num_layers: int = 2
     decoder_inner_dim: int = 512
     decoder_output_dim: int = 80
@@ -139,7 +137,6 @@ class PostnetParams(EmbeddingParams):
     """Postnet component parameters."""
 
     postnet_type: tp.Optional[str] = "ForwardPostnet"
-    postnet_num_blocks: int = 1
     postnet_num_layers: int = 1
     postnet_inner_dim: int = 512
     postnet_output_dim: int = 80
@@ -173,7 +170,6 @@ class ModifierParams(EmbeddingParams):
 
 
 class VariancePredictorParams(EmbeddingParams):
-    vp_num_blocks: int = 1
     vp_num_layers: int = 1
     vp_inner_dim: int = 256
     vp_output_dim: int = 1

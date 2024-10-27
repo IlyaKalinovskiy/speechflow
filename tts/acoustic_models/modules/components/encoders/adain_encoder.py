@@ -19,12 +19,24 @@ __all__ = ["AdainEncoder", "AdainEncoderParams"]
 
 
 class AdainEncoderParams(CNNEncoderParams):
+    # condition
     condition: tp.Tuple[str, ...] = ()
     condition_dim: int = 0
     condition_type: tp.Literal["cat", "adanorm"] = "cat"
-    bidirectional: bool = True
-    p_dropout: float = 0.1
-    upsample_x2: bool = False
+
+    # rnn
+    use_rnn: bool = True
+    rnn_bidirectional: bool = True
+    rnn_p_dropout: float = 0.1
+
+    # AdaIN
+    adain_upsample: bool = False
+    adain_p_dropout: float = 0.1
+
+    # projection
+    use_projection: bool = True
+    projection_p_dropout: float = 0.1
+    projection_activation_fn: str = "Identity"
 
 
 class AdainEncoder(CNNEncoder):
@@ -36,20 +48,26 @@ class AdainEncoder(CNNEncoder):
         in_dim = super().output_dim
         inner_dim = params.encoder_inner_dim
 
-        self.rnn = nn.LSTM(
-            in_dim,
-            inner_dim // (params.bidirectional + 1),
-            num_layers=params.encoder_num_layers,
-            batch_first=True,
-            bidirectional=params.bidirectional,
-            dropout=params.p_dropout,
-        )
+        if params.use_rnn:
+            self.rnn = nn.LSTM(
+                in_dim,
+                inner_dim // (params.rnn_bidirectional + 1),
+                num_layers=params.encoder_num_layers,
+                bidirectional=params.rnn_bidirectional,
+                dropout=params.rnn_p_dropout,
+                batch_first=True,
+            )
+        else:
+            self.rnn = None
 
         if params.condition_dim > 0:
             self.adain = nn.ModuleList()
             self.adain.append(
                 AdainResBlk1d(
-                    inner_dim, inner_dim, params.condition_dim, dropout_p=params.p_dropout
+                    inner_dim,
+                    inner_dim,
+                    params.condition_dim,
+                    dropout_p=params.adain_p_dropout,
                 )
             )
             self.adain.append(
@@ -57,23 +75,37 @@ class AdainEncoder(CNNEncoder):
                     inner_dim,
                     inner_dim,
                     params.condition_dim,
-                    upsample=params.upsample_x2,
-                    dropout_p=params.p_dropout,
+                    upsample=params.adain_upsample,
+                    dropout_p=params.adain_p_dropout,
                 )
             )
             self.adain.append(
                 AdainResBlk1d(
-                    inner_dim, inner_dim, params.condition_dim, dropout_p=params.p_dropout
+                    inner_dim,
+                    inner_dim,
+                    params.condition_dim,
+                    dropout_p=params.adain_p_dropout,
                 )
             )
         else:
             self.adain = None
 
-        self.proj = Regression(inner_dim, self.params.encoder_output_dim)
+        if params.use_projection:
+            self.proj = Regression(
+                inner_dim,
+                params.encoder_output_dim,
+                p_dropout=params.projection_p_dropout,
+                activation_fn=params.projection_activation_fn,
+            )
+        else:
+            self.proj = nn.Identity()
 
     @property
     def output_dim(self):
-        return self.params.encoder_output_dim
+        if self.params.use_projection:
+            return self.params.encoder_output_dim
+        else:
+            return self.params.encoder_inner_dim
 
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
         inputs = super().forward_step(inputs)
@@ -83,17 +115,21 @@ class AdainEncoder(CNNEncoder):
             cond = cond.squeeze(1)
 
         x, x_lens, x_mask = self.get_content_and_mask(inputs)
-        x = run_rnn_on_padded_sequence(self.rnn, x, x_lens)
 
-        z = x.transpose(1, -1)
+        if self.rnn is not None:
+            x = run_rnn_on_padded_sequence(self.rnn, x, x_lens)
+
+        y = x.transpose(1, -1)
 
         if self.adain is not None:
             for block in self.adain:
-                z = block(z, cond)
+                y = block(y, cond)
 
-        y = self.proj(z.transpose(1, -1))
+        y = y.transpose(1, -1)
 
-        return EncoderOutput.copy_from(inputs).set_content(y).set_hidden_state(x)
+        z = self.proj(y)
+
+        return EncoderOutput.copy_from(inputs).set_content(z).set_hidden_state(y)
 
 
 class AdaIN1d(nn.Module):

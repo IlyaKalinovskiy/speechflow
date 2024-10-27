@@ -1,5 +1,5 @@
-from .dac import DACHead
-from .fourier import FourierHead
-from .imdct import IMDCTCosHead, IMDCTSymExpHead
-from .istft import ISTFTHead
-from .nsf import NSFHead
+from tts.vocoders.vocos.modules.heads.base import *
+from tts.vocoders.vocos.modules.heads.dac import *
+from tts.vocoders.vocos.modules.heads.imdct import *
+from tts.vocoders.vocos.modules.heads.istft import *
+from tts.vocoders.vocos.modules.heads.nsf import *

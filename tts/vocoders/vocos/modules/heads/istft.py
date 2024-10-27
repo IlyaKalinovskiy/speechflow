@@ -1,16 +1,28 @@
+import typing as tp
+
 import torch
 
-from tts.vocoders.vocos.modules.heads.fourier import FourierHead
+from speechflow.training.base_model import BaseTorchModelParams
+from tts.vocoders.vocos.modules.heads.base import WaveformGenerator
 from tts.vocoders.vocos.utils.spectral_ops import ISTFT
 
-__all__ = ["ISTFTHead"]
+__all__ = ["ISTFTHead", "ISTFTHeadParams"]
 
 
-class ISTFTHead(FourierHead):
+class ISTFTHeadParams(BaseTorchModelParams):
+    input_dim: int
+    n_fft: int
+    hop_length: int
+    padding: tp.Literal["center", "same"] = "same"
+
+
+class ISTFTHead(WaveformGenerator):
+    params: ISTFTHeadParams
+
     """ISTFT Head module for predicting STFT complex coefficients.
 
     Args:
-        dim (int): Hidden dimension of the model.
+        input_dim (int): Hidden dimension of the model.
         n_fft (int): Size of Fourier transform.
         hop_length (int): The distance between neighboring sliding window frames, which should align with
                           the resolution of the input features.
@@ -18,12 +30,15 @@ class ISTFTHead(FourierHead):
 
     """
 
-    def __init__(self, dim: int, n_fft: int, hop_length: int, padding: str = "same"):
-        super().__init__()
-        out_dim = n_fft + 2
-        self.out = torch.nn.Linear(dim, out_dim)
+    def __init__(self, params: ISTFTHeadParams):
+        super().__init__(params)
+        out_dim = params.n_fft + 2
+        self.proj = torch.nn.Linear(params.input_dim, out_dim)
         self.istft = ISTFT(
-            n_fft=n_fft, hop_length=hop_length, win_length=n_fft, padding=padding
+            n_fft=params.n_fft,
+            hop_length=params.hop_length,
+            win_length=params.n_fft,
+            padding=params.padding,
         )
 
     def forward(self, x: torch.Tensor, **kwargs):
@@ -37,7 +52,7 @@ class ISTFTHead(FourierHead):
             Tensor: Reconstructed time-domain audio signal of shape (B, T), where T is the length of the output signal.
 
         """
-        x = self.out(x).transpose(1, 2)
+        x = self.proj(x).transpose(1, 2)
         mag, p = x.chunk(2, dim=1)
         mag = torch.exp(mag)
         mag = torch.clip(

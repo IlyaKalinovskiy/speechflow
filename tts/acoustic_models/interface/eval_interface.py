@@ -150,7 +150,7 @@ class TTSEvaluationInterface:
                 if any(
                     x in k
                     for x in [
-                        "backbone",
+                        "backbones",
                         "head",
                         "melspec_loss",
                         "multiperioddisc",

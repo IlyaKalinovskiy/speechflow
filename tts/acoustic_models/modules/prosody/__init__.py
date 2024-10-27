@@ -1,10 +1,5 @@
-from tts.acoustic_models.modules.prosody.encoder import (
-    ProsodyEncoder,
-    ProsodyEncoderParams,
-)
-from tts.acoustic_models.modules.prosody.multihead_attention import MultiheadAttention
-from tts.acoustic_models.modules.prosody.phoneme_encoder import PhonemeEncoder
-from tts.acoustic_models.modules.prosody.position_embedding import (
-    SinusoidalPositionalEmbedding,
-)
-from tts.acoustic_models.modules.prosody.transformer import MultimodalTransformerEncoder
+from .encoder import *
+from .multihead_attention import *
+from .phoneme_encoder import *
+from .position_embedding import *
+from .transformer import *

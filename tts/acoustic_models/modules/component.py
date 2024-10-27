@@ -20,6 +20,8 @@ from tts.acoustic_models.modules.data_types import (
     ComponentOutput,
 )
 
+__all__ = ["Component"]
+
 _INPUT_DIM = tp.Optional[tp.Union[int, tp.Tuple[int, ...]]]
 
 

@@ -1,3 +1,4 @@
+import math
 import uuid
 import pickle
 import random
@@ -498,16 +499,19 @@ def monotonic_speech(
 
 @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"ssl_feat", "pl_bert"})
 def timedim_interpolation(
-    ds: AudioDataSample, features: tp.Union[str, tp.List[str]], shape_as: str
+    ds: AudioDataSample,
+    features: tp.Union[str, tp.List[str]],
+    shape_as: str,
+    mode: str = "linear",
 ):
     if isinstance(features, str):
         features = [features]
 
-    def interpolate(_t, _scale, _max_len):
+    def interpolate(_t, _scale):
         _t = _t.t().unsqueeze(0)
-        _t = torch_interpolate(_t, scale_factor=_scale)
+        _t = torch_interpolate(_t, scale_factor=_scale, mode=mode)
         _t = _t.squeeze(0).t()
-        return _t[:_max_len]
+        return _t
 
     for name in features:
         if not hasattr(ds, name) or getattr(ds, name) is None:
@@ -521,11 +525,12 @@ def timedim_interpolation(
         else:
             t = torch.from_numpy(feat)
 
-        scale = (attr.shape[0] + 1) / t.shape[0]
-        t = interpolate(t, scale, attr.shape[0])
-        assert (
-            t.shape[0] == attr.shape[0]
-        ), f"shape mismatch {t.shape[0]} != {attr.shape[0]}"
+        scale = attr.shape[0] / t.shape[0]
+        if math.floor(t.shape[0] * scale) < attr.shape[0]:
+            scale = (attr.shape[0] + 1) / t.shape[0]
+
+        t = interpolate(t, scale)
+        assert t.shape[0] == attr.shape[0]
 
         if isinstance(feat, SSLFeatures):
             feat.encoder_feat = t
