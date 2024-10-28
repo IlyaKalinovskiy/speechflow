@@ -96,7 +96,8 @@ model:
         vq_codebook_size: 256
         use_upsample: true
         use_auxiliary_classification_loss: true
-        use_auxiliary_mel_loss: true
+        use_auxiliary_linear_spec_loss: true
+        # use_auxiliary_mel_spec_loss: true
 
   backbone:
     class_name: VocosResNetBackbone

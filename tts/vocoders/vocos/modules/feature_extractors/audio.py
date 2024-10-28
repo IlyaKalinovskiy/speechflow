@@ -101,6 +101,7 @@ class AudioFeaturesParams(BaseTorchModelParams):
     average_pitch_interval: tp.Tuple[float, float] = (0, 850)
     # Multilingual PL-BERT
     plbert_emb_dim: int = 768
+    plbert_proj_dim: int = 256
     # flags
     use_lang_emb: bool = False
     use_speaker_emb: bool = False
@@ -115,7 +116,8 @@ class AudioFeaturesParams(BaseTorchModelParams):
     use_vq: bool = False
     use_upsample: bool = False
     use_auxiliary_classification_loss: bool = False
-    use_auxiliary_mel_loss: bool = False
+    use_auxiliary_linear_spec_loss: bool = False
+    use_auxiliary_mel_spec_loss: bool = False
     use_inverse_grad: bool = False
 
 
@@ -252,11 +254,6 @@ class AudioFeatures(FeatureExtractor):
         else:
             self.vq_enc = None
 
-        # ----- init plbert projection -----
-
-        if params.use_plbert:
-            in_dim += params.plbert_emb_dim
-
         # ----- init feat encoder -----
 
         if params.feat_encoder_type == "SFEncoder":
@@ -297,6 +294,17 @@ class AudioFeatures(FeatureExtractor):
             self.feat_encoder = enc_cls(enc_params, in_dim)
 
         in_dim = self.feat_encoder.output_dim
+
+        # ----- init plbert projection -----
+
+        if params.use_plbert:
+            self.plbert_proj = nn.Sequential(
+                nn.Linear(params.plbert_emb_dim, params.plbert_proj_dim),
+                nn.Dropout2d(0.2),
+            )
+            in_dim += params.plbert_proj_dim
+        else:
+            self.plbert_proj = None
 
         # ----- init upsampling -----
 
@@ -359,6 +367,10 @@ class AudioFeatures(FeatureExtractor):
         else:
             self.pitch_predictor = None
 
+        # ----- final projection -----
+
+        self.proj = Regression(in_dim, params.output_dim)
+
         # ----- init additional modules -----
 
         if params.use_auxiliary_classification_loss:
@@ -373,9 +385,7 @@ class AudioFeatures(FeatureExtractor):
             if params.use_upsample:
                 content_name = "upsample_content"
 
-            addm_params.addm_apply_phoneme_classifier = {
-                content_name: self.feat_encoder.output_dim
-            }
+            addm_params.addm_apply_phoneme_classifier = {content_name: in_dim}
 
             if params.use_vq and params.use_inverse_grad:
                 addm_params.addm_apply_inverse_speaker_emb = {
@@ -391,16 +401,17 @@ class AudioFeatures(FeatureExtractor):
         else:
             self.addm = None
 
-        if params.use_auxiliary_mel_loss:
-            enc_cls, enc_params_cls = TTS_ENCODERS[params.feat_encoder_type]
-            enc_params = enc_params_cls(
-                encoder_num_layers=params.feat_encoder_num_layers,
-                encoder_inner_dim=params.feat_encoder_inner_dim,
-                encoder_output_dim=params.mel_spectrogram_dim,
+        if params.use_auxiliary_linear_spec_loss:
+            self.linear_spec_proj = Regression(
+                params.output_dim, params.linear_spectrogram_dim
             )
-            self.mel_predictor = enc_cls(enc_params, self.feat_encoder.output_dim)
         else:
-            self.mel_predictor = None
+            self.linear_spec_proj = None
+
+        if params.use_auxiliary_mel_spec_loss:
+            self.mel_spec_proj = Regression(params.output_dim, params.mel_spectrogram_dim)
+        else:
+            self.mel_spec_proj = None
 
     def _get_input_feat(
         self, inputs: VocoderForwardInput
@@ -432,7 +443,7 @@ class AudioFeatures(FeatureExtractor):
             conditions["avr_energy_emb"] = self.avr_energy_emb(inputs.averages["energy"])
 
         if self.avr_pitch_emb is not None:
-            conditions["avr_pitch_emb"] = self.avr_energy_emb(inputs.averages["pitch"])
+            conditions["avr_pitch_emb"] = self.avr_pitch_emb(inputs.averages["pitch"])
 
         return conditions
 
@@ -480,24 +491,24 @@ class AudioFeatures(FeatureExtractor):
         if self.training:
             scale_factor = inputs.spectrogram_lengths / x_lens
             dura = scale_factor.unsqueeze(-1).repeat(1, x.shape[1]).to(x.device)
-            x, _ = self.lr(x, dura, inputs.mel_spectrogram.shape[1])
+            y, _ = self.lr(x, dura)
+            y_lens = inputs.spectrogram_lengths
             self.mean_scale_factor = scale_factor.mean()
-            x_lens = inputs.spectrogram_lengths
         else:
-            max_len = None
-            if inputs.output_lengths is not None:
-                max_len = inputs.mel_spectrogram.shape[1]
-
             scale_factor = self.mean_scale_factor.unsqueeze(-1)
             dura = scale_factor.repeat(x.shape[0], x.shape[1]).to(x.device)
-            x, _ = self.lr(x, dura, max_len)
+            y, _ = self.lr(x, dura)
 
             if inputs.output_lengths is not None:
-                x_lens = inputs.output_lengths
+                y_lens = inputs.output_lengths
             else:
-                x_lens = get_lengths_from_durations(dura)
+                y_lens = get_lengths_from_durations(dura)
 
-        return x, x_lens
+        if inputs.output_lengths is not None:
+            if y.shape[1] < inputs.spectrogram.shape[1]:
+                y = F.pad(y, (0, 0, 0, inputs.spectrogram.shape[1] - y.shape[1]))
+
+        return y, y_lens
 
     def forward(self, inputs: VocoderForwardInput, **kwargs):
         losses = {}
@@ -529,12 +540,12 @@ class AudioFeatures(FeatureExtractor):
                 }
             )
 
-        if self.params.use_plbert:
-            x = torch.cat([x, inputs.plbert_feat], dim=-1)
-
         enc_input = ComponentInput(content=x, content_lengths=x_lens, model_inputs=inputs)
         enc_output = self.feat_encoder(enc_input)
         x = self.feat_encoder.get_content(enc_output)[0]
+
+        if self.params.use_plbert:
+            x = torch.cat([x, self.plbert_proj(inputs.plbert_feat)], dim=-1)
 
         if self.lr is not None:
             x, x_lens = self._upsample(x, x_lens, inputs)
@@ -586,6 +597,8 @@ class AudioFeatures(FeatureExtractor):
             inputs.energy = inputs.energy * re[:, 2:3] + re[:, 0:1]
             inputs.pitch = inputs.pitch * rp[:, 2:3] + rp[:, 0:1]
 
+        x = self.proj(x)
+
         if self.training and self.addm is not None:
             enc_output.additional_content.update(conditions)
             enc_output.additional_losses = {}
@@ -598,13 +611,14 @@ class AudioFeatures(FeatureExtractor):
                 }
             )
 
-        if self.training and self.mel_predictor is not None:
-            enc_input = ComponentInput(
-                content=x, content_lengths=x_lens, model_inputs=inputs
+        if self.training and self.linear_spec_proj is not None:
+            losses["auxiliary_linear_spec_loss"] = 0.1 * F.mse_loss(
+                self.linear_spec_proj(x), inputs.linear_spectrogram
             )
-            mel_predict = self.mel_predictor(enc_input).content
-            losses["auxiliary_mel_loss"] = 0.1 * F.mse_loss(
-                mel_predict, inputs.spectrogram
+
+        if self.training and self.mel_spec_proj is not None:
+            losses["auxiliary_mel_spec_loss"] = 0.1 * F.mse_loss(
+                self.mel_spec_proj(x), inputs.mel_spectrogram
             )
 
         if "spec_chunk" in inputs.additional_inputs:

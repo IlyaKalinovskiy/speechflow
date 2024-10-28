@@ -169,10 +169,23 @@ class VoiceBiometricProcessor(BaseDSProcessor):
     def compute_sm_loss(
         self, audio: torch.Tensor, audio_gt: torch.Tensor, sample_rate: int
     ):
+        """Compute speaker similarity loss.
+
+        Args:
+            audio:
+            audio_gt:
+            sample_rate:
+
+        Returns:
+
+        """
+
         if self._model_type.startswith("speechbrain"):
 
             def compute_feat(_waveform):
-                return _waveform.squeeze(0)
+                if _waveform.ndim == 2:
+                    _waveform = _waveform.squeeze(0)
+                return _waveform
 
             def compute_embedding(_feat):
                 return self._encoder.encode_batch(_feat).squeeze(1)
@@ -200,6 +213,8 @@ class VoiceBiometricProcessor(BaseDSProcessor):
         def get_feat(_audio):
             feats = []
             for waveform in _audio:
+                if waveform.ndim == 1:
+                    waveform = waveform.unsqueeze(0)
                 feats.append(compute_feat(waveform))
             return torch.stack(feats)
 
@@ -227,10 +242,10 @@ if __name__ == "__main__":
     from speechflow.utils.profiler import Profiler
 
     wav_path = get_root_dir() / "tests/data/test_audio.wav"
-    ref_waveform = AudioChunk(wav_path).load()
+    ref_waveform = AudioChunk(wav_path).load().trim(end=5)
 
     for model in ["resemblyzer", "speechbrain", "wespeaker"]:
-        print(model)
+        print("----", model.upper(), "----")
         bio = VoiceBiometricProcessor(model_type=model)
         clean_emb = bio.process(AudioDataSample(audio_chunk=ref_waveform)).speaker_emb
         clean_emb = torch.from_numpy(clean_emb)
@@ -249,3 +264,13 @@ if __name__ == "__main__":
                 clean_emb.unsqueeze(0), noise_emb.unsqueeze(0)
             )
             print(f"noise_scale: {noise_scale}, dist: {float(dist)}")
+
+        try:
+            sr = ref_waveform.sr
+            t = torch.FloatTensor(4, sr)
+            t.requires_grad = True
+            loss = bio.compute_sm_loss(t, t, sr)
+            assert loss.grad_fn is not None
+            print("speaker similarity loss is supported")
+        except Exception as e:
+            print(e)
