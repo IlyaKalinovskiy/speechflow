@@ -369,18 +369,13 @@ class AudioFeatures(FeatureExtractor):
             addm_params.n_speakers = params.n_speakers
             addm_params.speaker_emb_dim = params.speaker_emb_dim
 
-            if params.use_vq:
-                addm_params.addm_apply_phoneme_classifier = {
-                    "adaptor_context_0": self.vq_enc.output_dim
-                }
-            else:
-                content_name = self.feat_encoder.name
-                if params.use_upsample:
-                    content_name = "upsample_content"
+            content_name = self.feat_encoder.name
+            if params.use_upsample:
+                content_name = "upsample_content"
 
-                addm_params.addm_apply_phoneme_classifier = {
-                    content_name: self.feat_encoder.output_dim
-                }
+            addm_params.addm_apply_phoneme_classifier = {
+                content_name: self.feat_encoder.output_dim
+            }
 
             if params.use_vq and params.use_inverse_grad:
                 addm_params.addm_apply_inverse_speaker_emb = {
@@ -592,15 +587,9 @@ class AudioFeatures(FeatureExtractor):
             inputs.pitch = inputs.pitch * rp[:, 2:3] + rp[:, 0:1]
 
         if self.training and self.addm is not None:
-            if self.vq_enc is not None:
-                vq_output.additional_content.update(conditions)
-                vq_output.additional_losses = {}
-                addm_out = self.addm(vq_output)
-            else:
-                enc_output.additional_content.update(conditions)
-                enc_output.additional_losses = {}
-                addm_out = self.addm(enc_output)
-
+            enc_output.additional_content.update(conditions)
+            enc_output.additional_losses = {}
+            addm_out = self.addm(enc_output)
             losses.update(
                 {
                     k: v
