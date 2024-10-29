@@ -23,8 +23,8 @@ from tts.acoustic_models.modules.additional_modules import (
 from tts.acoustic_models.modules.common import SoftLengthRegulator
 from tts.acoustic_models.modules.common.blocks import Regression, VarianceEmbedding
 from tts.acoustic_models.modules.components.encoders import (
-    SFEncoder,
-    SFEncoderParams,
+    SFEncoderWithClassificationAdaptor,
+    SFEncoderWithClassificationAdaptorParams,
     VQEncoderWithClassificationAdaptor,
     VQEncoderWithClassificationAdaptorParams,
 )
@@ -103,9 +103,9 @@ class AudioFeaturesParams(BaseTorchModelParams):
     style_gmvae_n_components: int = 16
     # variances
     energy_interval: tp.Tuple[float, float] = (0, 150)
-    pitch_interval: tp.Tuple[float, float] = (0, 850)
+    pitch_interval: tp.Tuple[float, float] = (0, 880)
     average_energy_interval: tp.Tuple[float, float] = (0, 150)
-    average_pitch_interval: tp.Tuple[float, float] = (0, 850)
+    average_pitch_interval: tp.Tuple[float, float] = (0, 880)
     # Multilingual PL-BERT
     plbert_emb_dim: int = 768
     plbert_proj_dim: int = 256
@@ -354,7 +354,7 @@ class AudioFeatures(FeatureExtractor):
 
         # ----- source-filter encoder -----
 
-        enc_params = SFEncoderParams(
+        enc_params = SFEncoderWithClassificationAdaptorParams(
             base_encoder_type=params.sf_encoder_type,
             encoder_inner_dim=params.sf_encoder_inner_dim,
             encoder_num_layers=params.sf_encoder_num_layers,
@@ -370,7 +370,7 @@ class AudioFeatures(FeatureExtractor):
             enc_params.condition_dim = condition_dim
             enc_params.condition_type = params.feat_condition_type
 
-        self.sf_encoder = SFEncoder(enc_params, in_dim)
+        self.sf_encoder = SFEncoderWithClassificationAdaptor(enc_params, in_dim)
 
         # ----- init additional modules -----
 
@@ -382,11 +382,9 @@ class AudioFeatures(FeatureExtractor):
             addm_params.n_speakers = params.n_speakers
             addm_params.speaker_emb_dim = params.speaker_emb_dim
 
-            content_name = self.feat_encoder.name
-            if params.use_upsample:
-                content_name = "upsample_content"
-
-            addm_params.addm_apply_phoneme_classifier = {content_name: in_dim}
+            content_name = self.sf_encoder.name
+            content_dim = self.sf_encoder.output_dim
+            addm_params.addm_apply_phoneme_classifier = {content_name: content_dim}
 
             if params.use_vq and params.use_inverse_grad:
                 addm_params.addm_apply_inverse_speaker_emb = {
@@ -510,6 +508,8 @@ class AudioFeatures(FeatureExtractor):
         if inputs.output_lengths is not None:
             if y.shape[1] < inputs.spectrogram.shape[1]:
                 y = F.pad(y, (0, 0, 0, inputs.spectrogram.shape[1] - y.shape[1]))
+            else:
+                y = y[:, : inputs.spectrogram.shape[1], :]
 
         return y, y_lens
 
@@ -543,16 +543,18 @@ class AudioFeatures(FeatureExtractor):
                 }
             )
 
-        enc_input = ComponentInput(content=x, content_lengths=x_lens, model_inputs=inputs)
-        enc_output = self.feat_encoder(enc_input)
-        x = self.feat_encoder.get_content(enc_output)[0]
+        feat_enc_input = ComponentInput(
+            content=x, content_lengths=x_lens, model_inputs=inputs
+        )
+        feat_enc_output = self.feat_encoder(feat_enc_input)
+        x = self.feat_encoder.get_content(feat_enc_output)[0]
 
         if self.params.use_plbert:
             x = torch.cat([x, self.plbert_proj(inputs.plbert_feat)], dim=-1)
 
         if self.lr is not None:
             x, x_lens = self._upsample(x, x_lens, inputs)
-            enc_output.additional_content["upsample_content"] = x
+            feat_enc_output.additional_content["upsample_content"] = x
 
         if self.energy_predictor is not None:
             e_output, e_content, e_losses = self.energy_predictor(
@@ -600,14 +602,16 @@ class AudioFeatures(FeatureExtractor):
             inputs.energy = inputs.energy * re[:, 2:3] + re[:, 0:1]
             inputs.pitch = inputs.pitch * rp[:, 2:3] + rp[:, 0:1]
 
-        enc_input = ComponentInput(content=x, content_lengths=x_lens, model_inputs=inputs)
-        enc_output = self.sf_encoder(enc_input)
-        x = self.sf_encoder.get_content(enc_output)[0]
+        sf_enc_input = ComponentInput(
+            content=x, content_lengths=x_lens, model_inputs=inputs
+        )
+        sf_enc_output = self.sf_encoder(sf_enc_input)
+        x = self.sf_encoder.get_content(sf_enc_output)[0]
 
         if self.training and self.addm is not None:
-            enc_output.additional_content.update(conditions)
-            enc_output.additional_losses = {}
-            addm_out = self.addm(enc_output)
+            sf_enc_output.additional_content.update(conditions)
+            sf_enc_output.additional_losses = {}
+            addm_out = self.addm(sf_enc_output)
             losses.update(
                 {
                     k: v
