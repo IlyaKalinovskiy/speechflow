@@ -65,23 +65,39 @@ model:
     class_name: AudioFeatures
     init_args:
         input_feat_type: ssl_feat
+        inner_dim: 512
+
         ssl_feat_dim: 64
         speaker_emb_dim: 192
-        output_dim: 1024
+
         feat_encoder_type: RNNEncoder
         feat_encoder_num_layers: 1
-        feat_encoder_inner_dim: 1024
-        feat_encoder_use_condition: true
+        feat_encoder_inner_dim: 512
+        feat_encoder_use_condition: false
+
         vp_encoder_type: AdainEncoder
+        vp_encoder_num_layers: 1
+        vp_encoder_inner_dim: 512
         vp_encoder_use_condition: true
-        vq_encoder_type: RNNEncoder
-        vq_encoder_use_condition: true
+
+        # vq_encoder_type: RNNEncoder
+        # vq_encoder_use_condition: true
+        # vq_num_quantizers: 3
+        # vq_codebook_size: 256
+
+        sf_encoder_type: RNNEncoder
+        sf_encoder_num_layers: 1
+        sf_encoder_inner_dim: 512
+        sf_encoder_use_condition: true
+
         style_encoder_type: StyleTTS2
         style_feat_type: mel_spectrogram
         style_emb_dim: 128
         style_use_gmvae: false
+
         energy_interval: [0, 150]  # [0, 150]
         pitch_interval: [0, 880]  # [0, 880]
+
         use_lang_emb: false
         use_speaker_emb: true
         use_speech_quality_emb: true
@@ -92,8 +108,6 @@ model:
         use_averages: true
         use_range: false
         use_vq: false
-        vq_num_quantizers: 3
-        vq_codebook_size: 256
         use_upsample: true
         use_auxiliary_classification_loss: true
         use_auxiliary_linear_spec_loss: true
@@ -102,7 +116,7 @@ model:
   backbone:
     class_name: VocosResNetBackbone
     init_args:
-      input_dim: 1024
+      input_dim: 512
       inner_dim: 1024
       num_layers: 4
 

@@ -11,6 +11,7 @@ from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
 from speechflow.training.base_model import BaseTorchModelParams
 from speechflow.training.losses.vae_loss import VAELoss
 from speechflow.utils.tensor_utils import (
+    apply_mask,
     get_lengths_from_durations,
     get_mask_from_lengths,
 )
@@ -47,17 +48,17 @@ class AudioFeaturesParams(BaseTorchModelParams):
     input_feat_type: tp.Literal[
         "linear_spectrogram", "mel_spectrogram", "ssl_feat"
     ] = "mel_spectrogram"
-    output_dim: int = 256
+    inner_dim: int = 256
     # embeddings
     n_langs: int = 1
     n_speakers: int = 2
     lang_emb_dim: int = 32
     speaker_emb_dim: int = 256
+    ssl_feat_dim: int = 1024
+    style_emb_dim: int = 128
     linear_spectrogram_dim: int = 513
     mel_spectrogram_dim: int = 80
     average_emb_dim: int = 32
-    style_emb_dim: int = 192
-    ssl_feat_dim: int = 1024
     # feat encoder
     feat_encoder_type: str = "RNNEncoder"
     feat_encoder_num_layers: int = 1
@@ -80,6 +81,12 @@ class AudioFeaturesParams(BaseTorchModelParams):
     vq_emb_dim: int = 256
     vq_codebook_size: int = 1024
     vq_num_quantizers: int = 1
+    # source-filter encoder
+    sf_encoder_type: str = "RNNEncoder"
+    sf_encoder_num_layers: int = 1
+    sf_encoder_inner_dim: int = 512
+    sf_encoder_use_condition: bool = True
+    sf_condition_type: tp.Literal["cat", "adanorm"] = "cat"
     # style encoder
     style_encoder_type: tp.Literal[
         "SimpleStyle", "StyleSpeech", "StyleTTS2"
@@ -256,43 +263,23 @@ class AudioFeatures(FeatureExtractor):
 
         # ----- init feat encoder -----
 
-        if params.feat_encoder_type == "SFEncoder":
-            enc_params = SFEncoderParams(
-                base_encoder_type=params.feat_encoder_type,
-                encoder_inner_dim=params.feat_encoder_inner_dim,
-                encoder_num_layers=params.feat_encoder_num_layers,
-                encoder_output_dim=params.output_dim,
-                var_as_embedding=(True, True),
-                var_interval=(params.energy_interval, params.pitch_interval),
-                var_log_scale=(False, True),
-                max_input_length=max_input_length,
-                max_output_length=max_output_length,
-            )
-            if params.feat_encoder_use_condition:
-                enc_params.condition = tuple(condition)
-                enc_params.condition_dim = condition_dim
-                enc_params.condition_type = params.feat_condition_type
+        enc_cls, enc_params_cls = TTS_ENCODERS[params.feat_encoder_type]
+        enc_params = enc_params_cls(
+            encoder_num_layers=params.feat_encoder_num_layers,
+            encoder_inner_dim=params.feat_encoder_inner_dim,
+            encoder_output_dim=params.inner_dim,
+            max_input_length=max_input_length,
+            max_output_length=max_output_length,
+        )
+        if (
+            params.feat_encoder_type != "DummyEncoder"
+            and params.feat_encoder_use_condition
+        ):
+            enc_params.condition = tuple(condition)
+            enc_params.condition_dim = condition_dim
+            enc_params.condition_type = params.feat_condition_type
 
-            self.feat_encoder = SFEncoder(enc_params, in_dim)
-        else:
-            enc_cls, enc_params_cls = TTS_ENCODERS[params.feat_encoder_type]
-            enc_params = enc_params_cls(
-                encoder_num_layers=params.feat_encoder_num_layers,
-                encoder_inner_dim=params.feat_encoder_inner_dim,
-                encoder_output_dim=params.output_dim,
-                max_input_length=max_input_length,
-                max_output_length=max_output_length,
-            )
-            if (
-                params.feat_encoder_type != "DummyEncoder"
-                and params.feat_encoder_use_condition
-            ):
-                enc_params.condition = tuple(condition)
-                enc_params.condition_dim = condition_dim
-                enc_params.condition_type = params.feat_condition_type
-
-            self.feat_encoder = enc_cls(enc_params, in_dim)
-
+        self.feat_encoder = enc_cls(enc_params, in_dim)
         in_dim = self.feat_encoder.output_dim
 
         # ----- init plbert projection -----
@@ -309,17 +296,15 @@ class AudioFeatures(FeatureExtractor):
         # ----- init upsampling -----
 
         if params.use_upsample:
-            self.lr = SoftLengthRegulator()
+            self.lr = SoftLengthRegulator(sigma=0.9)
             self.register_buffer("mean_scale_factor", torch.FloatTensor(1))
+            self.mean_scale_factor = self.mean_scale_factor * 0 + 1.5
         else:
             self.lr = None
 
         # ----- init 1d predictors -----
 
         var_encoder_params = {
-            # "vp_num_layers": int = 1,
-            # "vp_inner_dim": int = 256,
-            # "vp_output_dim": int = 1,
             "max_input_length": max_input_length,
             "max_output_length": max_output_length,
         }
@@ -367,9 +352,25 @@ class AudioFeatures(FeatureExtractor):
         else:
             self.pitch_predictor = None
 
-        # ----- final projection -----
+        # ----- source-filter encoder -----
 
-        self.proj = Regression(in_dim, params.output_dim)
+        enc_params = SFEncoderParams(
+            base_encoder_type=params.sf_encoder_type,
+            encoder_inner_dim=params.sf_encoder_inner_dim,
+            encoder_num_layers=params.sf_encoder_num_layers,
+            encoder_output_dim=params.inner_dim,
+            var_as_embedding=(True, True),
+            var_interval=(params.energy_interval, params.pitch_interval),
+            var_log_scale=(False, True),
+            max_input_length=max_input_length,
+            max_output_length=max_output_length,
+        )
+        if params.feat_encoder_use_condition:
+            enc_params.condition = tuple(condition)
+            enc_params.condition_dim = condition_dim
+            enc_params.condition_type = params.feat_condition_type
+
+        self.sf_encoder = SFEncoder(enc_params, in_dim)
 
         # ----- init additional modules -----
 
@@ -403,13 +404,13 @@ class AudioFeatures(FeatureExtractor):
 
         if params.use_auxiliary_linear_spec_loss:
             self.linear_spec_proj = Regression(
-                params.output_dim, params.linear_spectrogram_dim
+                params.inner_dim, params.linear_spectrogram_dim
             )
         else:
             self.linear_spec_proj = None
 
         if params.use_auxiliary_mel_spec_loss:
-            self.mel_spec_proj = Regression(params.output_dim, params.mel_spectrogram_dim)
+            self.mel_spec_proj = Regression(params.inner_dim, params.mel_spectrogram_dim)
         else:
             self.mel_spec_proj = None
 
@@ -491,12 +492,14 @@ class AudioFeatures(FeatureExtractor):
         if self.training:
             scale_factor = inputs.spectrogram_lengths / x_lens
             dura = scale_factor.unsqueeze(-1).repeat(1, x.shape[1]).to(x.device)
+            dura = apply_mask(dura, get_mask_from_lengths(x_lens, x.shape[1]))
             y, _ = self.lr(x, dura)
             y_lens = inputs.spectrogram_lengths
             self.mean_scale_factor = scale_factor.mean()
         else:
             scale_factor = self.mean_scale_factor.unsqueeze(-1)
             dura = scale_factor.repeat(x.shape[0], x.shape[1]).to(x.device)
+            dura = apply_mask(dura, get_mask_from_lengths(x_lens, x.shape[1]))
             y, _ = self.lr(x, dura)
 
             if inputs.output_lengths is not None:
@@ -597,7 +600,9 @@ class AudioFeatures(FeatureExtractor):
             inputs.energy = inputs.energy * re[:, 2:3] + re[:, 0:1]
             inputs.pitch = inputs.pitch * rp[:, 2:3] + rp[:, 0:1]
 
-        x = self.proj(x)
+        enc_input = ComponentInput(content=x, content_lengths=x_lens, model_inputs=inputs)
+        enc_output = self.sf_encoder(enc_input)
+        x = self.sf_encoder.get_content(enc_output)[0]
 
         if self.training and self.addm is not None:
             enc_output.additional_content.update(conditions)

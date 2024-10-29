@@ -161,7 +161,7 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
     def get_content_and_mask(inputs, idx: int = 0):
         x = Component.get_content(inputs)[idx]
         x_lens = Component.get_content_lengths(inputs)[idx]
-        x_mask = get_mask_from_lengths(x_lens)
+        x_mask = get_mask_from_lengths(x_lens, max_length=x.shape[1])
         return x, x_lens, x_mask
 
     def get_condition(
@@ -249,7 +249,7 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
         max_len: int = None,
         pad_val: float = -4.0,
     ):
-        x_mask = get_mask_from_lengths(x_lengths)
+        x_mask = get_mask_from_lengths(x_lengths, max_length=x.shape[1])
 
         if min_len is None:
             min_len = x_lengths.min()
@@ -281,7 +281,7 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
         max_len: int = None,
         pad_val: float = -4.0,
     ):
-        x_mask = get_mask_from_lengths(x_lengths)
+        x_mask = get_mask_from_lengths(x_lengths, max_length=x.shape[1])
 
         if min_len is None:
             min_len = x_lengths.min() // 2
