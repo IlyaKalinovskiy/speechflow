@@ -108,7 +108,10 @@ class MovableToDevice:
         return self.to(torch.device("cpu"))
 
     def cuda(self):
-        return self.to(torch.device(f"cuda:{torch.cuda.current_device()}"))
+        if torch.cuda.is_available():
+            return self.to(torch.device(f"cuda:{torch.cuda.current_device()}"))
+        else:
+            return self.cpu()
 
 
 @dataclass

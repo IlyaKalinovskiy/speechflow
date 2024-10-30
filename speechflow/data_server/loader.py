@@ -119,15 +119,15 @@ class DataLoader:
         return init_class_from_config(DataLoader, cfg)()
 
     def _log_to_file(self, text: tp.Union[str, bytes]):
-        try:
-            if is_verbose_logging():
+        if is_verbose_logging():
+            try:
                 if isinstance(text, bytes):
                     text = text[:80]
                 fn_name = f"{self.__class__.__name__}.{inspect.stack()[1][3]}"
                 message = f"[{self._uid}][{self.subset_name}]: {text}"
                 log_to_file(trace(fn_name, message=message))
-        except Exception as e:
-            LOGGER.error(trace(self, e))
+            except Exception as e:
+                LOGGER.error(trace(self, e))
 
     def _send_info_message(self, text: str):
         self._info_client.send({"message": text, "subset_name": self.subset_name})
@@ -277,6 +277,7 @@ class DataLoader:
 
             if sleep > 0 and sleep % 12 == 0 and self.non_stop:
                 self.abort_processing()
+
             elif sleep > 60:
                 raise RuntimeError(
                     f"DataServer stopped responding for {self.subset_name} DataLoader!"
@@ -285,12 +286,18 @@ class DataLoader:
             Profiler.sleep(sleep + 3)
             return self.next_batch(sleep + 3)
 
-        batch = self._batch_queue.popleft()
+        try:
+            batch = self._batch_queue.popleft()
+        except IndexError:
+            return self.next_batch()
 
         if self.prefetch_on_gpu and len(self._batch_queue) > 0:
-            next_batch = self._batch_queue[0]
-            if next_batch.collated_samples is not None:
-                next_batch.collated_samples.cuda()
+            try:
+                next_batch = self._batch_queue[0]
+                if next_batch.collated_samples is not None:
+                    next_batch.collated_samples.cuda()
+            except IndexError:
+                pass
 
         return batch
 
