@@ -47,9 +47,10 @@ class SFEncoderParams(EncoderParams):
         if self.base_encoder_params is None:
             self.base_encoder_params = {}
 
-        self.base_encoder_params.setdefault("condition", self.condition)
-        self.base_encoder_params.setdefault("condition_dim", self.condition_dim)
-        self.base_encoder_params.setdefault("condition_type", self.condition_type)
+        if self.condition:
+            self.base_encoder_params.setdefault("condition", self.condition)
+            self.base_encoder_params.setdefault("condition_dim", self.condition_dim)
+            self.base_encoder_params.setdefault("condition_type", self.condition_type)
 
 
 class SFEncoder(Component):
@@ -62,7 +63,9 @@ class SFEncoder(Component):
 
         base_enc_cls, base_enc_params_cls = TTS_ENCODERS[params.base_encoder_type]
         base_enc_params = base_enc_params_cls.init_from_parent_params(
-            params, params.base_encoder_params
+            params,
+            params.base_encoder_params,
+            strict=False,
         )
 
         in_dim_e = 1
@@ -135,21 +138,21 @@ class SFEncoder(Component):
 
         x_src = ComponentInput.copy_from(inputs).set_content(x_src, x_lens)
         output: ComponentOutput = self.source_encoder(x_src)
-        y_src = output.content
+        y_src = self.get_content(output)[0]
 
         x_ftr_e = ComponentInput.copy_from(inputs).set_content(x_ftr_e, x_lens)
         output: ComponentOutput = self.filter_encoder_e(x_ftr_e)
-        y_ftr_e = output.content
+        y_ftr_e = self.get_content(output)[0]
 
         x_ftr_p = ComponentInput.copy_from(inputs).set_content(x_ftr_p, x_lens)
         output: ComponentOutput = self.filter_encoder_p(x_ftr_p)
-        y_ftr_p = output.content
+        y_ftr_p = self.get_content(output)[0]
 
         y = ComponentInput.copy_from(inputs).set_content(
             y_src + y_ftr_e + y_ftr_p, x_lens
         )
         output: ComponentOutput = self.encoder(y)
-        y = output.content
+        y = self.get_content(output)[0]
 
         outputs = EncoderOutput.copy_from(inputs).set_content(y)
         outputs.additional_content[f"{self.__class__.__name__}_{self.id}_src"] = y_src
@@ -195,7 +198,7 @@ class SFEncoderWithClassificationAdaptor(SFEncoder):
             f"adaptor_context_{self.id}", []
         )
 
-        ctx = result.content
+        ctx = self.get_content(result)[0]
         ctx = ctx.transpose(1, 2)
         for conv in self.conv_module:
             ctx = F.relu(conv(ctx))

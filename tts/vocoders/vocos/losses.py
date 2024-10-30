@@ -283,9 +283,7 @@ class SpeakerSimilarityLoss(nn.Module):
             y (Tensor): Ground truth audio waveform.
 
         """
-        sm_loss = self.bio_proc.compute_sm_loss(
-            y_hat.unsqueeze(1), y.unsqueeze(1), sample_rate=self.sample_rate
-        )
+        sm_loss = self.bio_proc.compute_sm_loss(y_hat, y, sample_rate=self.sample_rate)
         return torch.mean(sm_loss, dim=0)
 
 
