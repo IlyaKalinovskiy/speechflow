@@ -57,7 +57,6 @@ class ZeroMQFileHandler(logging.StreamHandler):
     def __init__(self, addr: str):
         super().__init__()
         self._zmq_client = ZMQPatterns.async_client(addr)
-        self._lock = Lock()
 
     def __enter__(self):
         return self
@@ -73,12 +72,11 @@ class ZeroMQFileHandler(logging.StreamHandler):
         else:
             message = self.format(record)
 
-        with self._lock:
-            try:
-                self._zmq_client.send(message)
-            except Exception as e:
-                if "unavailable" not in str(e):
-                    print(e)
+        try:
+            self._zmq_client.send(message)
+        except Exception as e:
+            if "unavailable" not in str(e):
+                print(e)
 
     def close(self):
         self._zmq_client.close()
@@ -87,12 +85,11 @@ class ZeroMQFileHandler(logging.StreamHandler):
         if not isinstance(message, (str, ProfilerData, ProcessData)):
             message = json.dumps(message, indent=4)
 
-        with self._lock:
-            try:
-                self._zmq_client.send(message)
-            except Exception as e:
-                if "unavailable" not in str(e):
-                    print(e)
+        try:
+            self._zmq_client.send(message)
+        except Exception as e:
+            if "unavailable" not in str(e):
+                print(e)
 
 
 def create_logger(
