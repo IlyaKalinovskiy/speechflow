@@ -106,6 +106,8 @@ class AudioFeaturesParams(BaseTorchModelParams):
     pitch_interval: tp.Tuple[float, float] = (0, 880)
     average_energy_interval: tp.Tuple[float, float] = (0, 150)
     average_pitch_interval: tp.Tuple[float, float] = (0, 880)
+    energy_denormalize: bool = False
+    pitch_denormalize: bool = False
     # Multilingual PL-BERT
     plbert_emb_dim: int = 768
     plbert_proj_dim: int = 256
@@ -119,7 +121,6 @@ class AudioFeaturesParams(BaseTorchModelParams):
     use_plbert: bool = False
     use_ssl_adjustment: bool = False
     use_averages: bool = False
-    use_range: bool = False
     use_vq: bool = False
     use_upsample: bool = False
     use_auxiliary_classification_loss: bool = False
@@ -221,7 +222,9 @@ class AudioFeatures(FeatureExtractor):
         else:
             self.style_enc = None
 
-        if (params.use_energy or params.use_pitch) and params.use_range:
+        if (params.use_energy or params.use_pitch) and (
+            params.energy_denormalize or params.pitch_denormalize
+        ):
             self.range_predictor = Regression(condition_dim, 3 * 2, activation_fn="ReLU")
         else:
             self.range_predictor = None
@@ -599,8 +602,11 @@ class AudioFeatures(FeatureExtractor):
                     re = inputs.ranges["energy"]
                     rp = inputs.ranges["pitch"]
 
-            inputs.energy = inputs.energy * re[:, 2:3] + re[:, 0:1]
-            inputs.pitch = inputs.pitch * rp[:, 2:3] + rp[:, 0:1]
+            if self.params.energy_denormalize:
+                inputs.energy = inputs.energy * re[:, 2:3] + re[:, 0:1]
+
+            if self.params.pitch_denormalize:
+                inputs.pitch = inputs.pitch * rp[:, 2:3] + rp[:, 0:1]
 
         sf_enc_input = ComponentInput(
             content=x, content_lengths=x_lens, model_inputs=inputs
