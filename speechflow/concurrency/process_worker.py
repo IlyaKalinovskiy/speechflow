@@ -20,6 +20,7 @@ class ProcessWorker(AbstractWorker, mp.Process, ABC):
         mp.set_start_method("spawn", force=True)
         self._active = mp.Value("i", 0)
         self._started = mp.Value("i", 0)
+        self._finished = mp.Value("i", 0)
         self._none_stop = mp.Value("i", 0)
         self._init_logger = init_logger
         self._lock = lock
@@ -42,13 +43,20 @@ class ProcessWorker(AbstractWorker, mp.Process, ABC):
     def started(self):
         with self._started.get_lock():
             self._started.value = 1
+        with self._finished.get_lock():
+            self._finished.value = 0
 
     def finished(self):
         with self._started.get_lock():
             self._started.value = 0
+        with self._finished.get_lock():
+            self._finished.value = 1
 
     def is_started(self) -> bool:
         return self._started.value
+
+    def is_finished(self) -> bool:
+        return self._finished.value
 
     def set_none_stop_flag(self):
         with self._none_stop.get_lock():
@@ -94,7 +102,7 @@ class ProcessWorker(AbstractWorker, mp.Process, ABC):
         while check_start:
             if self.exitcode is not None and self.exitcode > 0:
                 raise RuntimeError(f"{self.__class__.__name__} fails to start!")
-            if self.is_started():
+            if self.is_started() or self.is_finished():
                 break
             time.sleep(0.1)
 

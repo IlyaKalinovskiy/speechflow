@@ -1,9 +1,9 @@
 ### Model configuration ###
 
-experiment_name: whisp_vocos_rnn_adain_nsf
+experiment_name: whisp_vocos_norm_rnn_conformer_nsf
 
 dirs:
-  logging: whisp_experiments
+  logging: whisp_experiments_v2
 
 seed: 1234
 
@@ -21,7 +21,7 @@ trainer:
   accelerator: { default: gpu, debug: cpu }
   devices: { default: [auto], debug: 1 }
   max_steps: 8000000
-  accumulate_grad_batches: 4
+  accumulate_grad_batches: 1
   limit_val_batches: 100
   log_every_n_steps: 100
   # resume_from_checkpoint: /path/to/checkpoint
@@ -68,14 +68,14 @@ model:
         inner_dim: 512
 
         ssl_feat_dim: 64
-        speaker_emb_dim: 192
+        speaker_emb_dim: 256
 
         feat_encoder_type: RNNEncoder
         feat_encoder_num_layers: 1
         feat_encoder_inner_dim: 512
-        feat_encoder_use_condition: false
+        feat_encoder_use_condition: true
 
-        vp_encoder_type: AdainEncoder
+        vp_encoder_type: RNNEncoder
         vp_encoder_num_layers: 1
         vp_encoder_inner_dim: 512
         vp_encoder_use_condition: true
@@ -85,18 +85,20 @@ model:
         # vq_num_quantizers: 3
         # vq_codebook_size: 256
 
-        sf_encoder_type: RNNEncoder
-        sf_encoder_num_layers: 1
+        sf_encoder_type: ConformerEncoder
+        sf_encoder_num_layers: 2
         sf_encoder_inner_dim: 512
-        sf_encoder_use_condition: true
+        sf_encoder_use_condition: false
 
         style_encoder_type: StyleTTS2
         style_feat_type: mel_spectrogram
         style_emb_dim: 128
         style_use_gmvae: false
 
-        energy_interval: [0, 150]  # [0, 150]
-        pitch_interval: [0, 880]  # [0, 880]
+        # energy_interval: [0, 1.5]  # [0, 150]
+        # pitch_interval: [0, 1.5]  # [0, 880]
+        energy_denormalize: true
+        pitch_denormalize: true
 
         use_lang_emb: false
         use_speaker_emb: true
@@ -106,7 +108,6 @@ model:
         use_pitch: true
         use_plbert: true
         use_averages: true
-        use_range: false
         use_vq: false
         use_upsample: true
         use_auxiliary_classification_loss: true
@@ -114,14 +115,16 @@ model:
         # use_auxiliary_mel_spec_loss: true
 
   backbone:
-    class_name: VocosResNetBackbone
+    class_name: VocosBackbone
     init_args:
       input_dim: 512
-      inner_dim: 1024
+      inner_dim: 512
       num_layers: 4
+      intermediate_dim: 1536
+      condition_dim: 452
 
   head:
     class_name: NSFHead
     init_args:
-      input_dim: 1024
-      condition_dim: 388
+      input_dim: 512
+      condition_dim: 452

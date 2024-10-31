@@ -21,7 +21,10 @@ class DummyEncoder(Component):
     def __init__(self, params, input_dim):
         super().__init__(params, input_dim)
 
-        if params.use_projection:
+        if (
+            params.use_projection
+            and params.encoder_inner_dim != params.encoder_output_dim
+        ):
             self.proj = Regression(
                 params.encoder_inner_dim,
                 params.encoder_output_dim,

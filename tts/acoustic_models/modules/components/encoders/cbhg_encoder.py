@@ -79,7 +79,7 @@ class CBHGEncoder(Component):
             hn = HighwayNetwork(inner_dim)
             self.highways.append(hn)
 
-        if params.use_projection:
+        if params.use_projection and inner_dim != params.encoder_output_dim:
             self.proj = Regression(
                 inner_dim,
                 params.encoder_output_dim,

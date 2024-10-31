@@ -40,7 +40,7 @@ class WorkerPool:
         while True:
             if any([w.exitcode is not None and w.exitcode > 0 for w in self._workers]):
                 raise RuntimeError(f"{self.__class__.__name__} fails to start!")
-            if all([w.is_started() for w in self._workers]):
+            if all([w.is_started() or w.is_finished() for w in self._workers]):
                 break
             time.sleep(0.1)
 

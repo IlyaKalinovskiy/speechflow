@@ -300,8 +300,7 @@ class AudioFeatures(FeatureExtractor):
 
         if params.use_upsample:
             self.lr = SoftLengthRegulator(sigma=0.9)
-            self.register_buffer("mean_scale_factor", torch.FloatTensor(1))
-            self.mean_scale_factor = self.mean_scale_factor * 0 + 1.5
+            self.register_buffer("mean_scale_factor", torch.tensor(1.5))
         else:
             self.lr = None
 
@@ -368,7 +367,7 @@ class AudioFeatures(FeatureExtractor):
             max_input_length=max_input_length,
             max_output_length=max_output_length,
         )
-        if params.feat_encoder_use_condition:
+        if params.sf_encoder_use_condition:
             enc_params.condition = tuple(condition)
             enc_params.condition_dim = condition_dim
             enc_params.condition_type = params.feat_condition_type
