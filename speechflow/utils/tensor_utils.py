@@ -39,7 +39,7 @@ def stack(input_ele, mel_max_length=None):
 def get_mask_from_lengths(lengths, max_length=None):
     batch_size = lengths.shape[0]
     if max_length is None:
-        max_length = torch.max(lengths)
+        max_length = int(torch.max(lengths).item())
 
     ids = (
         torch.arange(0, max_length).unsqueeze(0).expand(batch_size, -1).to(lengths.device)
@@ -140,7 +140,7 @@ def split_batch_by_lengths(
                 torch.split(target[i][: ilens[i]], current_chunk, dim=0)
             )
 
-    max_chunk_len = torch.max(chunks_lens)
+    max_chunk_len = int(torch.max(chunks_lens).item())
     chunk_x = stack(chunk_batch["x"], max_chunk_len)
     chunk_target = (
         stack(chunk_batch.get("target"), max_chunk_len) if target is not None else None
