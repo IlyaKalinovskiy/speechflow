@@ -41,6 +41,7 @@ class ImageDataSample(DataSample):
 class SSLFeatures(ToTensor, ToNumpy, MovableToDevice):
     encoder_feat: tp_DATA = None
     logits: tp_DATA = None
+    centroids: tp_DATA = None
     tokens_text: tp.Tuple[str, ...] = None
     tokens_id: tp_DATA = None
     text: str = None

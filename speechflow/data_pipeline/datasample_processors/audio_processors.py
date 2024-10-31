@@ -82,9 +82,7 @@ class SignalProcessor(BaseAudioProcessor):
         super().__init__(pipe, pipe_cfg, backend)
 
         if "whisper" in pipe:
-            self._sound_effects = init_class_from_config(
-                PraatSoundEffects, pipe_cfg.section("whisper")
-            )()
+            self._sound_effects = PraatSoundEffects()
         else:
             self._sound_effects = None
 

@@ -43,13 +43,12 @@ preproc:
          voice_bio, speech_quality,
          spectrogram, melscale,
          energy, pitch, enhancement_energy, enhancement_pitch,
-         average_by_time,  # norm,  # energy_norm, pitch_norm,
+         average_by_time, norm,
          add_pauses_from_timestamps, text,
          int_durations, calc_invert_durations, transcription_by_frames, float_durations,
-         # to_whisper,
-         ssl, plbert,  # timedim_interpolation,
-         # load_audio,
-         trim, mu_law]
+         ssl, plbert,
+         to_whisper, ssl,
+         load_audio, trim, mu_law]
   pipe_cfg:
     load_audio:
       type: SignalProcessor
@@ -59,7 +58,7 @@ preproc:
           sample_rate: 24000
     voice_bio:
       type: VoiceBiometricProcessor
-      model_type: speechbrain
+      model_type: wespeaker
       max_audio_duration: 5
       random_crop: true
     speech_quality:
@@ -104,14 +103,6 @@ preproc:
       method: quantile
       filter_outliers: true
       min_value: 0
-    energy_norm:
-      type: normalize
-      attributes: [energy]
-      normalize_by: speaker
-    pitch_norm:
-      type: normalize
-      attributes: [pitch]
-      normalize_by: speaker
     add_pauses_from_timestamps:
       step: 0.05
     text:
@@ -128,11 +119,14 @@ preproc:
     to_whisper:
       type: SignalProcessor
       pipe: [whisper]
+      pipe_cfg:
+        whisper:
+          p: 0.5
     ssl:
       type: SSLProcessor
       ssl_type: Hubert
       ssl_params:
-        feature_type: logits
+        # feature_type: centroids
         model_name: facebook/hubert-large-ls960-ft
         pretrain_path: hubert_phoneme_en/epoch=0-step=4500.ckpt
         vocab_path: hubert_phoneme_en/vocab.json
@@ -164,10 +158,10 @@ singleton_handlers:
 
 collate:
   type: TTSCollate
-  multiple:
-    spectrogram: 16
-    ssl_feat: 16
-    plbert_feat: 16
+  # multiple:
+  #   spectrogram: 16
+  #   ssl_feat: 16
+  #   plbert_feat: 16
 
 processor:
   type: DataProcessor

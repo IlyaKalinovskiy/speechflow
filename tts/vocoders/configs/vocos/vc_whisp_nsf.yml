@@ -65,20 +65,21 @@ model:
     class_name: AudioFeatures
     init_args:
         input_feat_type: ssl_feat
+        input_proj_dim: 256
         inner_dim: 512
 
-        ssl_feat_dim: 64
+        ssl_feat_dim: 1024
         speaker_emb_dim: 256
 
         feat_encoder_type: RNNEncoder
-        feat_encoder_num_layers: 1
+        feat_encoder_num_layers: 2
         feat_encoder_inner_dim: 512
         feat_encoder_use_condition: true
 
-        vp_encoder_type: RNNEncoder
+        vp_encoder_type: VarianceEncoder
         vp_encoder_num_layers: 1
         vp_encoder_inner_dim: 512
-        vp_encoder_use_condition: true
+        vp_encoder_use_condition: false
 
         # vq_encoder_type: RNNEncoder
         # vq_encoder_use_condition: true

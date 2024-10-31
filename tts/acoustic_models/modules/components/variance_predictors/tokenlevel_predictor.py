@@ -163,7 +163,7 @@ class TokenLevelPredictor(Component):
             if self.params.var_params.log_scale:  # type: ignore
                 target_by_tokens = torch.log1p(target_by_tokens)
 
-            losses[f"{name}_loss_by_tokens"] = F.l1_loss(predict, target_by_tokens)
+            losses[f"{name}_loss_by_tokens"] = F.smooth_l1_loss(predict, target_by_tokens)
 
         if self.params.var_params.log_scale:  # type: ignore
             predict = torch.expm1(predict)

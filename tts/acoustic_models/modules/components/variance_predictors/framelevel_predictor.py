@@ -144,7 +144,7 @@ class FrameLevelPredictor(Component):
                 if self.params.var_params.log_scale:  # type: ignore
                     target_by_frames = torch.log1p(target_by_frames)
 
-                losses[f"{name}_ssl_adjustment_loss_by_frames"] = F.l1_loss(
+                losses[f"{name}_ssl_adjustment_loss_by_frames"] = F.smooth_l1_loss(
                     var_from_ssl, target_by_frames
                 )
 
@@ -160,7 +160,9 @@ class FrameLevelPredictor(Component):
                 if self.params.var_params.log_scale:  # type: ignore
                     var_by_frames = torch.log1p(var_by_frames)
 
-                losses[f"{name}_loss_by_frames"] = F.l1_loss(predict, var_by_frames)
+                losses[f"{name}_loss_by_frames"] = F.smooth_l1_loss(
+                    predict, var_by_frames
+                )
 
         if self.params.var_params.log_scale:  # type: ignore
             predict = torch.expm1(predict)
