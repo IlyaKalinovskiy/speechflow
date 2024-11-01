@@ -49,9 +49,11 @@ engine:
     num_warmup_steps: 0  # Optimizers warmup steps
     pretrain_mel_steps: 0  # 0 means GAN objective from the first iteration
     use_sm_loss: true
-    biometric_model_name: wespeaker-voxceleb-resnet34-LM
-    # use_cdpam_loss: true
-    # cdpam_model_device: cuda:1
+    use_wavlm_loss: true
+    use_cdpam_loss: true
+    biometric_model_name: C:\FluentaAI\wespeaker-voxceleb-resnet34-LM
+    wavlm_model_name: C:\FluentaAI\wavlm-base-plus
+    loss_device: cuda:0
 
     # automatic evaluation
     evaluate_utmos: false
@@ -116,13 +118,13 @@ model:
         # use_auxiliary_mel_spec_loss: true
 
   backbone:
-    class_name: VocosBackbone
+    class_name: DummyBackbone  # VocosBackbone
     init_args:
       input_dim: 512
       inner_dim: 512
-      num_layers: 4
-      intermediate_dim: 1536
-      condition_dim: 452
+      # num_layers: 4
+      # intermediate_dim: 1536
+      # condition_dim: 452
 
   head:
     class_name: NSFHead

@@ -1,11 +1,15 @@
 import typing as tp
 
+from typing import Iterator
+
 import cdpam
 import torch
 import torchaudio
 
 from torch import nn
+from torch.nn import Parameter
 from torch.nn import functional as F
+from transformers import AutoModel
 
 from speechflow.data_pipeline.datasample_processors.biometric_processors import (
     VoiceBiometricProcessor,
@@ -20,6 +24,7 @@ __all__ = [
     "FeatureMatchingLoss",
     "MultiResolutionSTFTLoss",
     "SpeakerSimilarityLoss",
+    "WavLMLoss",
     "CDPAMLoss",
 ]
 
@@ -268,13 +273,27 @@ class MultiResolutionSTFTLoss(nn.Module):
 class SpeakerSimilarityLoss(nn.Module):
     def __init__(
         self,
-        sample_rate: int,
         model_type: tp.Literal["speechbrain", "wespeaker"] = "wespeaker",
         model_name: tp.Optional[tp_PATH] = None,
+        input_sr: int = 24000,
+        device: str = "cpu",
     ):
         super().__init__()
-        self.sample_rate = sample_rate
-        self.bio_proc = VoiceBiometricProcessor(model_type, model_name)
+        self.bio_proc = VoiceBiometricProcessor(model_type, model_name, device=device)
+        self.bio_proc.init()
+        self.resample = torchaudio.transforms.Resample(
+            input_sr, self.bio_proc.target_sample_rate
+        )
+        self.device = device
+
+    def set_device(self, device: str):
+        self.bio_proc.device = device
+        self.bio_proc.init()
+        self.resample.to(device)
+        self.device = device
+
+    def parameters(self, recurse: bool = True) -> Iterator[Parameter]:
+        return iter(())
 
     def forward(self, y_hat, y) -> torch.Tensor:
         """
@@ -283,15 +302,65 @@ class SpeakerSimilarityLoss(nn.Module):
             y (Tensor): Ground truth audio waveform.
 
         """
-        sm_loss = self.bio_proc.compute_sm_loss(y_hat, y, sample_rate=self.sample_rate)
+        y_hat = y_hat.to(self.device)
+        y = y.to(self.device)
+
+        y_hat_16khz = self.resample(y_hat)
+        y_16khz = self.resample(y)
+
+        sm_loss = self.bio_proc.compute_sm_loss(y_hat_16khz, y_16khz)
         return torch.mean(sm_loss, dim=0)
 
 
-class CDPAMLoss(nn.Module):
-    def __init__(self, device: str):
+class WavLMLoss(torch.nn.Module):
+    def __init__(
+        self,
+        model_name: str = "microsoft/wavlm-base-plus",
+        input_sr: int = 24000,
+        slm_sr: int = 16000,
+    ):
         super().__init__()
-        self.device = device
+        self.wavlm = AutoModel.from_pretrained(model_name)
+        self.wavlm.feature_extractor._requires_grad = False
+        self.resample = torchaudio.transforms.Resample(input_sr, slm_sr)
+
+    def parameters(self, recurse: bool = True) -> Iterator[Parameter]:
+        return iter(())
+
+    def forward(self, y_hat, y):
+        y_hat = y_hat.to(self.wavlm.device)
+        y = y.to(self.wavlm.device)
+
+        with torch.no_grad():
+            y_16khz = self.resample(y)
+            embeddings = self.wavlm(
+                input_values=y_16khz, output_hidden_states=True
+            ).hidden_states
+
+        y_hat_16khz = self.resample(y_hat)
+        embeddings_hat = self.wavlm(
+            input_values=y_hat_16khz, output_hidden_states=True
+        ).hidden_states
+
+        floss = 0
+        for er, eg in zip(embeddings, embeddings_hat):
+            floss += torch.mean(torch.abs(er - eg))
+
+        return floss.mean()
+
+
+class CDPAMLoss(nn.Module):
+    def __init__(self, device: str = "cpu"):
+        super().__init__()
         self.cdpam = cdpam.CDPAM(dev=device)
+        self.device = device
+
+    def set_device(self, device: str):
+        self.cdpam.model.to(device)
+        self.device = device
+
+    def parameters(self, recurse: bool = True) -> Iterator[Parameter]:
+        return iter(())
 
     def forward(self, y_hat, y) -> torch.Tensor:
         """
@@ -300,6 +369,9 @@ class CDPAMLoss(nn.Module):
             y (Tensor): Ground truth audio waveform.
 
         """
+        y_hat = y_hat.to(self.device)
+        y = y.to(self.device)
+
         y_hat = (y_hat * 32768.0).unsqueeze(1)
         y = (y * 32768.0).unsqueeze(1)
 

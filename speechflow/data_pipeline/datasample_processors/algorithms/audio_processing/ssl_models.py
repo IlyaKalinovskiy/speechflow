@@ -256,6 +256,9 @@ class Wav2Vec(BaseSSLModel):
         return ssl_feat
 
     def get_discrete_units(self, ssl_feat: SSLFeatures) -> SSLFeatures:
+        if self.kmeans is None:
+            return ssl_feat
+
         ssl_feat.centroids = self.kmeans(ssl_feat.encoder_feat.squeeze(0))
         ssl_feat.centroids = ssl_feat.centroids + 1
         return ssl_feat
@@ -347,7 +350,7 @@ class Hubert(Wav2Vec):
         else:
             tokenizer = None
 
-        if vocab_path is not None:
+        if kmeans_path is not None:
             self.kmeans = ApplyKmeans(kmeans_path, self.device)
         else:
             self.kmeans = None

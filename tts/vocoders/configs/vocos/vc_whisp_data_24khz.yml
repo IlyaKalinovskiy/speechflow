@@ -47,8 +47,8 @@ preproc:
          add_pauses_from_timestamps, text,
          int_durations, calc_invert_durations, transcription_by_frames, float_durations,
          ssl, plbert,
-         to_whisper, ssl,
-         load_audio, trim, mu_law]
+         to_whisper, ssl, load_audio,
+         trim, mu_law]
   pipe_cfg:
     load_audio:
       type: SignalProcessor

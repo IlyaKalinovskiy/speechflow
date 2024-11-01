@@ -107,6 +107,10 @@ class VoiceBiometricProcessor(BaseDSProcessor):
             )
 
     @property
+    def target_sample_rate(self) -> int:
+        return self._sample_rate
+
+    @property
     def embedding_dim(self) -> int:
         """Size (length) of biometric embedding.
 
@@ -166,9 +170,7 @@ class VoiceBiometricProcessor(BaseDSProcessor):
         return ds.to_numpy()
 
     @lazy_initialization
-    def compute_sm_loss(
-        self, audio: torch.Tensor, audio_gt: torch.Tensor, sample_rate: int
-    ):
+    def compute_sm_loss(self, audio: torch.Tensor, audio_gt: torch.Tensor):
         """Compute speaker similarity loss.
 
         Args:
@@ -194,7 +196,7 @@ class VoiceBiometricProcessor(BaseDSProcessor):
 
             def compute_feat(_waveform):
                 return self._encoder.compute_fbank(
-                    _waveform, sample_rate=sample_rate, cmn=True
+                    _waveform, sample_rate=self.target_sample_rate, cmn=True
                 )
 
             def compute_embedding(_feat):
@@ -269,7 +271,7 @@ if __name__ == "__main__":
             sr = ref_waveform.sr
             t = torch.FloatTensor(4, sr)
             t.requires_grad = True
-            loss = bio.compute_sm_loss(t, t, sr)
+            loss = bio.compute_sm_loss(t, t)
             assert loss.grad_fn is not None
             print("speaker similarity loss is supported")
         except Exception as e:
