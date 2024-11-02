@@ -541,6 +541,8 @@ class AudioFeatures(FeatureExtractor):
                 y = F.pad(y, (0, 0, 0, inputs.spectrogram.shape[1] - y.shape[1]))
             else:
                 y = y[:, : inputs.spectrogram.shape[1], :]
+        else:
+            inputs.output_lengths = y_lens
 
         return y, y_lens
 

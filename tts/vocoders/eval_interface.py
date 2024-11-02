@@ -42,6 +42,7 @@ class VocoderLoader:
         ckpt_path: tp_PATH,
         device: str = "cpu",
         ckpt_preload: tp.Optional[dict] = None,
+        **kwargs,
     ):
         env["DEVICE"] = device
 
@@ -55,6 +56,15 @@ class VocoderLoader:
         self.cfg_data, cfg_model = ExperimentSaver.load_configs_from_checkpoint(
             checkpoint
         )
+
+        if "hubert_model_path" in kwargs:
+            self.cfg_data.preproc.pipe_cfg.ssl.ssl_params.pretrain_path = kwargs[
+                "hubert_model_path"
+            ]
+        if "hubert_vocab_path" in kwargs:
+            self.cfg_data.preproc.pipe_cfg.ssl.ssl_params.vocab_path = kwargs[
+                "hubert_vocab_path"
+            ]
 
         self.pipe = self._load_data_pipeline(self.cfg_data)
         self.pipe_for_reference = self.pipe.with_ignored_handlers(
@@ -121,10 +131,11 @@ class VocoderEvaluationInterface(VocoderLoader):
         ckpt_path: tp_PATH,
         device: str = "cpu",
         ckpt_preload: tp.Optional[dict] = None,
+        **kwargs,
     ):
-        super().__init__(ckpt_path, device, ckpt_preload)
+        super().__init__(ckpt_path, device, ckpt_preload, **kwargs)
         self.sample_rate = find_field(self.cfg_data, "sample_rate")
-        self.hop_size = find_field(self.cfg_data, "hop_len")
+        self.hop_len = find_field(self.cfg_data, "hop_len")
         self.n_mels = find_field(self.cfg_data, "n_mels")
         self.preemphasis_coef = self.find_preemphasis_coef(self.cfg_data)
 
@@ -146,12 +157,10 @@ class VocoderEvaluationInterface(VocoderLoader):
     ) -> VocoderForwardOutput:
         inputs.to(self.device)
         outputs = self.model.inference(inputs)
-        outputs.waveform_length = inputs.spectrogram_lengths * self.hop_size
 
         waveforms = []
-        for idx in range(outputs.waveform_length.shape[0]):
-            waveform = outputs.waveform[idx].cpu().numpy()
-            waveforms.append(waveform[: outputs.waveform_length[idx]])
+        for idx in range(outputs.waveform.shape[0]):
+            waveforms.append(outputs.waveform[idx].cpu().numpy())
 
         waveforms = np.concatenate(waveforms)
 
@@ -207,6 +216,7 @@ class VocoderEvaluationInterface(VocoderLoader):
             collated.speaker_emb = ref_collated.speaker_emb
             collated.speaker_emb_mean = ref_collated.speaker_emb_mean
             collated.spectrogram = ref_collated.spectrogram
+            collated.spectrogram_lengths = ref_collated.spectrogram_lengths
             collated.averages = ref_collated.averages
             collated.speech_quality_emb = ref_collated.speech_quality_emb
             collated.additional_fields = ref_collated.additional_fields
@@ -223,13 +233,11 @@ class VocoderEvaluationInterface(VocoderLoader):
                 plbert_feat_lengths=collated.plbert_feat_lengths,
                 speaker_emb=collated.speaker_emb,
                 speaker_emb_mean=collated.speaker_emb,
-                # energy=collated.energy,
-                # pitch=collated.pitch,
                 speech_quality_emb=collated.speech_quality_emb,
                 averages=collated.averages,
                 additional_inputs=collated.additional_fields,
-                input_lengths=collated.spectrogram_lengths,
-                output_lengths=collated.spectrogram_lengths,
+                # energy=collated.energy,
+                # pitch=collated.pitch,
             )
 
             if lang is not None:
@@ -245,7 +253,7 @@ class VocoderEvaluationInterface(VocoderLoader):
 
 
 if __name__ == "__main__":
-    if 1:
+    if 0:
         from speechflow.utils.fs import get_root_dir
 
         test_file_path = get_root_dir() / "tests/data/test_audio.wav"
@@ -263,26 +271,36 @@ if __name__ == "__main__":
 
         from speechflow.logging import trace
 
-        root_dir = Path("/data3/i.kalinovskiy")
-        voc_path = (
-            root_dir / "vocos_checkpoint_epoch=22_step=575000_val_loss=10.0199.ckpt"
+        vocoder_path = (
+            "C:/FluentaAI/vocos_checkpoint_epoch=2_step=60000_val_loss=9.3055.ckpt"
         )
-        test_files = root_dir / "eng_spontan/wav_16k"
-        result_path = root_dir / "eng_spontan/result"
-        ref_file = root_dir / "4922.wav"
+        ref_wav_path = "C:/FluentaAI/642111.wav"
 
-        voc = VocoderEvaluationInterface(voc_path, device="cpu")
-        Path(result_path).mkdir(parents=True, exist_ok=True)
+        test_files = "C:/FluentaAI/eng_spontan/wav_16k"
+        result_path = "C:/FluentaAI/eng_spontan/result"
+
+        hubert_model_path = "C:/FluentaAI/hubert_phoneme_en/epoch=0-step=4500.ckpt"
+        hubert_vocab_path = "C:/FluentaAI/hubert_phoneme_en/vocab.json"
+
+        device = "cpu"
+
+        voc = VocoderEvaluationInterface(
+            vocoder_path,
+            device=device,
+            hubert_model_path=hubert_model_path,
+            hubert_vocab_path=hubert_vocab_path,
+        )
 
         file_list = list(Path(test_files).glob("*.wav"))
-        for wav_file in tqdm(file_list):
-            result_file_name = Path(result_path) / wav_file.name
+        Path(result_path).mkdir(parents=True, exist_ok=True)
+
+        for wav_path in tqdm(file_list):
+            result_file_name = Path(result_path) / wav_path.name
             if result_file_name.exists():
                 continue
 
             try:
-                voc_out = voc.resynthesize(wav_file, ref_file, lang="EN")
-                voc_out.audio_chunk.save(result_file_name, overwrite=True)
-                # print(voc_out.additional_content["vq_codes"].squeeze().cpu().numpy())
+                voc_out = voc.resynthesize(wav_path, ref_wav_path, lang="EN")
+                voc_out.audio_chunk.resample(sr=16000).save(result_file_name)
             except Exception as e:
-                print(trace("", e))
+                print(trace("eval_interface", e))
