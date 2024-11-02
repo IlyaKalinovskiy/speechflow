@@ -71,7 +71,9 @@ model:
         inner_dim: 512
 
         ssl_feat_dim: 1024
+
         speaker_emb_dim: 256
+        speaker_emb_proj_dim: 64
 
         feat_encoder_type: RNNEncoder
         feat_encoder_num_layers: 2
@@ -124,10 +126,10 @@ model:
       inner_dim: 512
       # num_layers: 4
       # intermediate_dim: 1536
-      # condition_dim: 452
+      # condition_dim: 228
 
   head:
     class_name: NSFHead
     init_args:
       input_dim: 512
-      condition_dim: 452
+      condition_dim: 228

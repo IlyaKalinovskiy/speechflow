@@ -56,11 +56,12 @@ class AudioFeaturesParams(BaseTorchModelParams):
     n_centroids: int = 1024
     lang_emb_dim: int = 32
     speaker_emb_dim: int = 256
+    speaker_emb_proj_dim: int = 64
     ssl_feat_dim: int = 1024
     style_emb_dim: int = 128
     linear_spectrogram_dim: int = 513
     mel_spectrogram_dim: int = 80
-    average_emb_dim: int = 32
+    average_emb_dim: int = 16
     # feat encoder
     feat_encoder_type: str = "RNNEncoder"
     feat_encoder_num_layers: int = 1
@@ -168,8 +169,13 @@ class AudioFeatures(FeatureExtractor):
             self.lang_embs = None
 
         if params.use_speaker_emb:
+            self.speaker_proj = nn.Linear(
+                params.speaker_emb_dim, params.speaker_emb_proj_dim
+            )
             condition.append("speaker_emb")
-            condition_dim += params.speaker_emb_dim
+            condition_dim += params.speaker_emb_proj_dim
+        else:
+            self.speaker_proj = None
 
         if params.n_centroids > 0:
             self.ssl_embs = nn.Embedding(params.n_centroids + 1, params.input_proj_dim)
@@ -446,9 +452,9 @@ class AudioFeatures(FeatureExtractor):
 
         if self.params.use_speaker_emb is not None:
             if inputs.speaker_emb_mean is not None:
-                conditions["speaker_emb"] = inputs.speaker_emb_mean
+                conditions["speaker_emb"] = self.speaker_proj(inputs.speaker_emb_mean)
             else:
-                conditions["speaker_emb"] = inputs.speaker_emb
+                conditions["speaker_emb"] = self.speaker_proj(inputs.speaker_emb)
 
         if self.params.use_speech_quality_emb:
             conditions["speech_quality_emb"] = inputs.speech_quality_emb
