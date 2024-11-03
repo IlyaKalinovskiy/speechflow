@@ -9,7 +9,7 @@ file_search:
   with_subfolders: true
 
 data_server:
-  n_processes: { default: 2, debug: 1 }
+  n_processes: { default: 4, debug: 1 }
   # n_gpus: 1
 
 dataset:
@@ -116,26 +116,27 @@ preproc:
     float_durations:
       type: calc_durations
       as_int: False
-    to_whisper:
-      type: SignalProcessor
-      pipe: [whisper]
-      pipe_cfg:
-        whisper:
-          p: 0.25
     ssl:
       type: SSLProcessor
       ssl_type: Hubert
       ssl_params:
-        # feature_type: centroids
         model_name: facebook/hubert-large-ls960-ft
-        pretrain_path: hubert_phoneme_en/epoch=0-step=4500.ckpt
-        vocab_path: hubert_phoneme_en/vocab.json
+        pretrain_path: /src/hubert_phoneme_en/epoch=0-step=4500.ckpt
+        vocab_path: /src/hubert_phoneme_en/vocab.json
         # stream_mod:
         #   chunk_size: 6400
         #   context_size: [64000, 6550]
     plbert:
       type: MultilingualPLBert
       from_ssl_tokens: True
+    to_whisper:
+      type: SignalProcessor
+      pipe: [whisper]
+      pipe_cfg:
+        whisper:
+          p:
+            train: 0.25
+            test: 0
     trim:
       type: SignalProcessor
       pipe: [trim]
