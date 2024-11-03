@@ -84,7 +84,7 @@ preproc:
       pipe: [energy]
     pitch:
       type: PitchProcessor
-      method: torchcrepe
+      method: pyworld
     enhancement_energy:
       type: signal_enhancement
       attributes: energy

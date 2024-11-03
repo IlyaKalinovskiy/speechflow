@@ -1,6 +1,6 @@
 ### Model configuration ###
 
-experiment_name: whisp_vocos_rnn_nsf
+experiment_name: whisp_vocos_norm_rnn_nsf
 
 dirs:
   logging: whisp_experiments
@@ -11,7 +11,7 @@ batch:
   type: VocoderBatchProcessor
 
 data_loaders:
-  batch_size: { default: 8, debug: 2 }
+  batch_size: { default: 6, debug: 2 }
   epoch_len: { train: 10000, test: ~ }
   min_batch_size: 2
   min_prefetch_factor: { default: 50, debug: 1 }
@@ -21,7 +21,7 @@ trainer:
   accelerator: { default: gpu, debug: cpu }
   devices: { default: [auto], debug: 1 }
   max_steps: 8000000
-  accumulate_grad_batches: 2
+  accumulate_grad_batches: 4
   limit_val_batches: 100
   log_every_n_steps: 100
   # resume_from_checkpoint: /path/to/checkpoint
