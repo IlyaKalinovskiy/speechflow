@@ -112,6 +112,17 @@ class EmbeddingParams(BaseTorchModelParams):
                     dim += params["emb_dim"]
                 self.average_emb_dim = dim
 
+    @staticmethod
+    def check_deprecated_params(cfg: dict) -> dict:
+        if "n_symbols" in cfg:
+            cfg["alphabet_size"] = cfg.pop("n_symbols")
+        if cfg["input"] == "mel_spectrogram":
+            cfg["input"] = "spectrogram"
+        if cfg["target"] == "mel_spectrogram":
+            cfg["target"] = "spectrogram"
+
+        return cfg
+
 
 class EncoderParams(EmbeddingParams):
     """Encoder component parameters."""

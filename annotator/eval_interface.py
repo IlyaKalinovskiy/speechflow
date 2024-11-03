@@ -22,6 +22,7 @@ class AnnotatorEvaluationInterface:
         ckpt_stage2: tp.Union[str, Path],
         device: str = "cpu",
         last_word_correction: bool = False,
+        audio_duration_limit: float = 15,  # in seconds
     ):
         self.use_reverse_mode = last_word_correction
 
@@ -29,11 +30,13 @@ class AnnotatorEvaluationInterface:
             ckpt_path=ckpt_stage1,
             stage=AlignStage.stage1,
             device=device,
+            max_duration=audio_duration_limit,
         )
         self.aligner_stage2 = Aligner(
             ckpt_path=ckpt_stage2,
             stage=AlignStage.stage2,
             device=device,
+            max_duration=audio_duration_limit,
         )
 
         if self.use_reverse_mode:
@@ -42,6 +45,7 @@ class AnnotatorEvaluationInterface:
                 stage=AlignStage.stage1,
                 device=device,
                 reverse_mode=True,
+                max_duration=audio_duration_limit,
                 preload=self.aligner_stage1.model,
             )
             self.aligner_stage2_reverse = Aligner(
@@ -49,6 +53,7 @@ class AnnotatorEvaluationInterface:
                 stage=AlignStage.stage2,
                 device=device,
                 reverse_mode=True,
+                max_duration=audio_duration_limit,
                 preload=self.aligner_stage2.model,
             )
 
@@ -259,6 +264,7 @@ if __name__ == "__main__":
         glow_tts_stage2,
         device="cpu",
         last_word_correction=False,
+        audio_duration_limit=0,
     )
     _sega = annotator.process(_text, _audio_path, _lang, _speaker_name)
     _sega.save("sega.tg", add_audio=True)

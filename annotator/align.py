@@ -113,7 +113,8 @@ class Aligner:
         n_processes: int = 1,
         device: str = "cpu",
         reverse_mode: bool = False,
-        min_pause_len: float = 0.08,
+        max_duration: float = 15,  # in seconds
+        min_pause_len: float = 0.08,  # in seconds
         sega_suffix: str = "",
         preload: tp.Optional[tp.Union[tp.Dict, tp.Tuple]] = None,
     ):
@@ -138,7 +139,9 @@ class Aligner:
             self._speaker_id_map,
             self._lang_id_map,
             self._lang,
-        ) = self._prepare_aligning(ckpt_path, reverse_mode, ckpt_preload=ckpt_preload)
+        ) = self._prepare_aligning(
+            ckpt_path, reverse_mode, max_duration, ckpt_preload=ckpt_preload
+        )
 
         env["DEVICE"] = device
 
@@ -176,7 +179,7 @@ class Aligner:
     def _prepare_aligning(
         ckpt_path: tp_PATH,
         reverse_mode: bool = False,
-        max_duration: int = 15,  # in secs
+        max_duration: float = 15,
         ckpt_preload: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ):
         if ckpt_preload is None:
@@ -188,9 +191,12 @@ class Aligner:
 
         cfg_data["dataset"]["subsets"].remove("train")
         if "split_by_phrases" in cfg_data["parser"]["pipe"]:
-            cfg_data["parser"]["pipe_cfg"]["split_by_phrases"][
-                "max_duration"
-            ] = max_duration
+            if max_duration > 0:
+                cfg_data["parser"]["pipe_cfg"]["split_by_phrases"][
+                    "max_duration"
+                ] = max_duration
+            else:
+                cfg_data["parser"]["pipe"].remove("split_by_phrases")
         if "check_phoneme_length" in cfg_data["parser"]["pipe"]:
             cfg_data["parser"]["pipe"].remove("check_phoneme_length")
         cfg_data["processor"]["output_collated_only"] = False
