@@ -52,7 +52,7 @@ def get_n_tokens(
     token,
     quantity: str,
     step: float,
-    max_durations: float = 5.0,
+    max_duration: float = 5.0,
     correction_factor: float = 1.0,
     breath_power: tp.Optional[str] = None,
     breath_dura: tp.Optional[str] = None,
@@ -64,7 +64,7 @@ def get_n_tokens(
             seconds = float(re.findall(REAL_NUMBER_REGEXP, quantity)[0]) / 1000
         elif "s" == quantity[-1]:
             seconds = float(re.findall(REAL_NUMBER_REGEXP, quantity)[0])
-        seconds = max(0.05, min(max_durations, seconds * correction_factor))
+        seconds = max(0.05, min(max_duration, seconds * correction_factor))
         num_tokens = int(seconds / step)
     except Exception as e:  # TODO: more strict exception pool
         LOGGER.error(trace("get_n_tokens", e))
