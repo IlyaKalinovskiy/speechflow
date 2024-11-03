@@ -826,7 +826,9 @@ def transcription_by_frames(ds: TTSDataSample):
     return ds
 
 
-@PipeRegistry.registry(inputs={"mel", "transcription"}, outputs={"mel", "transcription"})
+@PipeRegistry.registry(
+    inputs={"mel", "transcription_id"}, outputs={"mel", "transcription_id"}
+)
 def reverse(ds: TTSDataSample, p: float = 0.15):
     if random.random() > p:
         return ds

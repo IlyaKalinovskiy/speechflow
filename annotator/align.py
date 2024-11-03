@@ -176,7 +176,7 @@ class Aligner:
     def _prepare_aligning(
         ckpt_path: tp_PATH,
         reverse_mode: bool = False,
-        max_duration: int = 15,  # in secs
+        max_duration: tp.Optional[int] = None,  # in secs
         ckpt_preload: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ):
         if ckpt_preload is None:
@@ -188,9 +188,12 @@ class Aligner:
 
         cfg_data["dataset"]["subsets"].remove("train")
         if "split_by_phrases" in cfg_data["parser"]["pipe"]:
-            cfg_data["parser"]["pipe_cfg"]["split_by_phrases"][
-                "max_duration"
-            ] = max_duration
+            if max_duration is not None:
+                cfg_data["parser"]["pipe_cfg"]["split_by_phrases"][
+                    "max_duration"
+                ] = max_duration
+            else:
+                cfg_data["parser"]["pipe"].remove("split_by_phrases")
         if "check_phoneme_length" in cfg_data["parser"]["pipe"]:
             cfg_data["parser"]["pipe"].remove("check_phoneme_length")
         cfg_data["processor"]["output_collated_only"] = False
