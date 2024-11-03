@@ -107,7 +107,12 @@ def init_data_preprocessing_from_config(
     pipe_cfg = cfg.section("pipe_cfg")
 
     steps = []
+    cache = {}
     for step_name in pipe:
+        if step_name in cache:
+            steps.append(cache[step_name])
+            continue
+
         step_config = pipe_cfg.section(step_name)
         step_arguments = {}
 
@@ -153,6 +158,7 @@ def init_data_preprocessing_from_config(
             pass
 
         steps.append(method)
+        cache[step_name] = method
 
     return steps
 

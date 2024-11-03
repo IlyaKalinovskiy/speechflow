@@ -49,7 +49,7 @@ class ConformerEncoder(CNNEncoder):
             dropout=params.p_dropout,
         )
 
-        if params.use_projection:
+        if params.use_projection and inner_dim != params.encoder_output_dim:
             self.proj = Regression(
                 inner_dim,
                 params.encoder_output_dim,

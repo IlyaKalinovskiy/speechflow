@@ -53,7 +53,7 @@ class OpenAIASR(CloudASR):
             self._lang = "kk"
 
         if self._lang not in OpenAIASR_LANGUAGES:
-            raise ValueError(f"Language {lang} not support in Whisper model!")
+            raise ValueError(f"Language {lang} is not support in Whisper model!")
 
     @staticmethod
     def release(_):

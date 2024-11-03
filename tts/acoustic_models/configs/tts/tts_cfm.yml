@@ -72,7 +72,7 @@ model:
       rate:
         interval: [0, 64]
       energy:
-        interval: [0, 150]
+        interval: [0, 200]
 
     mode_cat:
       1: [average_emb, speech_quality_emb]

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import joblib
 import whisper
 import torchaudio
 import transformers
@@ -80,6 +81,13 @@ class BaseSSLModel(torch.nn.Module):
 
     def postprocessing(self, ssl_feat: SSLFeatures) -> SSLFeatures:
         ssl_feat.encoder_feat = ssl_feat.encoder_feat.cpu()
+
+        if ssl_feat.logits is not None:
+            ssl_feat.logits = ssl_feat.logits.cpu()
+
+        if ssl_feat.centroids is not None:
+            ssl_feat.centroids = ssl_feat.centroids.cpu()
+
         if self._min_audio_duration is not None:
             pass
 
@@ -133,28 +141,22 @@ class Wav2Vec(BaseSSLModel):
         model_name: str = "anton-l/wav2vec2-large-xlsr-53-russian",
         pretrain_path: tp.Optional[tp_PATH] = None,
         vocab_path: tp.Optional[tp_PATH] = None,
+        kmeans_path: tp.Optional[tp_PATH] = None,
         feature_type: tp.Literal[
-            "logits", "last_hidden_state", "partial"
+            "logits", "centroids", "last_hidden_state", "partial"
         ] = "last_hidden_state",
         level: int = 4,
         stream_mod: tp.Optional[dict] = None,
-        trim_pad: bool = True,
     ):
         super().__init__(device, min_audio_duration, max_audio_duration)
 
         self._feature_type = feature_type
         self._level = level
         self._stream_mod = stream_mod
-        self._trim_pad = trim_pad
         self._vocab_path = vocab_path
+        self._kmeans_path = kmeans_path
 
-        if feature_type not in ["logits", "last_hidden_state", "partial"]:
-            raise ValueError(
-                f"Available model_type's: wav2vec logits/last_hidden_state/partial, "
-                f"but got model_type={feature_type}!"
-            )
-
-        self._init_model(model_name, feature_type, pretrain_path, vocab_path)
+        self._init_model(model_name, feature_type, pretrain_path, vocab_path, kmeans_path)
 
         if feature_type == "logits" and hasattr(self.model, "lm_head"):
             self.embedding_dim = self.model.lm_head.out_features
@@ -170,8 +172,9 @@ class Wav2Vec(BaseSSLModel):
         self,
         model_name: str,
         feature_type: str,
-        pretrain_path: tp_PATH,
-        vocab_path: tp_PATH,
+        pretrain_path: tp.Optional[tp_PATH],
+        vocab_path: tp.Optional[tp_PATH],
+        kmeans_path: tp.Optional[tp_PATH],
     ):
         self.model = transformers.Wav2Vec2Model.from_pretrained(
             model_name,
@@ -204,6 +207,14 @@ class Wav2Vec(BaseSSLModel):
 
         self.model.eval()
         self.model.to(self.device)
+
+        if vocab_path is not None:
+            raise ValueError("Vocabulary is not support for Wav2Vec!")
+
+        if kmeans_path is not None:
+            raise ValueError("KMeans is not support for Wav2Vec!")
+        else:
+            self.kmeans = None
 
     def encode(
         self,
@@ -243,6 +254,14 @@ class Wav2Vec(BaseSSLModel):
         ssl_feat.text = text
         return ssl_feat
 
+    def get_discrete_units(self, ssl_feat: SSLFeatures) -> SSLFeatures:
+        if self.kmeans is None:
+            return ssl_feat
+
+        ssl_feat.centroids = self.kmeans(ssl_feat.encoder_feat.squeeze(0))
+        ssl_feat.centroids = ssl_feat.centroids + 1
+        return ssl_feat
+
     @torch.inference_mode()
     def __call__(self, audio_chunk: AudioChunk) -> SSLFeatures:
         ssl_feat = SSLFeatures()
@@ -256,7 +275,6 @@ class Wav2Vec(BaseSSLModel):
             return_attention_mask=True,
         )
         processed = {k: v.to(self.device) for k, v in processed.data.items()}
-        attention_mask = processed.pop("attention_mask")
 
         if self._stream_mod is not None:
             waveform = processed["input_values"].squeeze(0)
@@ -269,7 +287,7 @@ class Wav2Vec(BaseSSLModel):
             ssl_feat.encoder_feat = outputs.logits
             if hasattr(outputs, "logits"):
                 ssl_feat.logits = outputs.logits
-        elif self._feature_type == "last_hidden_state":
+        elif self._feature_type in ["centroids", "last_hidden_state"]:
             outputs = self.model(**processed, output_hidden_states=True)
             ssl_feat.encoder_feat = outputs.hidden_states[-1]
             if hasattr(outputs, "logits"):
@@ -300,16 +318,14 @@ class Wav2Vec(BaseSSLModel):
                 setattr(ssl_feat, feat_name, fold(feat, s_, l_, r_))
 
         ssl_feat = self.get_tokens(ssl_feat)
-        ssl_feat.encoder_feat = ssl_feat.encoder_feat.cpu().squeeze(0)
-        if ssl_feat.logits is not None:
-            ssl_feat.logits = ssl_feat.logits.cpu().squeeze(0)
+        ssl_feat = self.get_discrete_units(ssl_feat)
 
-        if self._trim_pad:
-            attention_mask = attention_mask.squeeze(0)
-            ratio = attention_mask.shape[0] / ssl_feat.encoder_feat.shape[0]
-            attention_len = int(attention_mask.sum())
-            feat_len = int(attention_len / ratio)
-            ssl_feat.encoder_feat = ssl_feat.encoder_feat[:feat_len, :].contiguous()
+        if self._feature_type == "centroids":
+            ssl_feat.encoder_feat = ssl_feat.centroids
+
+        ssl_feat.encoder_feat = ssl_feat.encoder_feat.squeeze(0)
+        if ssl_feat.logits is not None:
+            ssl_feat.logits = ssl_feat.logits.squeeze(0)
 
         return self.postprocessing(ssl_feat)
 
@@ -453,6 +469,31 @@ class ECAPABiometric(BaseSSLModel):
 
         ssl_feat.encoder_feat = emb.squeeze(0)
         return self.postprocessing(ssl_feat)
+
+
+class ApplyKmeans:
+    def __init__(self, model_path: Path, device: str = "cpu"):
+        self.km_model = joblib.load(model_path)
+        self.C_np = self.km_model.cluster_centers_.transpose()
+        self.Cnorm_np = (self.C_np**2).sum(0, keepdims=True)
+        self.C_torch = torch.from_numpy(self.C_np).to(device)
+        self.Cnorm_torch = torch.from_numpy(self.Cnorm_np).to(device)
+
+    def __call__(self, x):
+        if isinstance(x, torch.Tensor):
+            dist = (
+                x.pow(2).sum(1, keepdim=True)
+                - 2 * torch.matmul(x, self.C_torch)
+                + self.Cnorm_torch
+            )
+            return dist.argmin(dim=1)
+        else:
+            dist = (
+                (x**2).sum(1, keepdims=True)
+                - 2 * np.matmul(x, self.C_np)
+                + self.Cnorm_np
+            )
+            return np.argmin(dist, axis=1)
 
 
 if __name__ == "__main__":

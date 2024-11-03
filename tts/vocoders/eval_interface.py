@@ -42,6 +42,7 @@ class VocoderLoader:
         ckpt_path: tp_PATH,
         device: str = "cpu",
         ckpt_preload: tp.Optional[dict] = None,
+        **kwargs,
     ):
         env["DEVICE"] = device
 
@@ -121,10 +122,11 @@ class VocoderEvaluationInterface(VocoderLoader):
         ckpt_path: tp_PATH,
         device: str = "cpu",
         ckpt_preload: tp.Optional[dict] = None,
+        **kwargs,
     ):
-        super().__init__(ckpt_path, device, ckpt_preload)
+        super().__init__(ckpt_path, device, ckpt_preload, **kwargs)
         self.sample_rate = find_field(self.cfg_data, "sample_rate")
-        self.hop_size = find_field(self.cfg_data, "hop_len")
+        self.hop_len = find_field(self.cfg_data, "hop_len")
         self.n_mels = find_field(self.cfg_data, "n_mels")
         self.preemphasis_coef = self.find_preemphasis_coef(self.cfg_data)
 
@@ -146,12 +148,10 @@ class VocoderEvaluationInterface(VocoderLoader):
     ) -> VocoderForwardOutput:
         inputs.to(self.device)
         outputs = self.model.inference(inputs)
-        outputs.waveform_length = inputs.spectrogram_lengths * self.hop_size
 
         waveforms = []
-        for idx in range(outputs.waveform_length.shape[0]):
-            waveform = outputs.waveform[idx].cpu().numpy()
-            waveforms.append(waveform[: outputs.waveform_length[idx]])
+        for idx in range(outputs.waveform.shape[0]):
+            waveforms.append(outputs.waveform[idx].cpu().numpy())
 
         waveforms = np.concatenate(waveforms)
 
@@ -207,6 +207,7 @@ class VocoderEvaluationInterface(VocoderLoader):
             collated.speaker_emb = ref_collated.speaker_emb
             collated.speaker_emb_mean = ref_collated.speaker_emb_mean
             collated.spectrogram = ref_collated.spectrogram
+            collated.spectrogram_lengths = ref_collated.spectrogram_lengths
             collated.averages = ref_collated.averages
             collated.speech_quality_emb = ref_collated.speech_quality_emb
             collated.additional_fields = ref_collated.additional_fields
@@ -223,13 +224,11 @@ class VocoderEvaluationInterface(VocoderLoader):
                 plbert_feat_lengths=collated.plbert_feat_lengths,
                 speaker_emb=collated.speaker_emb,
                 speaker_emb_mean=collated.speaker_emb,
-                # energy=collated.energy,
-                # pitch=collated.pitch,
                 speech_quality_emb=collated.speech_quality_emb,
                 averages=collated.averages,
                 additional_inputs=collated.additional_fields,
-                input_lengths=collated.spectrogram_lengths,
-                output_lengths=collated.spectrogram_lengths,
+                # energy=collated.energy,
+                # pitch=collated.pitch,
             )
 
             if lang is not None:

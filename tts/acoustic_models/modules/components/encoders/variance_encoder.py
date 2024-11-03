@@ -81,7 +81,10 @@ class VarianceEncoder(Component):
             batch_first=True,
         )
 
-        if params.use_projection:
+        if (
+            params.use_projection
+            and params.encoder_inner_dim != params.encoder_output_dim
+        ):
             self.proj = Regression(
                 params.encoder_inner_dim,
                 params.encoder_output_dim,

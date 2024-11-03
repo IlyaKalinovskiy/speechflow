@@ -47,7 +47,7 @@ class AcousticEncoder(Component):
             nn.InstanceNorm1d(inner_dim),
         )
 
-        if params.use_projection:
+        if params.use_projection and inner_dim != params.encoder_output_dim:
             self.proj = Regression(
                 inner_dim,
                 params.encoder_output_dim,

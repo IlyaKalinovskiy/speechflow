@@ -53,6 +53,11 @@ class AbstractWorker:
         pass
 
     @abc.abstractmethod
+    def is_finished(self) -> bool:
+        """Return the execution flag value."""
+        pass
+
+    @abc.abstractmethod
     def do_work_once(self):
         """Implement a single iteration of the main loop here."""
         pass

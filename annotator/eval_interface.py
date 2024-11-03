@@ -136,7 +136,7 @@ class AnnotatorEvaluationInterface:
             self.aligner_stage1.lang_id_map
             and lang not in self.aligner_stage1.lang_id_map
         ):
-            raise ValueError(f"Language {lang} not support in current TTS model!")
+            raise ValueError(f"Language {lang} is not support in current TTS model!")
 
         if lang not in self.text_parser:
             LOGGER.info(f"Initial TextParser for {lang} language")

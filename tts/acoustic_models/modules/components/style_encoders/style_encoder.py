@@ -23,7 +23,7 @@ class StyleEncoderParams(EmbeddingParams):
     style_emb_dim: int = (128,)
     random_chunk: bool = False
     min_spec_len: int = 128
-    max_spec_len: int = 256
+    max_spec_len: int = 512
     use_gmvae: bool = False
     gmvae_dim: int = 32
     gmvae_n_components: int = 16
@@ -115,10 +115,16 @@ class StyleEncoder(Component):
                 model_inputs, self.params.source, average_by_time=False
             )
 
-        if x.shape[1] == model_inputs.input_lengths.max():
-            x_lengths = model_inputs.input_lengths
-        elif x.shape[1] == model_inputs.output_lengths.max():
-            x_lengths = model_inputs.output_lengths
+        if (
+            model_inputs.spectrogram is not None
+            and x.shape[1] == model_inputs.spectrogram.shape[1]
+        ):
+            x_lengths = model_inputs.spectrogram_lengths
+        elif (
+            model_inputs.ssl_feat is not None
+            and x.shape[1] == model_inputs.ssl_feat.shape[1]
+        ):
+            x_lengths = model_inputs.ssl_feat_lengths
         else:
             x_lengths = torch.LongTensor([x.shape[1]] * x.shape[0]).to(x.device)
 
