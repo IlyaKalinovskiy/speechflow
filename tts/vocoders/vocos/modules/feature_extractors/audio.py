@@ -105,9 +105,9 @@ class AudioFeaturesParams(BaseTorchModelParams):
     style_use_fsq: bool = False
     style_gmvae_n_components: int = 16
     # variances
-    energy_interval: tp.Tuple[float, float] = (0, 150)
+    energy_interval: tp.Tuple[float, float] = (0, 200)
     pitch_interval: tp.Tuple[float, float] = (0, 880)
-    average_energy_interval: tp.Tuple[float, float] = (0, 150)
+    average_energy_interval: tp.Tuple[float, float] = (0, 200)
     average_pitch_interval: tp.Tuple[float, float] = (0, 880)
     energy_denormalize: bool = False
     pitch_denormalize: bool = False
@@ -169,13 +169,15 @@ class AudioFeatures(FeatureExtractor):
             self.lang_embs = None
 
         if params.use_speaker_emb:
-            self.speaker_proj = nn.Linear(
-                params.speaker_emb_dim, params.speaker_emb_proj_dim
-            )
             condition.append("speaker_emb")
             condition_dim += params.speaker_emb_proj_dim
-        else:
-            self.speaker_proj = None
+
+            if params.speaker_emb_dim != params.speaker_emb_proj_dim:
+                self.speaker_proj = nn.Linear(
+                    params.speaker_emb_dim, params.speaker_emb_proj_dim
+                )
+            else:
+                self.speaker_proj = nn.Identity()
 
         if params.n_centroids > 0:
             self.ssl_embs = nn.Embedding(params.n_centroids + 1, params.input_proj_dim)
@@ -248,7 +250,7 @@ class AudioFeatures(FeatureExtractor):
         if in_dim != feat_dim:
             self.input_proj = nn.Linear(feat_dim, in_dim)
         else:
-            self.input_proj = None
+            self.input_proj = nn.Identity()
 
         # ----- init VQ encoder -----
 
@@ -307,13 +309,15 @@ class AudioFeatures(FeatureExtractor):
         # ----- init plbert projection -----
 
         if params.use_plbert:
-            self.plbert_proj = nn.Sequential(
-                nn.Linear(params.plbert_emb_dim, params.plbert_proj_dim),
-                nn.Dropout2d(0.2),
-            )
             in_dim += params.plbert_proj_dim
-        else:
-            self.plbert_proj = None
+
+            if params.plbert_emb_dim != params.plbert_proj_dim:
+                self.plbert_proj = nn.Sequential(
+                    nn.Linear(params.plbert_emb_dim, params.plbert_proj_dim),
+                    nn.Dropout2d(0.2),
+                )
+            else:
+                self.plbert_proj = nn.Identity()
 
         # ----- init upsampling -----
 
@@ -561,7 +565,7 @@ class AudioFeatures(FeatureExtractor):
 
         if x.dtype == torch.int64:
             x = self.ssl_embs(x.squeeze(-1))
-        elif self.input_proj is not None:
+        else:
             x = self.input_proj(x)
 
         if self.vq_enc is not None:

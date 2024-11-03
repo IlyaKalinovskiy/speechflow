@@ -74,7 +74,7 @@ model:
       rate:
         interval: [0, 64]
       energy:
-        interval: [0, 150]
+        interval: [0, 200]
 
     mode_cat:
       1: [average_emb, speech_quality_emb]
@@ -178,7 +178,7 @@ model:
         predictor_type: FrameLevelPredictorWithDiscriminator
         denormalize: true
         as_embedding: true
-        interval: [0, 150]
+        interval: [0, 200]
         n_bins: 256
         emb_dim: 128
         input_content: [1]

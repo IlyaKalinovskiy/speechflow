@@ -11,7 +11,7 @@ batch:
   type: VocoderBatchProcessor
 
 data_loaders:
-  batch_size: { default: 4, debug: 2 }
+  batch_size: { default: 8, debug: 2 }
   epoch_len: { train: 10000, test: ~ }
   min_batch_size: 2
   min_prefetch_factor: { default: 50, debug: 1 }
@@ -21,7 +21,7 @@ trainer:
   accelerator: { default: gpu, debug: cpu }
   devices: { default: [auto], debug: 1 }
   max_steps: 8000000
-  accumulate_grad_batches: 1
+  accumulate_grad_batches: 2
   limit_val_batches: 100
   log_every_n_steps: 100
   # resume_from_checkpoint: /path/to/checkpoint
@@ -73,7 +73,7 @@ model:
         ssl_feat_dim: 1024
 
         speaker_emb_dim: 256
-        speaker_emb_proj_dim: 64
+        speaker_emb_proj_dim: 128
 
         feat_encoder_type: RNNEncoder
         feat_encoder_num_layers: 1
@@ -100,10 +100,8 @@ model:
         style_emb_dim: 128
         style_use_gmvae: false
 
-        # energy_interval: [0, 1.5]  # [0, 150]
-        # pitch_interval: [0, 1.5]  # [0, 880]
-        # energy_denormalize: true
-        # pitch_denormalize: true
+        energy_denormalize: true
+        pitch_denormalize: true
 
         use_lang_emb: false
         use_speaker_emb: true
@@ -126,10 +124,12 @@ model:
       inner_dim: 512
       # num_layers: 4
       # intermediate_dim: 1536
-      # condition_dim: 228
+      # condition_dim: 292
 
   head:
     class_name: NSFHead
     init_args:
       input_dim: 512
-      condition_dim: 228
+      condition_dim: 292
+      upsample_rates: [10, 4, 3, 2]  # hop=240
+      upsample_kernel_sizes: [20, 8, 6, 4]
