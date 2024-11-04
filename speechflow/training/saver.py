@@ -37,6 +37,7 @@ class ExperimentSaver:
         additional_files: tp.Optional[tp.Dict[str, str]] = None,
     ):
         self.expr_path = expr_path
+        self.expr_path.mkdir(parents=True, exist_ok=True)
         LOGGER.info(
             trace(self, message=f"Experiment folder: {self.expr_path.as_posix()}")
         )

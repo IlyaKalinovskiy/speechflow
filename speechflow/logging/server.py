@@ -245,7 +245,7 @@ class LoggingServer(ProcessWorker):
 
     def do_work_once(self):
         try:
-            self._zmq_server.pool(timeout=10)
+            self._zmq_server.pool(timeout=100)
 
             if self._zmq_server.is_frontend_ready():
                 raw_message = self._zmq_server.frontend.recv_multipart()
@@ -262,9 +262,10 @@ class LoggingServer(ProcessWorker):
                 self._profile_info()
                 self._process_info()
                 self._timer.reset()
-        except KeyboardInterrupt:
+
+        except KeyboardInterrupt as e:
             self._write_message_to_file(trace(self, "Interrupt received, stopping ..."))
-            self.finish()
+            raise e
         except Exception as e:
             self._write_message_to_file(trace(self, e))
 

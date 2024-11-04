@@ -90,9 +90,11 @@ class AbstractWorker:
         try:
             self.on_start()
             self.started()
-        except Exception as e:
-            LOGGER.error(trace(self, e, message="on_start thrown an exception"))
-            raise e
+        except Exception as on_start_error:
+            LOGGER.error(
+                trace(self, on_start_error, message="on_start thrown an exception")
+            )
+            raise on_start_error
 
         try:
             while self.is_active() and self.is_started():
@@ -101,21 +103,27 @@ class AbstractWorker:
                 except KeyboardInterrupt:
                     LOGGER.error(trace(self, "interrupt received, stopping ..."))
                     break
-
-        except Exception as e:
-            LOGGER.error(trace(self, e, message="do_work_once thrown an exception"))
+        except Exception as do_work_once_error:
             try:
                 self.on_crash()
-            except Exception as e:
-                LOGGER.error(trace(self, e, message="on_crash thrown an exception"))
-                raise e
+            except Exception as on_crash_error:
+                LOGGER.error(
+                    trace(self, on_crash_error, message="on_crash thrown an exception")
+                )
+
+            LOGGER.error(
+                trace(
+                    self, do_work_once_error, message="do_work_once thrown an exception"
+                )
+            )
+            raise do_work_once_error
 
         finally:
             try:
                 self.on_finish()
-            except Exception as e:
-                LOGGER.error(trace(self, e, message="on_finish thrown an exception"))
-                raise e
+            except Exception as on_finish_error:
+                LOGGER.error(
+                    trace(self, on_finish_error, message="on_finish thrown an exception")
+                )
 
-            finally:
-                self.finished()
+            self.finished()

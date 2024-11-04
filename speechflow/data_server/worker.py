@@ -3,6 +3,8 @@ import logging
 
 from os import environ as env
 
+import zmq
+
 from speechflow.concurrency import ProcessWorker
 from speechflow.data_pipeline.core import DataPipeline
 from speechflow.data_pipeline.core.data_processor import DataProcessor
@@ -68,11 +70,10 @@ class BatchWorker(ProcessWorker):
             if batch is not None:
                 batch.tag = self._data_pipeline.tag
 
-        except KeyboardInterrupt:
-            LOGGER.error(trace(self, "Interrupt received, stopping ..."))
-            self.finish()
+        except KeyboardInterrupt as e:
+            raise e
         except Exception as e:
             LOGGER.error(trace(self, e))
 
         finally:
-            self._zmq_worker.socket.send_pyobj(batch)
+            self._zmq_worker.send(batch)

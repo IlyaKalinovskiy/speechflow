@@ -153,7 +153,7 @@ class DataServer(ProcessWorker):
         client_id = self._uid_map[message[0]][:6]
         info = f"[{client_id}] info: {text}"
         message = [message[0], b"", info.encode()]
-        self._zmq_server.frontend.send_multipart(message)
+        self._zmq_server.frontend_send_multipart(message)
         if is_verbose_logging():
             log_to_file(trace(self, f"{subset}: {info}" if subset else info))
 
@@ -210,7 +210,7 @@ class DataServer(ProcessWorker):
                     response.update({"device": f"cuda:{self._gpus[idx]}"})
 
             message[-1] = Serialize.dump(response)
-            self._zmq_server.frontend.send_multipart(message)
+            self._zmq_server.frontend_send_multipart(message)
             self._subscribers[request["sub_type"]] += 1
 
         elif request["message"] == DLM.IS_READY:
@@ -251,14 +251,14 @@ class DataServer(ProcessWorker):
             queue_info.num_batch_in_processing += len(batch_list)
 
             for samples in batch_list:
-                self._zmq_server.backend.send_multipart(
+                self._zmq_server.backend_send_multipart(
                     message + Serialize.dumps(samples)
                 )
 
         elif request["message"] in [DLM.EPOCH_COMPLETE, DLM.ABORT, DLM.RESET]:
             status = self._work_queues[self._uid_map[message[0]]]
             if status.batches:
-                self._zmq_server.frontend.send_multipart(message + status.batches)
+                self._zmq_server.frontend_send_multipart(message + status.batches)
 
             status.is_last_batch = False
             status.batches = []
@@ -278,7 +278,7 @@ class DataServer(ProcessWorker):
 
     def do_work_once(self):
         try:
-            self._zmq_server.pool(timeout=10)
+            self._zmq_server.pool(timeout=100)
 
             if self._zmq_server.is_frontend_ready():
                 message = self._zmq_server.frontend.recv_multipart()
@@ -300,10 +300,10 @@ class DataServer(ProcessWorker):
                 )
 
                 if queue_info.async_mode:
-                    self._zmq_server.frontend.send_multipart(message)
+                    self._zmq_server.frontend_send_multipart(message)
                 else:
                     if queue_info.num_batch_in_processing == 0:
-                        self._zmq_server.frontend.send_multipart(
+                        self._zmq_server.frontend_send_multipart(
                             message + queue_info.batches
                         )
                         queue_info.batches = []
@@ -317,9 +317,8 @@ class DataServer(ProcessWorker):
 
             self.status_info()
 
-        except KeyboardInterrupt:
-            LOGGER.error(trace(self, "Interrupt received, stopping ..."))
-            self.finish()
+        except KeyboardInterrupt as e:
+            raise e
         except Exception as e:
             LOGGER.error(trace(self, e))
 

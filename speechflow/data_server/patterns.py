@@ -49,6 +49,12 @@ class ZMQServer:
         if self.backend:
             self.backend.close()
 
+    def frontend_send_multipart(self, message):
+        self.frontend.send_multipart(message, flags=zmq.NOBLOCK)
+
+    def backend_send_multipart(self, message):
+        self.backend.send_multipart(message, flags=zmq.NOBLOCK)
+
 
 @dataclass
 class ZMQClient:
@@ -132,6 +138,9 @@ class ZMQWorker:
     def close(self):
         self.socket.close()
 
+    def send(self, message, serialize: bool = True):
+        self.socket.send_pyobj(message) if serialize else self.socket.send(message)
+
 
 @dataclass
 class ZMQProxy:
@@ -140,6 +149,10 @@ class ZMQProxy:
     backend: tp.List[zmq.Socket]
     poller: zmq.Poller
     socks: tp.Dict[zmq.Socket, tp.Any] = None  # type: ignore
+
+    def close(self):
+        self.frontend.close()
+        [client.close() for client in self.backend]
 
     def pool(self, timeout: tp.Optional[int] = None):  # in milliseconds
         self.socks = dict(self.poller.poll(timeout))
@@ -166,9 +179,11 @@ class ZMQProxy:
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(self._request_from_all(message))
 
-    def close(self):
-        self.frontend.close()
-        [client.close() for client in self.backend]
+    def frontend_send_multipart(self, message):
+        self.frontend.send_multipart(message, flags=zmq.NOBLOCK)
+
+    def backend_send_multipart(self, message):
+        self.backend.send_multipart(message, flags=zmq.NOBLOCK)
 
 
 class ZMQPatterns:

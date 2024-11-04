@@ -64,7 +64,7 @@ engine:
 
 model:
   feature_extractor:
-    class_name: AudioFeatures
+    class_name: AudioFeaturesV2
     init_args:
         input_feat_type: ssl_feat
         input_proj_dim: 256
