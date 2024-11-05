@@ -245,7 +245,7 @@ class LoggingServer(ProcessWorker):
 
     def do_work_once(self):
         try:
-            self._zmq_server.pool(timeout=100)
+            self._zmq_server.pool(timeout=1000)
 
             if self._zmq_server.is_frontend_ready():
                 raw_message = self._zmq_server.frontend.recv_multipart()

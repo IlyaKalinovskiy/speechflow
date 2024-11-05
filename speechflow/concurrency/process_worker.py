@@ -107,6 +107,16 @@ class ProcessWorker(AbstractWorker, mp.Process, ABC):
             time.sleep(0.1)
 
     def finish(self, timeout: float = 1.0):
+        if self.exitcode is not None:
+            if self.exitcode > 0:
+                LOGGER.error(
+                    trace(
+                        self,
+                        message=f"Process {self.__class__.__name__} fails [exitcode={self.exitcode}]",
+                    )
+                )
+            return
+
         try:
             self.deactivate()
             self._finish_timeout(timeout)

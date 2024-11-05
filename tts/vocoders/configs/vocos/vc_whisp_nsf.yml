@@ -124,12 +124,12 @@ model:
       inner_dim: 512
       # num_layers: 4
       # intermediate_dim: 1536
-      # condition_dim: 292
+      # condition_dim: 256
 
   head:
     class_name: NSFHead
     init_args:
       input_dim: 512
-      condition_dim: 292
+      condition_dim: 256
       upsample_rates: [10, 4, 3, 2]  # hop=240
       upsample_kernel_sizes: [20, 8, 6, 4]

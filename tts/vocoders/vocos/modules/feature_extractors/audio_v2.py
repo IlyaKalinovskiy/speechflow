@@ -177,7 +177,6 @@ class AudioFeaturesV2(FeatureExtractor):
                 self.speaker_proj = nn.Identity()
 
         if params.use_speech_quality_emb:
-            condition.append("speech_quality_emb")
             in_dim += 4
 
         if params.use_averages and params.use_energy:
@@ -265,7 +264,6 @@ class AudioFeaturesV2(FeatureExtractor):
             self.vq_enc = VQEncoderWithClassificationAdaptor(
                 vq_enc_params, params.input_proj_dim
             )
-            in_dim = self.vq_enc.output_dim
         else:
             self.vq_enc = None
 
@@ -448,11 +446,10 @@ class AudioFeaturesV2(FeatureExtractor):
             return inputs.ssl_feat, inputs.ssl_feat_lengths
 
     def _get_speaker_emb(self, inputs):
-        if self.params.use_speaker_emb is not None:
-            if inputs.speaker_emb_mean is not None:
-                return self.speaker_proj(inputs.speaker_emb_mean)
-            else:
-                return self.speaker_proj(inputs.speaker_emb)
+        if inputs.speaker_emb_mean is not None:
+            return self.speaker_proj(inputs.speaker_emb_mean)
+        else:
+            return self.speaker_proj(inputs.speaker_emb)
 
     def _get_embeddings(self, inputs: VocoderForwardInput) -> tp.Dict[str, tp.Any]:
         embeddings = {}
@@ -552,21 +549,24 @@ class AudioFeaturesV2(FeatureExtractor):
         return y, y_lens
 
     def forward(self, inputs: VocoderForwardInput, **kwargs):
+        embeddings = self._get_embeddings(inputs)
         condition = {}
         losses = {}
         additional_content = {}
 
         x, x_lens = self._get_input_feat(inputs)
-        embeddings = self._get_embeddings(inputs)
-
-        condition["style_emb"], style_losses = self._get_style(inputs, inputs.global_step)
-        losses.update(style_losses)
-        inputs.additional_inputs.update(condition)
 
         if x.dtype == torch.int64:
             x = self.ssl_embs(x.squeeze(-1))
         else:
             x = self.input_proj(x)
+
+        if self.params.use_speaker_emb is not None:
+            condition["speaker_emb"] = self._get_speaker_emb(inputs)
+
+        condition["style_emb"], style_losses = self._get_style(inputs, inputs.global_step)
+        losses.update(style_losses)
+        inputs.additional_inputs.update(condition)
 
         if self.vq_enc is not None:
             vq_input = ComponentInput(
@@ -584,6 +584,10 @@ class AudioFeaturesV2(FeatureExtractor):
                 }
             )
 
+        embs = torch.cat(list(embeddings.values()), dim=-1)
+        embs = embs.unsqueeze(1).expand(-1, x.shape[1], -1)
+        x = torch.cat([x, embs], dim=-1)
+
         feat_enc_input = ComponentInput(
             content=x, content_lengths=x_lens, model_inputs=inputs
         )
@@ -596,8 +600,8 @@ class AudioFeaturesV2(FeatureExtractor):
             prosody = x.detach()
 
         if self.lr is not None:
+            prosody, _ = self._upsample(prosody, x_lens, inputs)
             x, x_lens = self._upsample(x, x_lens, inputs)
-            feat_enc_output.additional_content["upsample_content"] = x
 
         if self.energy_predictor is not None:
             e_output, e_content, e_losses = self.energy_predictor(
