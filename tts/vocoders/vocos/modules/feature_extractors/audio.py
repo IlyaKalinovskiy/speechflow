@@ -81,7 +81,6 @@ class AudioFeaturesParams(BaseTorchModelParams):
     vq_encoder_use_condition: bool = True
     vq_condition_type: tp.Literal["cat", "adanorm"] = "cat"
     vq_type: tp.Literal["vq", "rvq", "rfsq", "rlfq"] = "rlfq"
-    vq_emb_dim: int = 256
     vq_codebook_size: int = 1024
     vq_num_quantizers: int = 1
     # source-filter encoder
@@ -105,12 +104,16 @@ class AudioFeaturesParams(BaseTorchModelParams):
     style_use_fsq: bool = False
     style_gmvae_n_components: int = 16
     # variances
-    energy_interval: tp.Tuple[float, float] = (0, 200)
-    pitch_interval: tp.Tuple[float, float] = (0, 880)
     average_energy_interval: tp.Tuple[float, float] = (0, 200)
-    average_pitch_interval: tp.Tuple[float, float] = (0, 880)
+    energy_interval: tp.Tuple[float, float] = (0, 200)
     energy_denormalize: bool = False
+    energy_log_scale: bool = False
+    energy_smooth_l1_beta: float = 1.0
+    average_pitch_interval: tp.Tuple[float, float] = (0, 880)
+    pitch_interval: tp.Tuple[float, float] = (0, 880)
     pitch_denormalize: bool = False
+    pitch_log_scale: bool = False
+    pitch_smooth_l1_beta: float = 1.0
     # Multilingual PL-BERT
     plbert_emb_dim: int = 768
     plbert_proj_dim: int = 256
@@ -141,30 +144,28 @@ class AudioFeatures(FeatureExtractor):
         max_input_length = 1024 * 4
         max_output_length = 1024 * 4
 
-        def _get_feat_dim(feat_name: str) -> int:
-            if feat_name == "linear_spectrogram":
-                return params.linear_spectrogram_dim
-            elif feat_name == "mel_spectrogram":
-                return params.mel_spectrogram_dim
-            elif feat_name == "ssl_feat":
-                return params.ssl_feat_dim
-            elif params.style_feat_type == "speaker_emb":
-                return params.speaker_emb_dim
-            elif params.style_feat_type == "style_emb":
-                return params.style_emb_dim
-            else:
-                raise NotImplementedError(f"feat_name '{feat_name}' is not supported")
-
         self.input_feat_type = params.input_feat_type
         self.style_feat_type = params.style_feat_type
+
+        in_dim = params.input_proj_dim
+        in_feat_dim = self._get_feat_dim(params.input_feat_type)
 
         condition = []
         condition_dim = 0
 
+        if in_dim != in_feat_dim:
+            self.input_proj = nn.Linear(in_feat_dim, in_dim)
+        else:
+            self.input_proj = nn.Identity()
+
+        if params.n_centroids > 0:
+            self.ssl_embs = nn.Embedding(params.n_centroids + 1, params.input_proj_dim)
+        else:
+            self.ssl_embs = None
+
         if params.use_lang_emb:
             self.lang_embs = nn.Embedding(params.n_langs, params.lang_emb_dim)
-            condition.append("lang_emb")
-            condition_dim += params.lang_emb_dim
+            in_dim += params.lang_emb_dim
         else:
             self.lang_embs = None
 
@@ -179,21 +180,14 @@ class AudioFeatures(FeatureExtractor):
             else:
                 self.speaker_proj = nn.Identity()
 
-        if params.n_centroids > 0:
-            self.ssl_embs = nn.Embedding(params.n_centroids + 1, params.input_proj_dim)
-        else:
-            self.ssl_embs = None
-
         if params.use_speech_quality_emb:
-            condition.append("speech_quality_emb")
-            condition_dim += 4
+            in_dim += 4
 
         if params.use_averages and params.use_energy:
             self.avr_energy_emb = VarianceEmbedding(
                 interval=params.average_energy_interval, emb_dim=params.average_emb_dim
             )
-            condition.append("avr_energy_emb")
-            condition_dim += params.average_emb_dim
+            in_dim += params.average_emb_dim
         else:
             self.avr_energy_emb = None
 
@@ -203,8 +197,7 @@ class AudioFeatures(FeatureExtractor):
                 emb_dim=params.average_emb_dim,
                 log_scale=True,
             )
-            condition.append("avr_pitch_emb")
-            condition_dim += params.average_emb_dim
+            in_dim += params.average_emb_dim
         else:
             self.avr_pitch_emb = None
 
@@ -212,7 +205,7 @@ class AudioFeatures(FeatureExtractor):
             style_params = StyleEncoderParams(
                 base_encoder_type=params.style_encoder_type,
                 source=None,
-                source_dim=_get_feat_dim(params.style_feat_type),
+                source_dim=self._get_feat_dim(params.style_feat_type),
                 style_emb_dim=params.style_emb_dim,
                 min_spec_len=128,
                 max_spec_len=512,
@@ -244,14 +237,6 @@ class AudioFeatures(FeatureExtractor):
         else:
             self.range_predictor = None
 
-        in_dim = params.input_proj_dim
-        feat_dim = _get_feat_dim(params.input_feat_type)
-
-        if in_dim != feat_dim:
-            self.input_proj = nn.Linear(feat_dim, in_dim)
-        else:
-            self.input_proj = nn.Identity()
-
         # ----- init VQ encoder -----
 
         if params.use_vq:
@@ -277,11 +262,12 @@ class AudioFeatures(FeatureExtractor):
                 vq_num_quantizers=params.vq_num_quantizers,
                 vq_encoder_type=params.vq_encoder_type,
                 vq_encoder_params=vq_encoder_params,
-                encoder_output_dim=params.vq_emb_dim,
+                encoder_output_dim=params.input_proj_dim,
                 tag="vq_encoder",
             )
-            self.vq_enc = VQEncoderWithClassificationAdaptor(vq_enc_params, in_dim)
-            in_dim = self.vq_enc.output_dim
+            self.vq_enc = VQEncoderWithClassificationAdaptor(
+                vq_enc_params, params.input_proj_dim
+            )
         else:
             self.vq_enc = None
 
@@ -306,10 +292,10 @@ class AudioFeatures(FeatureExtractor):
         self.feat_encoder = enc_cls(enc_params, in_dim)
         in_dim = self.feat_encoder.output_dim
 
-        # ----- init plbert projection -----
+        # ----- init prosody feat -----
 
         if params.use_plbert:
-            in_dim += params.plbert_proj_dim
+            prosody_dim = in_dim + params.plbert_proj_dim
 
             if params.plbert_emb_dim != params.plbert_proj_dim:
                 self.plbert_proj = nn.Sequential(
@@ -318,6 +304,8 @@ class AudioFeatures(FeatureExtractor):
                 )
             else:
                 self.plbert_proj = nn.Identity()
+        else:
+            prosody_dim = in_dim
 
         # ----- init upsampling -----
 
@@ -351,10 +339,11 @@ class AudioFeatures(FeatureExtractor):
                 vp_inner_dim=params.vp_encoder_inner_dim,
                 vp_num_layers=params.vp_encoder_num_layers,
                 vp_output_dim=1,
-                var_params=VarianceParams(log_scale=False),
+                var_params=VarianceParams(log_scale=params.energy_log_scale),
+                smooth_l1_beta=params.energy_smooth_l1_beta,
             )
             self.energy_predictor = FrameLevelPredictorWithDiscriminator(
-                energy_predictor_params, in_dim
+                energy_predictor_params, prosody_dim
             )
         else:
             self.energy_predictor = None
@@ -367,12 +356,13 @@ class AudioFeatures(FeatureExtractor):
                 vp_inner_channels=params.vp_encoder_inner_dim,
                 vp_num_layers=params.vp_encoder_num_layers,
                 vp_output_dim=1,
-                var_params=VarianceParams(log_scale=True),
+                var_params=VarianceParams(log_scale=params.pitch_log_scale),
                 use_ssl_adjustment=params.use_ssl_adjustment,
                 ssl_feat_dim=params.ssl_feat_dim,
+                smooth_l1_beta=params.pitch_smooth_l1_beta,
             )
             self.pitch_predictor = FrameLevelPredictorWithDiscriminator(
-                pitch_predictor_params, in_dim
+                pitch_predictor_params, prosody_dim
             )
         else:
             self.pitch_predictor = None
@@ -437,6 +427,20 @@ class AudioFeatures(FeatureExtractor):
         else:
             self.mel_spec_proj = None
 
+    def _get_feat_dim(self, feat_name: str) -> int:
+        if feat_name == "linear_spectrogram":
+            return self.params.linear_spectrogram_dim
+        elif feat_name == "mel_spectrogram":
+            return self.params.mel_spectrogram_dim
+        elif feat_name == "ssl_feat":
+            return self.params.ssl_feat_dim
+        elif self.params.style_feat_type == "speaker_emb":
+            return self.params.speaker_emb_dim
+        elif self.params.style_feat_type == "style_emb":
+            return self.params.style_emb_dim
+        else:
+            raise NotImplementedError(f"feat_name '{feat_name}' is not supported")
+
     def _get_input_feat(
         self, inputs: VocoderForwardInput
     ) -> tp.Tuple[torch.Tensor, torch.Tensor]:
@@ -447,29 +451,29 @@ class AudioFeatures(FeatureExtractor):
         elif self.input_feat_type == "ssl_feat":
             return inputs.ssl_feat, inputs.ssl_feat_lengths
 
-    def _get_conditions(self, inputs: VocoderForwardInput) -> tp.Dict[str, tp.Any]:
-        conditions = {}
+    def _get_speaker_emb(self, inputs):
+        if inputs.speaker_emb_mean is not None:
+            return self.speaker_proj(inputs.speaker_emb_mean)
+        else:
+            return self.speaker_proj(inputs.speaker_emb)
+
+    def _get_embeddings(self, inputs: VocoderForwardInput) -> tp.Dict[str, tp.Any]:
+        embeddings = {}
 
         if self.lang_embs is not None:
             lang_id = inputs.lang_id
-            conditions["lang_emb"] = self.lang_embs(lang_id)
-
-        if self.params.use_speaker_emb is not None:
-            if inputs.speaker_emb_mean is not None:
-                conditions["speaker_emb"] = self.speaker_proj(inputs.speaker_emb_mean)
-            else:
-                conditions["speaker_emb"] = self.speaker_proj(inputs.speaker_emb)
+            embeddings["lang_emb"] = self.lang_embs(lang_id)
 
         if self.params.use_speech_quality_emb:
-            conditions["speech_quality_emb"] = inputs.speech_quality_emb
+            embeddings["speech_quality_emb"] = inputs.speech_quality_emb
 
         if self.avr_energy_emb is not None:
-            conditions["avr_energy_emb"] = self.avr_energy_emb(inputs.averages["energy"])
+            embeddings["avr_energy_emb"] = self.avr_energy_emb(inputs.averages["energy"])
 
         if self.avr_pitch_emb is not None:
-            conditions["avr_pitch_emb"] = self.avr_pitch_emb(inputs.averages["pitch"])
+            embeddings["avr_pitch_emb"] = self.avr_pitch_emb(inputs.averages["pitch"])
 
-        return conditions
+        return embeddings
 
     def _get_style(
         self, inputs: VocoderForwardInput, global_step: int
@@ -511,7 +515,7 @@ class AudioFeatures(FeatureExtractor):
 
         return style_emb, style_losses
 
-    def _cat_plbert_feat(self, x, inputs: VocoderForwardInput):
+    def _get_prosody_feat(self, x, inputs: VocoderForwardInput):
         plbert_feat = self.plbert_proj(inputs.plbert_feat)
 
         if x.shape[1] > plbert_feat.shape[1]:
@@ -519,7 +523,7 @@ class AudioFeatures(FeatureExtractor):
         elif x.shape[1] < plbert_feat.shape[1]:
             plbert_feat = plbert_feat[:, : x.shape[1]]
 
-        return torch.cat([x, plbert_feat], dim=-1)
+        return torch.cat([x.detach(), plbert_feat], dim=-1)
 
     def _upsample(self, x, x_lens, inputs: VocoderForwardInput):
         if self.training:
@@ -545,28 +549,28 @@ class AudioFeatures(FeatureExtractor):
                 y = F.pad(y, (0, 0, 0, inputs.spectrogram.shape[1] - y.shape[1]))
             else:
                 y = y[:, : inputs.spectrogram.shape[1], :]
-        else:
-            inputs.output_lengths = y_lens
 
         return y, y_lens
 
     def forward(self, inputs: VocoderForwardInput, **kwargs):
+        embeddings = self._get_embeddings(inputs)
+        condition = {}
         losses = {}
         additional_content = {}
 
         x, x_lens = self._get_input_feat(inputs)
-        conditions = self._get_conditions(inputs)
-
-        conditions["style_emb"], style_losses = self._get_style(
-            inputs, inputs.global_step
-        )
-        losses.update(style_losses)
-        inputs.additional_inputs.update(conditions)
 
         if x.dtype == torch.int64:
             x = self.ssl_embs(x.squeeze(-1))
         else:
             x = self.input_proj(x)
+
+        if self.params.use_speaker_emb is not None:
+            condition["speaker_emb"] = self._get_speaker_emb(inputs)
+
+        condition["style_emb"], style_losses = self._get_style(inputs, inputs.global_step)
+        losses.update(style_losses)
+        inputs.additional_inputs.update(condition)
 
         if self.vq_enc is not None:
             vq_input = ComponentInput(
@@ -584,6 +588,10 @@ class AudioFeatures(FeatureExtractor):
                 }
             )
 
+        embs = torch.cat(list(embeddings.values()), dim=-1)
+        embs = embs.unsqueeze(1).expand(-1, x.shape[1], -1)
+        x = torch.cat([x, embs], dim=-1)
+
         feat_enc_input = ComponentInput(
             content=x, content_lengths=x_lens, model_inputs=inputs
         )
@@ -591,15 +599,19 @@ class AudioFeatures(FeatureExtractor):
         x = self.feat_encoder.get_content(feat_enc_output)[0]
 
         if self.params.use_plbert:
-            x = self._cat_plbert_feat(x, inputs)
+            prosody = self._get_prosody_feat(x, inputs)
+        else:
+            prosody = x.detach()
 
         if self.lr is not None:
+            prosody, _ = self._upsample(prosody, x_lens, inputs)
             x, x_lens = self._upsample(x, x_lens, inputs)
-            feat_enc_output.additional_content["upsample_content"] = x
+            if inputs.output_lengths is None:
+                inputs.output_lengths = x_lens
 
         if self.energy_predictor is not None:
             e_output, e_content, e_losses = self.energy_predictor(
-                x=x.detach(),
+                x=prosody,
                 x_lengths=x_lens,
                 model_inputs=inputs,
                 target=inputs.energy,
@@ -611,7 +623,7 @@ class AudioFeatures(FeatureExtractor):
 
         if self.pitch_predictor is not None:
             p_output, p_content, p_losses = self.pitch_predictor(
-                x=x.detach(),
+                x=prosody,
                 x_lengths=x_lens,
                 model_inputs=inputs,
                 target=inputs.pitch,
@@ -622,7 +634,7 @@ class AudioFeatures(FeatureExtractor):
                 inputs.pitch = p_output
 
         if self.range_predictor is not None:
-            feat = torch.cat(list(conditions.values()), dim=-1).detach()
+            feat = torch.cat(list(condition.values()), dim=-1).detach()
             ranges_predict = self.range_predictor(feat).reshape(-1, 2, 3)
 
             if self.training:
@@ -653,7 +665,7 @@ class AudioFeatures(FeatureExtractor):
         x = self.sf_encoder.get_content(sf_enc_output)[0]
 
         if self.training and self.addm is not None:
-            sf_enc_output.additional_content.update(conditions)
+            sf_enc_output.additional_content.update(condition)
             sf_enc_output.additional_losses = {}
             addm_out = self.addm(sf_enc_output)
             losses.update(
@@ -691,5 +703,5 @@ class AudioFeatures(FeatureExtractor):
             additional_content["energy"] = inputs.energy
             additional_content["pitch"] = inputs.pitch
 
-        additional_content["condition_emb"] = torch.cat(list(conditions.values()), dim=-1)
+        additional_content["condition_emb"] = torch.cat(list(condition.values()), dim=-1)
         return output.transpose(1, -1), losses, additional_content

@@ -24,6 +24,7 @@ class FrameLevelPredictorParams(VariancePredictorParams):
     frame_encoder_type: str = "VarianceEncoder"
     frame_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
     activation_fn: str = "Identity"
+    smooth_l1_beta: float = 1.0
     use_ssl_adjustment: bool = (
         False  # improving the target feature through prediction over SSL model
     )
@@ -161,7 +162,7 @@ class FrameLevelPredictor(Component):
                     var_by_frames = torch.log1p(var_by_frames)
 
                 losses[f"{name}_loss_by_frames"] = F.smooth_l1_loss(
-                    predict, var_by_frames
+                    predict, var_by_frames, beta=self.params.smooth_l1_beta
                 )
 
         if self.params.var_params.log_scale:  # type: ignore

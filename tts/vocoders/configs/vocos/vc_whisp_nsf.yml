@@ -64,7 +64,7 @@ engine:
 
 model:
   feature_extractor:
-    class_name: AudioFeaturesV2
+    class_name: AudioFeatures
     init_args:
         input_feat_type: ssl_feat
         input_proj_dim: 256
@@ -101,7 +101,9 @@ model:
         style_use_gmvae: false
 
         energy_denormalize: true
+        energy_smooth_l1_beta: 0.1
         pitch_denormalize: true
+        pitch_smooth_l1_beta: 0.1
 
         use_lang_emb: false
         use_speaker_emb: true
@@ -113,9 +115,9 @@ model:
         use_averages: true
         use_vq: false
         use_upsample: true
-        use_auxiliary_classification_loss: false
+        use_auxiliary_classification_loss: true
         use_auxiliary_linear_spec_loss: false
-        use_auxiliary_mel_spec_loss: false
+        use_auxiliary_mel_spec_loss: true
 
   backbone:
     class_name: DummyBackbone  # VocosBackbone
@@ -127,9 +129,11 @@ model:
       # condition_dim: 256
 
   head:
-    class_name: NSFHead
+    class_name: NSFiSTFTHiFiGANHead
     init_args:
       input_dim: 512
       condition_dim: 256
-      upsample_rates: [10, 4, 3, 2]  # hop=240
-      upsample_kernel_sizes: [20, 8, 6, 4]
+      upsample_rates: [10, 6]  # hop=240
+      upsample_kernel_sizes: [20, 12]
+      istft_n_fft: 20
+      istft_hop_size: 4
