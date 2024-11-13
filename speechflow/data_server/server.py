@@ -9,11 +9,13 @@ from dataclasses import dataclass
 
 import psutil
 
+from strenum import StrEnum
+
 from speechflow.concurrency import ProcessWorker
 from speechflow.data_pipeline.core import DataPipeline
 from speechflow.data_server.patterns import ZMQPatterns, ZMQServer
 from speechflow.data_server.pool import WorkerPool
-from speechflow.data_server.system_messages import DataLoaderMessages as DLM
+from speechflow.data_server.system_messages import DataClientMessages as DCM
 from speechflow.data_server.system_messages import DataServerMessages as DSM
 from speechflow.io import Config, check_path, tp_PATH
 from speechflow.logging import log_to_file, trace
@@ -24,9 +26,14 @@ from speechflow.utils.profiler import Profiler
 from speechflow.utils.serialize import Serialize
 from speechflow.utils.sockopt import find_free_port
 
-__all__ = ["DataServer"]
+__all__ = ["DataServer", "SubscriberTypes"]
 
 LOGGER = logging.getLogger("root")
+
+
+class SubscriberTypes(StrEnum):
+    CLIENT = "client"
+    WORKER = "worker"
 
 
 @dataclass
@@ -71,6 +78,7 @@ class DataServer(ProcessWorker):
         self._batch_counter = 0
         self._total_batch_in_processing = 0
         self._timer = Profiler(auto_logging=False)
+        self._timeout = 100  # in milliseconds
 
         self._gpus = self.init_gpus(n_gpus) if isinstance(n_gpus, int) else n_gpus
 
@@ -84,7 +92,7 @@ class DataServer(ProcessWorker):
 
     @property
     def num_workers(self) -> int:
-        return self._subscribers.get("worker", 0)
+        return self._subscribers.get(SubscriberTypes.WORKER, 0)
 
     @staticmethod
     def init_gpus(num_gpu: int) -> tp.List[int]:
@@ -190,35 +198,41 @@ class DataServer(ProcessWorker):
         if message[0] not in self._uid_map:
             self._uid_map[message[0]] = request.get("client_uid", uuid.uuid4().hex)
 
-        if request["message"] == "info":
+        if request["message"] == DCM.INFO:
             response = {
                 "subscriber_id": self._subscribers.setdefault(request["sub_type"], 0),
                 "async_supported": self._async_supported,
                 "addr_for_workers": self._addr_for_workers,
             }
-            if request["sub_type"] == "loader":
+            if request["sub_type"] == SubscriberTypes.CLIENT:
                 response.update(self._info_for_loader)
                 if self._synchronize_loaders:
                     uid = request["client_uid"]
                     samplers = self._sync_samplers.setdefault(uid, {})
                     for subset in self._pipe.subsets:
                         samplers[subset] = self._pipe[subset].sampler.copy()
-            else:
+            elif request["sub_type"] == SubscriberTypes.WORKER:
                 response.update(self._info_for_worker)
                 if self._gpus:
                     idx = response["subscriber_id"] % len(self._gpus)
                     response.update({"device": f"cuda:{self._gpus[idx]}"})
+            else:
+                raise RuntimeError(
+                    f"Subscriber type {request['sub_type']} is not supported!"
+                )
 
             message[-1] = Serialize.dump(response)
             self._zmq_server.frontend_send_multipart(message)
             self._subscribers[request["sub_type"]] += 1
 
-        elif request["message"] == DLM.IS_READY:
+        elif request["message"] == DCM.IS_READY:
             queue_info = self._work_queues[self._uid_map[message[0]]]
             if not self.is_reject_request(message, queue_info):
                 self.send_info_message(message, DSM.READY, queue_info.subset)
+            else:
+                self.send_info_message(message, DSM.NOT_READY, queue_info.subset)
 
-        elif request["message"] == DLM.GET_BATCH:
+        elif request["message"] == DCM.GET_BATCH:
             subset = request["subset_name"]
             batch_size = request["batch_size"]
             batch_num = request.get("batch_num", 1)
@@ -227,6 +241,7 @@ class DataServer(ProcessWorker):
             queue_info.async_mode = request.get("async_mode", True)
             queue_info.subset = subset
             if self.is_reject_request(message, queue_info):
+                self.send_info_message(message, DSM.NOT_READY, queue_info.subset)
                 return
 
             if self._synchronize_loaders:
@@ -255,21 +270,25 @@ class DataServer(ProcessWorker):
                     message + Serialize.dumps(samples)
                 )
 
-        elif request["message"] in [DLM.EPOCH_COMPLETE, DLM.ABORT, DLM.RESET]:
+        elif request["message"] == DCM.EPOCH_COMPLETE:
+            status = self._work_queues[self._uid_map[message[0]]]
+            status.is_last_batch = False
+            status.num_batch_in_processing = 0
+
+        elif request["message"] in [DCM.ABORT, DCM.RESET]:
             status = self._work_queues[self._uid_map[message[0]]]
             if status.batches:
                 self._zmq_server.frontend_send_multipart(message + status.batches)
+                self.send_info_message(message, DSM.QUEUE_CLEARED, status.subset)
+                status.batches = []
 
-            status.is_last_batch = False
-            status.batches = []
-            status.num_batch_in_processing = 0
-            self.send_info_message(message, DSM.QUEUE_CLEARED, status.subset)
-
-            if request["message"] == DLM.ABORT:
+            if request["message"] == DCM.ABORT:
                 self._total_batch_in_processing = 0
                 self.send_info_message(message, DSM.ABORT, status.subset)
 
-            if request["message"] == DLM.RESET:
+            if request["message"] == DCM.RESET:
+                status.is_last_batch = False
+                status.num_batch_in_processing = 0
                 self._total_batch_in_processing = 0
                 self._pipe[request["subset_name"]].sampler.reset()
                 self.send_info_message(message, DSM.RESET, status.subset)
@@ -278,7 +297,7 @@ class DataServer(ProcessWorker):
 
     def do_work_once(self):
         try:
-            self._zmq_server.pool(timeout=1000)
+            self._zmq_server.pool(timeout=self._timeout)
 
             if self._zmq_server.is_frontend_ready():
                 message = self._zmq_server.frontend.recv_multipart()
