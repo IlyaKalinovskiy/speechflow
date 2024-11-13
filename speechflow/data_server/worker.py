@@ -7,7 +7,6 @@ from speechflow.concurrency import ProcessWorker
 from speechflow.data_pipeline.core import DataPipeline
 from speechflow.data_pipeline.core.data_processor import DataProcessor
 from speechflow.data_server.patterns import ZMQClient, ZMQPatterns, ZMQWorker
-from speechflow.data_server.server import SubscriberTypes
 from speechflow.logging import trace
 from speechflow.utils.serialize import Serialize
 
@@ -26,6 +25,8 @@ class BatchWorker(ProcessWorker):
         self._data_processor: tp.Dict = {}
 
     def on_start(self):
+        from speechflow.data_server.server import SubscriberTypes
+
         self._zmq_client = ZMQPatterns.client(self._server_addr)
         info = self._zmq_client.request(
             {"message": "info", "sub_type": SubscriberTypes.WORKER}
