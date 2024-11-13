@@ -293,7 +293,7 @@ def _run_fa(**kwargs) -> Path:
 def _run_align(**kwargs):
     LOGGER.info(f"Run Aligner with args {kwargs}")
 
-    if sys.platform == "win32":
+    if sys.platform == "win32" or kwargs.get("n_processes") == 1:
         run_align(**kwargs)
     else:
         cmd = ["python", "-m", "annotator.align"]

@@ -81,7 +81,6 @@ class Vocos(nn.Module):
         head_cls, head_params_cls = VOCOS_HEADS[cfg["head"]["class_name"]]
         head_params = init_class_from_config(head_params_cls, cfg["head"]["init_args"])()
         head = head_cls(head_params)
-        head.remove_weight_norm()
 
         return cls(feature_extractor=feat, backbone=backbone, head=head)
 

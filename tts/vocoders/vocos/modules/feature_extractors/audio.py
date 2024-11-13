@@ -33,8 +33,8 @@ from tts.acoustic_models.modules.components.style_encoders import (
     StyleEncoderParams,
 )
 from tts.acoustic_models.modules.components.variance_predictors import (
-    FrameLevelPredictorWithDiscriminator,
-    FrameLevelPredictorWithDiscriminatorParams,
+    FrameLevelPredictor,
+    FrameLevelPredictorParams,
 )
 from tts.acoustic_models.modules.data_types import ComponentInput
 from tts.acoustic_models.modules.params import VarianceParams
@@ -332,7 +332,7 @@ class AudioFeatures(FeatureExtractor):
             )
 
         if params.use_energy:
-            energy_predictor_params = FrameLevelPredictorWithDiscriminatorParams(
+            energy_predictor_params = FrameLevelPredictorParams(
                 frame_encoder_type=params.vp_encoder_type,
                 frame_encoder_params=var_encoder_params,
                 activation_fn="ReLU",
@@ -342,14 +342,14 @@ class AudioFeatures(FeatureExtractor):
                 var_params=VarianceParams(log_scale=params.energy_log_scale),
                 smooth_l1_beta=params.energy_smooth_l1_beta,
             )
-            self.energy_predictor = FrameLevelPredictorWithDiscriminator(
+            self.energy_predictor = FrameLevelPredictor(
                 energy_predictor_params, prosody_dim
             )
         else:
             self.energy_predictor = None
 
         if params.use_pitch:
-            pitch_predictor_params = FrameLevelPredictorWithDiscriminatorParams(
+            pitch_predictor_params = FrameLevelPredictorParams(
                 frame_encoder_type=params.vp_encoder_type,
                 frame_encoder_params=var_encoder_params,
                 activation_fn="ReLU",
@@ -361,7 +361,7 @@ class AudioFeatures(FeatureExtractor):
                 ssl_feat_dim=params.ssl_feat_dim,
                 smooth_l1_beta=params.pitch_smooth_l1_beta,
             )
-            self.pitch_predictor = FrameLevelPredictorWithDiscriminator(
+            self.pitch_predictor = FrameLevelPredictor(
                 pitch_predictor_params, prosody_dim
             )
         else:
