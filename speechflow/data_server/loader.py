@@ -154,7 +154,6 @@ class DataLoader:
                 )
                 self._log_to_file(DCM.IS_READY)
                 if response is None:
-                    Profiler.sleep(5.0)
                     continue
 
                 is_epoch_ending = False
@@ -183,7 +182,7 @@ class DataLoader:
             except Exception as e:
                 LOGGER.error(trace(self, e))
             finally:
-                Profiler.sleep(1.0)
+                Profiler.sleep(2.0)
 
     def _loading_batches(self):
         while not self._stop_event.is_set():
@@ -194,8 +193,6 @@ class DataLoader:
                 break
             except Exception as e:
                 LOGGER.error(trace(self, e))
-            finally:
-                Profiler.sleep(1.0)
 
     def _batch_request(self, batch_num: int):
         message = {
@@ -210,6 +207,7 @@ class DataLoader:
     def _batch_receive(self):
         response = self._batch_client.recv(deserialize=False, timeout=10)
         if not response:
+            Profiler.sleep(0.1)
             return
 
         batch_list = []
