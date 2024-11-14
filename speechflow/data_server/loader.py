@@ -211,7 +211,7 @@ class DataLoader:
         self._log_to_file(str(message))
 
     def _batch_receive(self):
-        response = self._batch_client.recv(deserialize=False)
+        response = self._batch_client.recv(deserialize=False, timeout=self._timeout)
         if not response:
             return
 
