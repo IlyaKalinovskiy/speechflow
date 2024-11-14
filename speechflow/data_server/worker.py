@@ -25,7 +25,6 @@ class BatchWorker(ProcessWorker):
         self._zmq_worker: ZMQWorker = None  # type: ignore
         self._data_pipeline: DataPipeline = None  # type: ignore
         self._data_processor: tp.Dict = {}
-        self._timeout = 1000  # in milliseconds
 
     def on_start(self):
         from speechflow.data_server.server import SubscriberTypes
@@ -34,7 +33,7 @@ class BatchWorker(ProcessWorker):
         for _ in range(60):
             info = self._zmq_client.request(
                 {"message": "info", "sub_type": SubscriberTypes.WORKER},
-                timeout=self._timeout,
+                timeout=1000,
             )
             if info is not None:
                 break
@@ -70,7 +69,7 @@ class BatchWorker(ProcessWorker):
         request = None
         batch = None
         try:
-            request = self._zmq_worker.recv(self._timeout)
+            request = self._zmq_worker.recv(timeout=10)
             if request is None:
                 return
             elif request[0] == b"":

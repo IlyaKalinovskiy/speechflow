@@ -46,7 +46,6 @@ class DataLoader:
         self._uid = self._batch_client.uid[:6]
         self._queue_monitoring_task = Thread(target=self._queue_monitoring)
         self._loading_batches_task = Thread(target=self._loading_batches)
-        self._timeout = 10  # in milliseconds
 
         if subset_name not in self._batch_client.info["subsets"]:
             raise KeyError(f"subset {subset_name} not provided by data server!")
@@ -151,7 +150,7 @@ class DataLoader:
                 response = self._msg_client.request(
                     message={"message": DCM.IS_READY},
                     deserialize=False,
-                    timeout=self._timeout,
+                    timeout=10_000,
                 )
                 self._log_to_file(DCM.IS_READY)
                 if response is None:
@@ -159,7 +158,6 @@ class DataLoader:
 
                 is_epoch_ending = False
                 is_epoch_complete = False
-                is_ready_complete = False
                 for _bytes in response:
                     self._log_to_file(_bytes)
                     if DSM.EPOCH_ENDING.encode() in _bytes[:100]:
@@ -167,10 +165,7 @@ class DataLoader:
                     elif DSM.EPOCH_COMPLETE.encode() in _bytes[:100]:
                         is_epoch_complete = True
                     elif DSM.READY.encode() in _bytes[:100]:
-                        is_ready_complete = True
-
-                if is_ready_complete and not is_epoch_ending and not is_epoch_complete:
-                    self._batch_request(free_slots)
+                        self._batch_request(free_slots)
 
                 if not self.non_stop:
                     if is_epoch_ending:
@@ -179,16 +174,13 @@ class DataLoader:
                         self._epoch_complete_event.set()
                         self._send_info_message(DCM.EPOCH_COMPLETE)
                 else:
-                    if is_epoch_complete:
-                        self._send_info_message(DCM.EPOCH_COMPLETE)
+                    self._send_info_message(DCM.EPOCH_COMPLETE)
 
             except KeyboardInterrupt:
                 LOGGER.error(trace(self, "Interrupt received, stopping ..."))
                 break
             except Exception as e:
                 LOGGER.error(trace(self, e))
-            finally:
-                Profiler.sleep(1.0)
 
     def _loading_batches(self):
         while not self._stop_event.is_set():
@@ -211,7 +203,7 @@ class DataLoader:
         self._log_to_file(str(message))
 
     def _batch_receive(self):
-        response = self._batch_client.recv(deserialize=False, timeout=self._timeout)
+        response = self._batch_client.recv(deserialize=False, timeout=10)
         if not response:
             return
 

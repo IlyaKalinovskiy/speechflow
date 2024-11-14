@@ -79,7 +79,6 @@ class DataServer(ProcessWorker):
         self._batch_counter = 0
         self._total_batch_in_processing = 0
         self._timer = Profiler(auto_logging=False)
-        self._timeout = 100  # in milliseconds
 
         self._gpus = self.init_gpus(n_gpus) if isinstance(n_gpus, int) else n_gpus
 
@@ -298,7 +297,7 @@ class DataServer(ProcessWorker):
 
     def do_work_once(self):
         try:
-            self._zmq_server.pool(timeout=self._timeout)
+            self._zmq_server.pool(timeout=10)
 
             if self._zmq_server.is_frontend_ready():
                 message = self._zmq_server.frontend.recv_multipart()
