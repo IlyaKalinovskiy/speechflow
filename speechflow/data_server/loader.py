@@ -46,7 +46,7 @@ class DataLoader:
         self._uid = self._batch_client.uid[:6]
         self._queue_monitoring_task = Thread(target=self._queue_monitoring)
         self._loading_batches_task = Thread(target=self._loading_batches)
-        self._timeout = 100  # in milliseconds
+        self._timeout = 1000  # in milliseconds
 
         if subset_name not in self._batch_client.info["subsets"]:
             raise KeyError(f"subset {subset_name} not provided by data server!")

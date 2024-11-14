@@ -25,7 +25,7 @@ class BatchWorker(ProcessWorker):
         self._zmq_worker: ZMQWorker = None  # type: ignore
         self._data_pipeline: DataPipeline = None  # type: ignore
         self._data_processor: tp.Dict = {}
-        self._timeout = 100  # in milliseconds
+        self._timeout = 1000  # in milliseconds
 
     def on_start(self):
         from speechflow.data_server.server import SubscriberTypes
@@ -67,6 +67,7 @@ class BatchWorker(ProcessWorker):
         LOGGER.debug(trace(self, message=f"Finish Batch Worker {self._server_addr}"))
 
     def do_work_once(self):
+        request = None
         batch = None
         try:
             request = self._zmq_worker.recv(self._timeout)
@@ -91,6 +92,7 @@ class BatchWorker(ProcessWorker):
 
         finally:
             try:
-                self._zmq_worker.send(batch)
+                if request is not None:
+                    self._zmq_worker.send(batch)
             except zmq.error.ZMQError:
                 pass
