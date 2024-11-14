@@ -87,8 +87,6 @@ class DataClient:
             except Exception as e:
                 LOGGER.error(trace(self, e))
 
-        return []
-
     def send(self, message):
         message["client_uid"] = self._uid
         with self._lock:
@@ -109,5 +107,3 @@ class DataClient:
                     return self._zmq_client.recv(deserialize)
             except Exception as e:
                 LOGGER.error(trace(self, e))
-
-        return []

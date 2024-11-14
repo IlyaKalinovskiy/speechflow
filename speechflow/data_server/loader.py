@@ -70,7 +70,6 @@ class DataLoader:
             self.epoch_len = math.ceil(self.epoch_size / batch_size)
 
         self._stop_event = Event()
-        self._epoch_ending_event = Event()
         self._epoch_complete_event = Event()
         self._batch_queue: tp.Deque = deque()
         self._async_supported = self.client.find_info("async_supported", False)
@@ -150,21 +149,19 @@ class DataLoader:
                 response = self._msg_client.request(
                     message={"message": DCM.IS_READY},
                     deserialize=False,
-                    timeout=100,
+                    timeout=1,
                 )
                 self._log_to_file(DCM.IS_READY)
                 if response is None:
                     continue
 
-                is_epoch_ending = False
                 is_epoch_complete = False
                 is_ready_complete = False
                 for _bytes in response:
                     self._log_to_file(_bytes)
-                    if DSM.EPOCH_ENDING.encode() in _bytes[:100]:
-                        is_epoch_ending = True
-                    elif DSM.EPOCH_COMPLETE.encode() in _bytes[:100]:
+                    if DSM.EPOCH_COMPLETE.encode() in _bytes[:100]:
                         is_epoch_complete = True
+                        break
                     elif DSM.READY.encode() in _bytes[:100]:
                         is_ready_complete = True
 
@@ -172,8 +169,6 @@ class DataLoader:
                     self._batch_request(free_slots)
 
                 if not self.non_stop:
-                    if is_epoch_ending:
-                        self._epoch_ending_event.set()
                     if is_epoch_complete and len(self._batch_queue) == 0:
                         self._epoch_complete_event.set()
                         self._send_info_message(DCM.EPOCH_COMPLETE)
@@ -246,7 +241,6 @@ class DataLoader:
 
     def start(self):
         self._stop_event.clear()
-        self._epoch_ending_event.clear()
         self._epoch_complete_event.clear()
         self._queue_monitoring_task.start()
         self._loading_batches_task.start()
@@ -311,7 +305,6 @@ class DataLoader:
 
     def reset(self):
         self._batch_queue.clear()
-        self._epoch_ending_event.clear()
         self._epoch_complete_event.clear()
         self._send_info_message(DCM.RESET)
         self.prefetch_factor = self.min_prefetch_factor
