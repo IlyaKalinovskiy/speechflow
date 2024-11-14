@@ -161,7 +161,7 @@ class DataServer(ProcessWorker):
         client_id = self._uid_map[message[0]][:6]
         info = f"[{client_id}] info: {text}"
         message = [message[0], b"", info.encode()]
-        self._zmq_server.frontend_send_multipart(message)
+        self._zmq_server.frontend_send(message)
         if is_verbose_logging():
             log_to_file(trace(self, f"{subset}: {info}" if subset else info))
 
@@ -225,7 +225,7 @@ class DataServer(ProcessWorker):
                 )
 
             message[-1] = Serialize.dump(response)
-            self._zmq_server.frontend_send_multipart(message)
+            self._zmq_server.frontend_send(message)
             self._subscribers[request["sub_type"]] += 1
 
         elif request["message"] == DCM.IS_READY:
@@ -266,9 +266,7 @@ class DataServer(ProcessWorker):
             queue_info.num_batch_in_processing += len(batch_list)
 
             for samples in batch_list:
-                self._zmq_server.backend_send_multipart(
-                    message + Serialize.dumps(samples)
-                )
+                self._zmq_server.backend_send(message + Serialize.dumps(samples))
 
         elif request["message"] == DCM.EPOCH_COMPLETE:
             status = self._work_queues[self._uid_map[message[0]]]
@@ -278,7 +276,7 @@ class DataServer(ProcessWorker):
         elif request["message"] in [DCM.ABORT, DCM.RESET]:
             status = self._work_queues[self._uid_map[message[0]]]
             if status.batches:
-                self._zmq_server.frontend_send_multipart(message + status.batches)
+                self._zmq_server.frontend_send(message + status.batches)
                 self.send_info_message(message, DSM.QUEUE_CLEARED, status.subset)
                 status.batches = []
 
@@ -300,11 +298,11 @@ class DataServer(ProcessWorker):
             self._zmq_server.pool(timeout=10)
 
             if self._zmq_server.is_frontend_ready():
-                message = self._zmq_server.frontend.recv_multipart()
+                message = self._zmq_server.frontend_recv()
                 self.gen_response(message)
 
             if self._zmq_server.is_backend_ready():
-                message = self._zmq_server.backend.recv_multipart()
+                message = self._zmq_server.backend_recv()
                 self._total_batch_in_processing = max(
                     0, self._total_batch_in_processing - 1
                 )
@@ -319,12 +317,10 @@ class DataServer(ProcessWorker):
                 )
 
                 if queue_info.async_mode:
-                    self._zmq_server.frontend_send_multipart(message)
+                    self._zmq_server.frontend_send(message)
                 else:
                     if queue_info.num_batch_in_processing == 0:
-                        self._zmq_server.frontend_send_multipart(
-                            message + queue_info.batches
-                        )
+                        self._zmq_server.frontend_send(message + queue_info.batches)
                         queue_info.batches = []
                     else:
                         queue_info.batches.append(message[2])

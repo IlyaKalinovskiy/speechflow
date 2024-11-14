@@ -69,7 +69,7 @@ class BatchWorker(ProcessWorker):
         request = None
         batch = None
         try:
-            request = self._zmq_worker.recv(timeout=10)
+            request = self._zmq_worker.recv(timeout=1)
             if request is None:
                 return
             elif request[0] == b"":

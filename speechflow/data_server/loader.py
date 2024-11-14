@@ -158,6 +158,7 @@ class DataLoader:
 
                 is_epoch_ending = False
                 is_epoch_complete = False
+                is_ready_complete = False
                 for _bytes in response:
                     self._log_to_file(_bytes)
                     if DSM.EPOCH_ENDING.encode() in _bytes[:100]:
@@ -165,7 +166,10 @@ class DataLoader:
                     elif DSM.EPOCH_COMPLETE.encode() in _bytes[:100]:
                         is_epoch_complete = True
                     elif DSM.READY.encode() in _bytes[:100]:
-                        self._batch_request(free_slots)
+                        is_ready_complete = True
+
+                if is_ready_complete:
+                    self._batch_request(free_slots)
 
                 if not self.non_stop:
                     if is_epoch_ending:
@@ -174,7 +178,8 @@ class DataLoader:
                         self._epoch_complete_event.set()
                         self._send_info_message(DCM.EPOCH_COMPLETE)
                 else:
-                    self._send_info_message(DCM.EPOCH_COMPLETE)
+                    if is_epoch_complete:
+                        self._send_info_message(DCM.EPOCH_COMPLETE)
 
             except KeyboardInterrupt:
                 LOGGER.error(trace(self, "Interrupt received, stopping ..."))
@@ -205,7 +210,7 @@ class DataLoader:
         self._log_to_file(str(message))
 
     def _batch_receive(self):
-        response = self._batch_client.recv(deserialize=False, timeout=10)
+        response = self._batch_client.recv(deserialize=False, timeout=1)
         if not response:
             Profiler.sleep(0.1)
             return

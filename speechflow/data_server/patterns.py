@@ -49,11 +49,17 @@ class ZMQServer:
         if self.backend:
             self.backend.close()
 
-    def frontend_send_multipart(self, message):
+    def frontend_send(self, message):
         self.frontend.send_multipart(message, flags=zmq.NOBLOCK)
 
-    def backend_send_multipart(self, message):
+    def frontend_recv(self):
+        return self.frontend.recv_multipart()
+
+    def backend_send(self, message):
         self.backend.send_multipart(message, flags=zmq.NOBLOCK)
+
+    def backend_recv(self):
+        return self.backend.recv_multipart()
 
 
 @dataclass
@@ -77,7 +83,17 @@ class ZMQClient:
         if timeout is not None and self.socket.poll(timeout=timeout) == 0:
             return None
         else:
-            list_bytes = self.socket.recv_multipart()
+            list_bytes = []
+            while True:
+                try:
+                    msg = self.socket.recv_multipart(flags=zmq.NOBLOCK)
+                    if msg is not None:
+                        list_bytes += msg
+                    else:
+                        break
+                except zmq.ZMQError:
+                    break
+
             if deserialize:
                 list_obj = [pickle.loads(item) for item in list_bytes if item != b""]
                 if len(list_obj) == 0:
