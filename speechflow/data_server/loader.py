@@ -150,10 +150,11 @@ class DataLoader:
                 response = self._msg_client.request(
                     message={"message": DCM.IS_READY},
                     deserialize=False,
-                    timeout=10_000,
+                    timeout=100,
                 )
                 self._log_to_file(DCM.IS_READY)
                 if response is None:
+                    Profiler.sleep(5.0)
                     continue
 
                 is_epoch_ending = False
@@ -181,6 +182,8 @@ class DataLoader:
                 break
             except Exception as e:
                 LOGGER.error(trace(self, e))
+            finally:
+                Profiler.sleep(1.0)
 
     def _loading_batches(self):
         while not self._stop_event.is_set():
@@ -191,6 +194,8 @@ class DataLoader:
                 break
             except Exception as e:
                 LOGGER.error(trace(self, e))
+            finally:
+                Profiler.sleep(1.0)
 
     def _batch_request(self, batch_num: int):
         message = {

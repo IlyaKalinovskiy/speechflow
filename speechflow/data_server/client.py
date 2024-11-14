@@ -22,11 +22,10 @@ class DataClient:
         self._server_addr = server_addr
         self._zmq_client = ZMQPatterns.async_client(server_addr)
         self._lock = ThreadLock()
-        self._timeout = 1000
 
         for _ in range(60):
             self._info = self.request(
-                {"message": "info", "sub_type": sub_type}, timeout=self._timeout
+                {"message": "info", "sub_type": sub_type}, timeout=1000
             )
             if self._info is not None:
                 break
