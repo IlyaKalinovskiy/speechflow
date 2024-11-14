@@ -141,6 +141,15 @@ class ZMQWorker:
     def send(self, message, serialize: bool = True):
         self.socket.send_pyobj(message) if serialize else self.socket.send(message)
 
+    def recv(
+        self,
+        timeout: tp.Optional[int] = None,  # in milliseconds
+    ):
+        if timeout is not None and self.socket.poll(timeout=timeout) == 0:
+            return None
+        else:
+            return self.socket.recv_multipart()
+
 
 @dataclass
 class ZMQProxy:
@@ -183,7 +192,8 @@ class ZMQProxy:
         self.frontend.send_multipart(message, flags=zmq.NOBLOCK)
 
     def backend_send_multipart(self, message):
-        self.backend.send_multipart(message, flags=zmq.NOBLOCK)
+        for back in self.backend:
+            back.send_multipart(message, flags=zmq.NOBLOCK)
 
 
 class ZMQPatterns:

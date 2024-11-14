@@ -15,15 +15,22 @@ LOGGER = logging.getLogger("root")
 
 
 class DataClient:
-    def __init__(self, server_addr: str, uid: str = None):
+    def __init__(
+        self, server_addr: str, sub_type: str = SubscriberTypes.CLIENT, uid: str = None
+    ):
         self._uid = uid if uid else uuid.uuid4().hex
         self._server_addr = server_addr
         self._zmq_client = ZMQPatterns.async_client(server_addr)
         self._lock = ThreadLock()
-        self._info = self.request(
-            {"message": "info", "sub_type": SubscriberTypes.CLIENT}, timeout=600_000
-        )
-        if self._info is None:
+        self._timeout = 1000
+
+        for _ in range(60):
+            self._info = self.request(
+                {"message": "info", "sub_type": sub_type}, timeout=self._timeout
+            )
+            if self._info is not None:
+                break
+        else:
             raise RuntimeError("DataServer not responding!")
 
         LOGGER.debug(trace(self, message=f"Start DataClient {self._server_addr}"))

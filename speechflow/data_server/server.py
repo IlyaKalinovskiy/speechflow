@@ -34,6 +34,7 @@ LOGGER = logging.getLogger("root")
 class SubscriberTypes(StrEnum):
     CLIENT = "client"
     WORKER = "worker"
+    LOADER = "loader"
 
 
 @dataclass
@@ -203,8 +204,11 @@ class DataServer(ProcessWorker):
                 "subscriber_id": self._subscribers.setdefault(request["sub_type"], 0),
                 "async_supported": self._async_supported,
                 "addr_for_workers": self._addr_for_workers,
+                "subsets": self._info_for_loader.get("subsets", []),
             }
             if request["sub_type"] == SubscriberTypes.CLIENT:
+                pass
+            elif request["sub_type"] == SubscriberTypes.LOADER:
                 response.update(self._info_for_loader)
                 if self._synchronize_loaders:
                     uid = request["client_uid"]
@@ -283,7 +287,7 @@ class DataServer(ProcessWorker):
                 status.batches = []
 
             if request["message"] == DCM.ABORT:
-                self._total_batch_in_processing = 0
+                status.num_batch_in_processing = 0
                 self.send_info_message(message, DSM.ABORT, status.subset)
 
             if request["message"] == DCM.RESET:

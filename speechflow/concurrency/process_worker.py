@@ -82,12 +82,15 @@ class ProcessWorker(AbstractWorker, mp.Process, ABC):
         while self.is_active():
             try:
                 self._run()
+            except KeyboardInterrupt:
+                self.deactivate()
             except Exception as e:
                 if not self._none_stop.value:
                     self.deactivate()
-                    raise e
                 else:
-                    LOGGER.info(trace(self, e, message="restart run()"))
+                    LOGGER.info(
+                        trace(self, e, message=f"restart {self.__class__.__name__}")
+                    )
 
     def start(self, check_start: bool = True):
         try:

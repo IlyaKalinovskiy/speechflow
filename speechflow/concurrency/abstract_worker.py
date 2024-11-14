@@ -100,9 +100,9 @@ class AbstractWorker:
             while self.is_active() and self.is_started():
                 try:
                     self.do_work_once()
-                except KeyboardInterrupt:
+                except KeyboardInterrupt as e:
                     LOGGER.error(trace(self, "interrupt received, stopping ..."))
-                    break
+                    raise e
         except Exception as do_work_once_error:
             try:
                 self.on_crash()

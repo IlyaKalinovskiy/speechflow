@@ -9,6 +9,7 @@ from threading import Event, Thread
 
 from speechflow.data_pipeline.core import Batch
 from speechflow.data_server.client import DataClient
+from speechflow.data_server.server import SubscriberTypes
 from speechflow.data_server.system_messages import DataClientMessages as DCM
 from speechflow.data_server.system_messages import DataServerMessages as DSM
 from speechflow.io import Config, check_path, tp_PATH
@@ -38,12 +39,15 @@ class DataLoader:
         min_prefetch_factor: int = 50,
         max_prefetch_factor: int = 150,
     ):
-        self._client = DataClient(server_addr)
-        self._uid = self._client.uid[:6]
+        self._msg_client = DataClient(server_addr)
+        self._batch_client = DataClient(
+            server_addr, sub_type=SubscriberTypes.LOADER, uid=self._msg_client.uid
+        )
+        self._uid = self._batch_client.uid[:6]
         self._task = Thread(target=self._loading_batches)
-        self._timeout = 100  # in milliseconds
+        self._timeout = 1000  # in milliseconds
 
-        if subset_name not in self._client.info["subsets"]:
+        if subset_name not in self._batch_client.info["subsets"]:
             raise KeyError(f"subset {subset_name} not provided by data server!")
 
         self.subset_name = subset_name
@@ -85,15 +89,15 @@ class DataLoader:
 
     @property
     def client(self) -> DataClient:
-        return self._client
+        return self._batch_client
 
     @property
     def epoch_size(self) -> int:
-        return self._client.info["epoch_size"][self.subset_name]
+        return self._batch_client.info["epoch_size"][self.subset_name]
 
     @property
     def dataset_size(self) -> int:
-        return len(self._client.info["dataset"][self.subset_name])
+        return len(self._batch_client.info["dataset"][self.subset_name])
 
     @staticmethod
     @check_path(assert_file_exists=True)
@@ -128,7 +132,7 @@ class DataLoader:
                 LOGGER.error(trace(self, e))
 
     def _send_info_message(self, text: str):
-        self._client.send({"message": text, "subset_name": self.subset_name})
+        self._batch_client.send({"message": text, "subset_name": self.subset_name})
         self._log_to_file(text)
 
     def _is_stop_iteration(self):
@@ -144,7 +148,17 @@ class DataLoader:
                     free_slots > self.prefetch_factor // 4
                     and not self._epoch_ending_event.is_set()
                 ):
-                    self._batch_request(free_slots)
+                    response = self._msg_client.request(
+                        message={"message": DCM.IS_READY},
+                        deserialize=False,
+                        timeout=self._timeout,
+                    )
+                    self._log_to_file(DCM.IS_READY)
+                    if response:
+                        for _bytes in response:
+                            self._log_to_file(_bytes)
+                            if DSM.READY.encode() in _bytes[:100]:
+                                self._batch_request(free_slots)
 
                 self._batch_receive()
             except KeyboardInterrupt:
@@ -162,11 +176,11 @@ class DataLoader:
             "batch_size": self.batch_size,
             "batch_num": batch_num,
         }
-        self._client.send(message)
+        self._batch_client.send(message)
         self._log_to_file(str(message))
 
     def _batch_receive(self):
-        response = self._client.recv(deserialize=False, timeout=self._timeout)
+        response = self._batch_client.recv(deserialize=False, timeout=self._timeout)
         if not response:
             return
 
@@ -174,16 +188,14 @@ class DataLoader:
         is_epoch_complete = False
         is_epoch_ending = False
         for _bytes in response:
+            self._log_to_file(_bytes)
             if DSM.EPOCH_ENDING.encode() in _bytes[:100]:
                 is_epoch_ending = True
-                self._log_to_file(_bytes)
                 continue
             elif DSM.EPOCH_COMPLETE.encode() in _bytes[:100]:
                 is_epoch_complete = True
-                self._log_to_file(_bytes)
                 continue
             elif _bytes == b"" or b"info:" in _bytes[:100]:
-                self._log_to_file(_bytes)
                 continue
             else:
                 batch_list.append(_bytes)

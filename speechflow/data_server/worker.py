@@ -3,6 +3,8 @@ import logging
 
 from os import environ as env
 
+import zmq
+
 from speechflow.concurrency import ProcessWorker
 from speechflow.data_pipeline.core import DataPipeline
 from speechflow.data_pipeline.core.data_processor import DataProcessor
@@ -23,14 +25,21 @@ class BatchWorker(ProcessWorker):
         self._zmq_worker: ZMQWorker = None  # type: ignore
         self._data_pipeline: DataPipeline = None  # type: ignore
         self._data_processor: tp.Dict = {}
+        self._timeout = 1000
 
     def on_start(self):
         from speechflow.data_server.server import SubscriberTypes
 
         self._zmq_client = ZMQPatterns.client(self._server_addr)
-        info = self._zmq_client.request(
-            {"message": "info", "sub_type": SubscriberTypes.WORKER}
-        )
+        for _ in range(60):
+            info = self._zmq_client.request(
+                {"message": "info", "sub_type": SubscriberTypes.WORKER},
+                timeout=self._timeout,
+            )
+            if info is not None:
+                break
+        else:
+            raise RuntimeError("DataServer not responding!")
 
         addr_for_workers = info["addr_for_workers"]
         self._zmq_worker = ZMQPatterns.worker(addr_for_workers)
@@ -60,9 +69,12 @@ class BatchWorker(ProcessWorker):
     def do_work_once(self):
         batch = None
         try:
-            request = self._zmq_worker.socket.recv_multipart()
-            if request[0] == b"":
+            request = self._zmq_worker.recv(self._timeout)
+            if request is None:
+                return
+            elif request[0] == b"":
                 request = request[1:]
+
             message = Serialize.load(request[0])
             samples = Serialize.loads(request[1:])
 
@@ -78,4 +90,7 @@ class BatchWorker(ProcessWorker):
             LOGGER.error(trace(self, e))
 
         finally:
-            self._zmq_worker.send(batch)
+            try:
+                self._zmq_worker.send(batch)
+            except zmq.error.ZMQError:
+                pass

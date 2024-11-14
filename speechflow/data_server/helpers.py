@@ -224,11 +224,14 @@ def init_data_loader_from_config(
         raise ValueError("Address of DataServer is not set!")
 
     data_client = DataClient(server_addr=server_addr)
-    subsets = data_client.find_info("subsets", [])
 
     track_process("MAIN", os.getpid())
 
     try:
+        subsets = data_client.find_info("subsets")
+        if not subsets:
+            raise RuntimeError("subsets not found!")
+
         data_loaders = {}
         for name in subsets:
             if model_config_path is not None:
