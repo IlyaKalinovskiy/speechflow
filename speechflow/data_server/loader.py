@@ -44,8 +44,9 @@ class DataLoader:
             server_addr, sub_type=SubscriberTypes.LOADER, uid=self._msg_client.uid
         )
         self._uid = self._batch_client.uid[:6]
-        self._task = Thread(target=self._loading_batches)
-        self._timeout = 1000  # in milliseconds
+        self._queue_monitoring_task = Thread(target=self._queue_monitoring)
+        self._loading_batches_task = Thread(target=self._loading_batches)
+        self._timeout = 100  # in milliseconds
 
         if subset_name not in self._batch_client.info["subsets"]:
             raise KeyError(f"subset {subset_name} not provided by data server!")
@@ -140,27 +141,47 @@ class DataLoader:
             self._log_to_file("stop iteration")
             raise StopIteration
 
-    def _loading_batches(self):
+    def _queue_monitoring(self):
         while not self._stop_event.is_set():
             try:
                 free_slots = self.prefetch_factor - len(self._batch_queue)
-                if (
-                    free_slots > self.prefetch_factor // 4
-                    and not self._epoch_ending_event.is_set()
-                ):
-                    response = self._msg_client.request(
-                        message={"message": DCM.IS_READY},
-                        deserialize=False,
-                        timeout=self._timeout,
-                    )
-                    self._log_to_file(DCM.IS_READY)
-                    if response:
-                        for _bytes in response:
-                            self._log_to_file(_bytes)
-                            if DSM.READY.encode() in _bytes[:100]:
-                                self._batch_request(free_slots)
+                if free_slots <= self.prefetch_factor // 4:
+                    continue
 
-                self._batch_receive()
+                response = self._msg_client.request(
+                    message={"message": DCM.IS_READY},
+                    deserialize=False,
+                    timeout=self._timeout,
+                )
+                self._log_to_file(DCM.IS_READY)
+                if response is None:
+                    continue
+
+                is_epoch_ending = False
+                is_epoch_complete = False
+                for _bytes in response:
+                    self._log_to_file(_bytes)
+                    if DSM.EPOCH_ENDING.encode() in _bytes[:100]:
+                        is_epoch_ending = True
+                        continue
+                    elif DSM.EPOCH_COMPLETE.encode() in _bytes[:100]:
+                        is_epoch_complete = True
+                        continue
+                    elif DSM.READY.encode() in _bytes[:100]:
+                        self._batch_request(free_slots)
+                    else:
+                        continue
+
+                if not self.non_stop:
+                    if is_epoch_ending:
+                        self._epoch_ending_event.set()
+                    if is_epoch_complete and len(self._batch_queue) == 0:
+                        self._epoch_complete_event.set()
+                        self._send_info_message(DCM.EPOCH_COMPLETE)
+                else:
+                    if is_epoch_complete:
+                        self._send_info_message(DCM.EPOCH_COMPLETE)
+
             except KeyboardInterrupt:
                 LOGGER.error(trace(self, "Interrupt received, stopping ..."))
                 break
@@ -168,6 +189,16 @@ class DataLoader:
                 LOGGER.error(trace(self, e))
             finally:
                 Profiler.sleep(1.0)
+
+    def _loading_batches(self):
+        while not self._stop_event.is_set():
+            try:
+                self._batch_receive()
+            except KeyboardInterrupt:
+                LOGGER.error(trace(self, "Interrupt received, stopping ..."))
+                break
+            except Exception as e:
+                LOGGER.error(trace(self, e))
 
     def _batch_request(self, batch_num: int):
         message = {
@@ -185,17 +216,9 @@ class DataLoader:
             return
 
         batch_list = []
-        is_epoch_complete = False
-        is_epoch_ending = False
         for _bytes in response:
             self._log_to_file(_bytes)
-            if DSM.EPOCH_ENDING.encode() in _bytes[:100]:
-                is_epoch_ending = True
-                continue
-            elif DSM.EPOCH_COMPLETE.encode() in _bytes[:100]:
-                is_epoch_complete = True
-                continue
-            elif _bytes == b"" or b"info:" in _bytes[:100]:
+            if _bytes == b"" or b"info:" in _bytes[:100]:
                 continue
             else:
                 batch_list.append(_bytes)
@@ -221,27 +244,20 @@ class DataLoader:
 
                 self._batch_queue.append(batch)
 
-        if not self.non_stop:
-            if is_epoch_ending:
-                self._epoch_ending_event.set()
-            if is_epoch_complete and len(self._batch_queue) == 0:
-                self._epoch_complete_event.set()
-                self._send_info_message(DCM.EPOCH_COMPLETE)
-        else:
-            if is_epoch_complete:
-                self._send_info_message(DCM.EPOCH_COMPLETE)
-
     def start(self):
         self._stop_event.clear()
         self._epoch_ending_event.clear()
         self._epoch_complete_event.clear()
-        self._task.start()
+        self._queue_monitoring_task.start()
+        self._loading_batches_task.start()
 
     def finish(self):
         self._stop_event.set()
         try:
-            if self._task.is_alive():
-                self._task.join(timeout=1)
+            if self._queue_monitoring_task.is_alive():
+                self._queue_monitoring_task.join(timeout=1)
+            if self._loading_batches_task.is_alive():
+                self._loading_batches_task.join(timeout=1)
         except RuntimeError:
             pass
         except Exception as e:
@@ -249,7 +265,9 @@ class DataLoader:
 
     def next_batch(self, sleep: float = 0) -> Batch:
         if len(self._batch_queue) == 0:
-            assert self._task.is_alive(), "DataLoader has not been started!"
+            assert (
+                self._loading_batches_task.is_alive()
+            ), "DataLoader has not been started!"
             self._is_stop_iteration()
 
             if sleep > 0:

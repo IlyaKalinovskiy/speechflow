@@ -25,7 +25,7 @@ class BatchWorker(ProcessWorker):
         self._zmq_worker: ZMQWorker = None  # type: ignore
         self._data_pipeline: DataPipeline = None  # type: ignore
         self._data_processor: tp.Dict = {}
-        self._timeout = 1000
+        self._timeout = 100  # in milliseconds
 
     def on_start(self):
         from speechflow.data_server.server import SubscriberTypes
