@@ -233,8 +233,6 @@ class DataServer(ProcessWorker):
             queue_info = self._work_queues[self._uid_map[message[0]]]
             if not self.is_reject_request(message, queue_info):
                 self.send_info_message(message, DSM.READY, queue_info.subset)
-            else:
-                self.send_info_message(message, DSM.NOT_READY, queue_info.subset)
 
         elif request["message"] == DCM.GET_BATCH:
             subset = request["subset_name"]
@@ -245,7 +243,6 @@ class DataServer(ProcessWorker):
             queue_info.async_mode = request.get("async_mode", True)
             queue_info.subset = subset
             if self.is_reject_request(message, queue_info):
-                self.send_info_message(message, DSM.NOT_READY, queue_info.subset)
                 return
 
             if self._synchronize_loaders:

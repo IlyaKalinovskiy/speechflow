@@ -5,7 +5,6 @@ __all__ = ["DataServerMessages", "DataClientMessages"]
 
 class DataServerMessages(StrEnum):
     READY = "ready"
-    NOT_READY = "busy"
     NO_WORKERS = "workers not found"
     OVERLOAD = "server overload"
     SKIP_BATCH = "batch skipped"

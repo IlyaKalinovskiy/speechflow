@@ -46,7 +46,7 @@ class DataLoader:
         self._uid = self._batch_client.uid[:6]
         self._queue_monitoring_task = Thread(target=self._queue_monitoring)
         self._loading_batches_task = Thread(target=self._loading_batches)
-        self._timeout = 1000  # in milliseconds
+        self._timeout = 10  # in milliseconds
 
         if subset_name not in self._batch_client.info["subsets"]:
             raise KeyError(f"subset {subset_name} not provided by data server!")
@@ -159,18 +159,18 @@ class DataLoader:
 
                 is_epoch_ending = False
                 is_epoch_complete = False
+                is_ready_complete = False
                 for _bytes in response:
                     self._log_to_file(_bytes)
                     if DSM.EPOCH_ENDING.encode() in _bytes[:100]:
                         is_epoch_ending = True
-                        continue
                     elif DSM.EPOCH_COMPLETE.encode() in _bytes[:100]:
                         is_epoch_complete = True
-                        continue
                     elif DSM.READY.encode() in _bytes[:100]:
-                        self._batch_request(free_slots)
-                    else:
-                        continue
+                        is_ready_complete = True
+
+                if is_ready_complete and not is_epoch_ending and not is_epoch_complete:
+                    self._batch_request(free_slots)
 
                 if not self.non_stop:
                     if is_epoch_ending:
@@ -211,7 +211,7 @@ class DataLoader:
         self._log_to_file(str(message))
 
     def _batch_receive(self):
-        response = self._batch_client.recv(deserialize=False, timeout=self._timeout)
+        response = self._batch_client.recv(deserialize=False)
         if not response:
             return
 
