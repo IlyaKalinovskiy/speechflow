@@ -155,17 +155,17 @@ class DataLoader:
                 if response is None:
                     continue
 
+                is_ready = False
                 is_epoch_complete = False
-                is_ready_complete = False
                 for _bytes in response:
                     self._log_to_file(_bytes)
-                    if DSM.EPOCH_COMPLETE.encode() in _bytes[:100]:
+                    if DSM.READY.encode() in _bytes[:100]:
+                        is_ready = True
+                    elif DSM.EPOCH_COMPLETE.encode() in _bytes[:100]:
                         is_epoch_complete = True
                         break
-                    elif DSM.READY.encode() in _bytes[:100]:
-                        is_ready_complete = True
 
-                if is_ready_complete:
+                if is_ready:
                     self._batch_request(free_slots)
 
                 if not self.non_stop:
@@ -219,7 +219,7 @@ class DataLoader:
                 batch_list.append(_bytes)
 
         if batch_list:
-            batch_list = Serialize.loads(batch_list)
+            batch_list = Serialize.loads(batch_list, inplace=True)
 
         for batch in batch_list:
             if not isinstance(batch, Batch):

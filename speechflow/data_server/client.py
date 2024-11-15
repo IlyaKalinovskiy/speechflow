@@ -21,7 +21,9 @@ class DataClient:
         self._uid = uid if uid else uuid.uuid4().hex
         self._server_addr = server_addr
         self._zmq_client = ZMQPatterns.async_client(server_addr)
-        self._lock = ThreadLock()
+        self._request_lock = ThreadLock()
+        self._send_lock = ThreadLock()
+        self._recv_lock = ThreadLock()
 
         for _ in range(60):
             self._info = self.request(
@@ -79,7 +81,7 @@ class DataClient:
         timeout: tp.Optional[int] = None,  # in milliseconds
     ) -> tp.Optional[tp.Union[tp.List, tp.Any]]:
         message["client_uid"] = self._uid
-        with self._lock:
+        with self._request_lock:
             try:
                 return self._zmq_client.request(
                     message, deserialize=deserialize, timeout=timeout
@@ -89,7 +91,7 @@ class DataClient:
 
     def send(self, message):
         message["client_uid"] = self._uid
-        with self._lock:
+        with self._send_lock:
             try:
                 self._zmq_client.send(message)
             except Exception as e:
@@ -100,7 +102,7 @@ class DataClient:
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
     ) -> tp.Optional[tp.Union[tp.List, tp.Any]]:
-        with self._lock:
+        with self._recv_lock:
             try:
                 self._zmq_client.pool(timeout=timeout)
                 if self._zmq_client.is_ready():
