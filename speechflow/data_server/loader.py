@@ -207,7 +207,7 @@ class DataLoader:
     def _batch_receive(self):
         response = self._batch_client.recv(deserialize=False, timeout=1)
         if not response:
-            Profiler.sleep(0.1)
+            Profiler.sleep(0.25)
             return
 
         batch_list = []
