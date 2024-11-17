@@ -27,6 +27,7 @@ from speechflow.logging import trace
 __all__ = [
     "add_pauses_from_text",
     "add_pauses_from_timestamps",
+    "apply_fade_inside_pauses",
     "calc_durations",
     "calc_invert_durations",
     "add_gate_value",
@@ -438,6 +439,38 @@ def add_pauses_from_timestamps(
     ds.phoneme_timestamps = ts_phonemes_processed
 
     assert _fp_eq(ds.word_timestamps.duration, ds.audio_chunk.duration)
+    return ds
+
+
+@PipeRegistry.registry(
+    inputs={"audio_chunk", "sent", "phoneme_timestamps"},
+    outputs={"audio_chunk"},
+)
+def apply_fade_inside_pauses(ds: TTSDataSample):
+    phonemes = ds.sent.get_phonemes(as_tuple=True)
+    timestamps = Timestamps.from_list(ds.phoneme_timestamps)
+    assert len(phonemes) == len(timestamps)
+
+    for idx, (ph, ts) in enumerate(zip(phonemes, timestamps)):  # type: ignore
+        if ph == TTSTextProcessor.sil:
+            a = max(int(ts[0] * ds.audio_chunk.sr), 0)
+            b = min(int(ts[1] * ds.audio_chunk.sr), ds.audio_chunk.data.shape[-1])
+
+            fade_len = b - a
+            l_fade_len = fade_len // 2
+            r_fade_len = fade_len - l_fade_len
+
+            l_fade_curve = np.flip(np.logspace(-1.0, 1.0, l_fade_len) ** 4.0 / 10000.0)
+            if idx == 0 or phonemes[idx - 1] == TTSTextProcessor.sil:
+                l_fade_curve *= 0
+
+            r_fade_curve = np.logspace(-1.0, 1.0, r_fade_len) ** 4.0 / 10000.0
+            if idx == len(phonemes) - 1 or phonemes[idx + 1] == TTSTextProcessor.sil:
+                r_fade_curve *= 0
+
+            fade_curve = np.concatenate((l_fade_curve, r_fade_curve))
+            ds.audio_chunk.data[a:b] *= fade_curve
+
     return ds
 
 

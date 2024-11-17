@@ -1294,7 +1294,7 @@ def average_by_time(
     attributes: tp.Union[str, tp.List[str]],
     use_quantile: bool = False,
     quantile: float = 0.95,
-    min_value: float = 1e-2,
+    min_value: tp.Optional[float] = None,
 ):
     def reject_outliers(x, m: float = 2.0):
         return x[abs(x - np.mean(x)) < m * np.std(x)]
@@ -1313,7 +1313,8 @@ def average_by_time(
         values = getattr(ds, attr)
         assert values.ndim == 1
 
-        values = values[values > min_value]
+        if min_value is not None:
+            values = values[values > min_value]
 
         if len(values) > 0:
             if use_quantile:

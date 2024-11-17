@@ -36,6 +36,7 @@ callbacks:
   LearningRateMonitor: {}
   ModelSummary: {}
   GradNormCallback: {}
+  VisualizerCallback: {}
 
 engine:
   class_name: VocosLightningEngine
@@ -51,9 +52,12 @@ engine:
     use_sm_loss: true
     use_wavlm_loss: true
     use_cdpam_loss: false
-    biometric_model_name: /src/wespeaker-voxceleb-resnet34-LM
-    wavlm_model_name: /src/wavlm-base-plus
-    # loss_device: cuda:3
+    biometric_model_name:
+      immers: /src/wespeaker-voxceleb-resnet34-LM
+      debug: C:/FluentaAI/wespeaker-voxceleb-resnet34-LM
+    wavlm_model_name:
+      immers: /src/wavlm-base-plus
+      debug: C:/FluentaAI/wavlm-base-plus
 
     # automatic evaluation
     evaluate_utmos: false
@@ -72,7 +76,7 @@ model:
 
         ssl_feat_dim: 1024
 
-        speaker_emb_dim: 256
+        speaker_emb_dim: 192
         speaker_emb_proj_dim: 128
 
         feat_encoder_type: RNNEncoder

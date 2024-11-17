@@ -26,14 +26,10 @@ from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing 
     audio_codecs,
     ssl_models,
 )
-from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing.praat_sound_effects import (
-    PraatSoundEffects,
-)
 from speechflow.data_pipeline.datasample_processors.data_types import (
     AudioDataSample,
     SSLFeatures,
 )
-from speechflow.data_pipeline.datasample_processors.tts_singletons import StatisticsRange
 from speechflow.io import AudioChunk, Config
 from speechflow.utils.fs import get_root_dir
 from speechflow.utils.init import init_class_from_config, lazy_initialization
@@ -42,17 +38,11 @@ __all__ = [
     "SignalProcessor",
     "SSLProcessor",
     "ACProcessor",
-    "monotonic_speech",
     "timedim_interpolation",
 ]
 
 LOGGER = logging.getLogger("root")
 
-try:
-    import pyworld as pw
-except ImportError as e:
-    if mp.current_process().name == "MainProcess":
-        LOGGER.warning(f"pyworld is not available: {e}")
 
 try:
     from torchaudio import functional as F
@@ -80,11 +70,6 @@ class SignalProcessor(BaseAudioProcessor):
         backend: ComputeBackend = ComputeBackend.librosa,
     ):
         super().__init__(pipe, pipe_cfg, backend)
-
-        if "whisper" in pipe:
-            self._sound_effects = PraatSoundEffects()
-        else:
-            self._sound_effects = None
 
     @PipeRegistry.registry(
         inputs={"file_path", "audio_chunk"},
@@ -303,21 +288,6 @@ class SignalProcessor(BaseAudioProcessor):
         ds.audio_chunk.data += noise
         return ds
 
-    def whisper(self, ds: AudioDataSample, p: float = 1.0):
-        if random.random() > p:
-            return ds
-
-        whisp_wav_path = ds.audio_chunk.file_path.with_suffix(".whisp.wav")
-        if whisp_wav_path.exists():
-            tmp = ds.audio_chunk.file_path
-            ds.audio_chunk.file_path = whisp_wav_path
-            ds.audio_chunk.load(sr=ds.audio_chunk.sr, dtype=ds.audio_chunk.dtype)
-            ds.audio_chunk.file_path = tmp
-            return ds
-
-        ds.audio_chunk = self._sound_effects.whisper(ds.audio_chunk)
-        return ds
-
     @staticmethod
     def ffmpeg_loudnorm(ds: AudioDataSample):
         duration = ds.audio_chunk.duration
@@ -456,43 +426,6 @@ class ACProcessor(BaseAudioProcessor):
             ds.audio_chunk = AudioChunk(data=waveform, sr=self._ac_model.sample_rate)
 
         return ds.to_numpy()
-
-
-@PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"audio_chunk"})
-def monotonic_speech(
-    ds: AudioDataSample, ranges: StatisticsRange = None
-) -> AudioDataSample:
-    x = ds.audio_chunk.waveform.astype(np.float64)
-    _f0, t = pw.dio(x, ds.audio_chunk.sr)  # raw pitch extractor
-    f0 = pw.stonemask(x, _f0, t, ds.audio_chunk.sr)  # pitch refinement
-    sp = pw.cheaptrick(x, f0, t, ds.audio_chunk.sr)  # extract smoothed spectrogram
-    ap = pw.d4c(x, f0, t, ds.audio_chunk.sr)  # extract aperiodicity
-
-    if ranges is not None:
-        f0_mean, _ = ranges.get_stat("pitch", ds.speaker_name)
-    else:
-        f0_mean = np.mean(f0)
-
-    # smooth pitch to synthesize monotonic speech
-    v = f0 > 0
-    uv = f0 <= 0
-    if any(v):
-        f0 = np.ones_like(f0) * f0_mean
-        f0[uv] = 0
-
-    y = pw.synthesize(
-        f0, sp, ap, ds.audio_chunk.sr
-    )  # synthesize an utterance using the parameters
-    if len(y) < len(x):
-        y = np.pad(y, (0, len(x) - len(y)))
-
-    if not np.isfinite(y).all():
-        return ds
-
-    assert len(y) >= len(x)
-    ds.audio_chunk.waveform = y[: len(x)].astype(np.float32)
-    ds.transform_params[monotonic_speech.__name__] = {}
-    return ds
 
 
 @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"ssl_feat", "pl_bert"})

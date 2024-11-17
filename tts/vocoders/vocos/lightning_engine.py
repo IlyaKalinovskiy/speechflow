@@ -53,9 +53,12 @@ class VocosLightningEngine(pl.LightningModule):
         biometric_model_name: tp.Optional[tp_PATH] = None,
         wavlm_model_name: str = "microsoft/wavlm-base-plus",
         loss_device: str = "cpu",
-        fft_sizes: tp.Tuple[int, ...] = (1024, 680, 450),
-        hop_sizes: tp.Tuple[int, ...] = (200, 135, 90),
-        win_sizes: tp.Tuple[int, ...] = (800, 450, 300),
+        ml_fft_len: int = 1024,
+        ml_hop_len: int = 240,
+        ml_n_mels: int = 100,
+        mrl_fft_len: tp.Tuple[int, ...] = (1024, 680, 450),
+        mrl_hop_len: tp.Tuple[int, ...] = (200, 135, 90),
+        mrl_win_len: tp.Tuple[int, ...] = (800, 450, 300),
         evaluate_utmos: bool = False,
         evaluate_pesq: bool = False,
         evaluate_periodicty: bool = False,
@@ -94,15 +97,17 @@ class VocosLightningEngine(pl.LightningModule):
         self.batch_processor = batch_processor
         self.saver = saver
 
-        self.multiperioddisc = MultiPeriodDiscriminator()
-        self.multiresddisc = MultiResolutionDiscriminator()
+        self.multiperiod_disc = MultiPeriodDiscriminator()
+        self.multiresd_disc = MultiResolutionDiscriminator()
 
         self.disc_loss = losses.DiscriminatorLoss()
         self.gen_loss = losses.GeneratorLoss()
         self.feat_matching_loss = losses.FeatureMatchingLoss()
-        self.melspec_loss = losses.MelSpecReconstructionLoss(sample_rate=sample_rate)
+        self.melspec_loss = losses.MelSpecReconstructionLoss(
+            sample_rate, ml_fft_len, ml_hop_len, ml_n_mels
+        )
         self.mr_melspec_loss = losses.MultiResolutionSTFTLoss(
-            fft_sizes, hop_sizes, win_sizes
+            mrl_fft_len, mrl_hop_len, mrl_win_len
         )
 
         if use_sm_loss:
@@ -143,8 +148,8 @@ class VocosLightningEngine(pl.LightningModule):
 
     def configure_optimizers(self):
         disc_params = [
-            {"params": self.multiperioddisc.parameters()},
-            {"params": self.multiresddisc.parameters()},
+            {"params": self.multiperiod_disc.parameters()},
+            {"params": self.multiresd_disc.parameters()},
         ]
         gen_params = [
             {"params": self.feature_extractor.parameters()},
@@ -203,11 +208,13 @@ class VocosLightningEngine(pl.LightningModule):
             "model_inputs": inputs,
         }
 
-    def log_image(self, tag, snd_tensor):
-        img = plot_spectrogram_to_numpy(snd_tensor.cpu().data.numpy())
+    def log_image(self, tag, snd_tensor, fig=None):
+        if fig is None:
+            fig = plot_spectrogram_to_numpy(snd_tensor.cpu().data.numpy())
+
         self.logger.experiment.add_image(
             tag,
-            img,
+            fig,
             self.global_step,
             dataformats="HWC",
         )
@@ -215,7 +222,7 @@ class VocosLightningEngine(pl.LightningModule):
         if self.clearml_task is not None:
             self.clearml_task.logger.report_image(
                 title=tag,
-                image=img,
+                image=fig,
                 iteration=self.global_step,
                 series="image color red",
             )
@@ -253,11 +260,11 @@ class VocosLightningEngine(pl.LightningModule):
             with torch.no_grad():
                 audio_hat, _, _ = self(inputs, **kwargs)
 
-            real_score_mp, gen_score_mp, _, _ = self.multiperioddisc(
+            real_score_mp, gen_score_mp, _, _ = self.multiperiod_disc(
                 y=audio_input,
                 y_hat=audio_hat,
             )
-            real_score_mrd, gen_score_mrd, _, _ = self.multiresddisc(
+            real_score_mrd, gen_score_mrd, _, _ = self.multiresd_disc(
                 y=audio_input,
                 y_hat=audio_hat,
             )
@@ -280,11 +287,11 @@ class VocosLightningEngine(pl.LightningModule):
         if optimizer_idx == 1:
             audio_hat, _, inner_losses = self(inputs, **kwargs)
             if self.train_discriminator:
-                _, gen_score_mp, fmap_rs_mp, fmap_gs_mp = self.multiperioddisc(
+                _, gen_score_mp, fmap_rs_mp, fmap_gs_mp = self.multiperiod_disc(
                     y=audio_input,
                     y_hat=audio_hat,
                 )
-                _, gen_score_mrd, fmap_rs_mrd, fmap_gs_mrd = self.multiresddisc(
+                _, gen_score_mrd, fmap_rs_mrd, fmap_gs_mrd = self.multiresd_disc(
                     y=audio_input,
                     y_hat=audio_hat,
                 )

@@ -51,7 +51,7 @@ class BatchWorker(ProcessWorker):
         else:
             self._data_pipeline = DataPipeline(info["data_config"])
             self._data_pipeline.init_components(
-                preinit_handlers=info.get("singleton_handlers")
+                preinit_singleton_handlers=info.get("singleton_handlers")
             )
 
         for subset_name in self._data_pipeline.subsets:

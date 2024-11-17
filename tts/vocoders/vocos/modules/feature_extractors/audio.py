@@ -617,6 +617,7 @@ class AudioFeatures(FeatureExtractor):
                 target=inputs.energy,
                 name="energy",
             )
+            additional_content["energy_predict"] = e_output
             losses.update(e_losses)
             if not self.training and inputs.energy is None:
                 inputs.energy = e_output
@@ -629,6 +630,7 @@ class AudioFeatures(FeatureExtractor):
                 target=inputs.pitch,
                 name="pitch",
             )
+            additional_content["pitch_predict"] = p_output
             losses.update(p_losses)
             if not self.training and inputs.pitch is None:
                 inputs.pitch = p_output

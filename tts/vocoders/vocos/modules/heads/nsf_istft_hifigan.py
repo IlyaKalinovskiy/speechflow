@@ -676,7 +676,6 @@ class Generator(torch.nn.Module):
             remove_weight_norm(l_)
         for l_ in self.resblocks:
             l_.remove_weight_norm()
-        remove_weight_norm(self.conv_pre)
         remove_weight_norm(self.conv_post)
 
 

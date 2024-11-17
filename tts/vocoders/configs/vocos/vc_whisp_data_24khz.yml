@@ -9,8 +9,8 @@ file_search:
   with_subfolders: true
 
 data_server:
-  n_processes: { default: 4, debug: 1 }
-  # n_gpus: 1
+  n_processes: { default: 8, debug: 1 }
+  n_gpus: { default: 1, debug: ~ }
 
 dataset:
   subsets: [train, test]
@@ -18,7 +18,6 @@ dataset:
   split_ratio: { default: 0.999, debug: 0.5 }
   max_num_samples: { default: 0, debug: 40 }
   directory_filter:
-    include: { default: ~, ru: RU, en: EN }
     exclude: ["!"]
 
 parser:
@@ -26,7 +25,7 @@ parser:
   dump:
     default: !join [*data_root, *dump_folder]  # fast dataset load
     debug: ~
-  pipe: [audio_strip, split_by_phrases, check_phoneme_length, get_simple_intonation_type]
+  pipe: [audio_strip, split_by_phrases, check_phoneme_length]
   pipe_cfg:
     audio_strip:
       pad: 0.25
@@ -34,20 +33,23 @@ parser:
     split_by_phrases:
       max_duration: 10  # 10, 12, 15
     check_phoneme_length:
+      min_len: 0.05
       max_len: 0.4
-    get_simple_intonation_type:
-      punctuation_marks: [".", "?"]
 
 preproc:
-  pipe: [load_audio, load_text_from_sega,
-         voice_bio, speech_quality,
+  pipe: [load_audio, load_audio_segmentation,
+         # target features
+         add_pauses_from_timestamps, apply_fade_inside_pauses,
          spectrogram, melscale,
-         energy, pitch, enhancement_energy, enhancement_pitch,
-         average_by_time, norm,
-         add_pauses_from_timestamps, text,
-         int_durations, calc_invert_durations, transcription_by_frames, float_durations,
+         energy, pitch, energy_pitch_enhancement,
+         energy_pitch_average_by_time, energy_pitch_normalize,
+         text, int_durations, transcription_by_frames,
+         voice_bio, speech_quality,
          ssl, plbert,
-         to_whisper, ssl, load_audio,
+         # audio augmentation
+         # audio_augment, ssl,
+         # ground truth audio
+         load_audio, apply_fade_inside_pauses,
          trim, mu_law]
   pipe_cfg:
     load_audio:
@@ -56,13 +58,6 @@ preproc:
       pipe_cfg:
         load:
           sample_rate: 24000
-    voice_bio:
-      type: VoiceBiometricProcessor
-      model_type: wespeaker
-      max_audio_duration: 5
-      random_crop: true
-    speech_quality:
-      type: SpeechQualityAssessment
     spectrogram:
       type: SpectralProcessor
       pipe: [magnitude]
@@ -84,19 +79,17 @@ preproc:
       pipe: [energy]
     pitch:
       type: PitchProcessor
-      method: pyworld
-    enhancement_energy:
+      method: pyworld  # pyworld, torchcrepe
+    energy_pitch_enhancement:
       type: signal_enhancement
-      attributes: energy
+      attributes: [energy, pitch]
       smooth: true
-    enhancement_pitch:
-      type: signal_enhancement
-      attributes: pitch
-      smooth: true
-    average_by_time:
+    energy_pitch_average_by_time:
+      type: average_by_time
       attributes: [energy, pitch]
       use_quantile: true
-    norm:
+      min_value: 1.e-2
+    energy_pitch_normalize:
       type: normalize
       attributes: [energy, pitch]
       normalize_by: sample
@@ -111,32 +104,53 @@ preproc:
     int_durations:
       type: calc_durations
       as_int: true
-    calc_invert_durations:
-      token_level: true
-    float_durations:
-      type: calc_durations
-      as_int: False
+    voice_bio:
+      type: VoiceBiometricProcessor
+      model_type: speechbrain
+      max_audio_duration: 5
+      random_crop: true
+    speech_quality:
+      type: SpeechQualityAssessment
     ssl:
       type: SSLProcessor
       ssl_type: Hubert
       ssl_params:
         model_name: facebook/hubert-large-ls960-ft
-        pretrain_path: /src/hubert_phoneme_en/epoch=0-step=4500.ckpt
-        vocab_path: /src/hubert_phoneme_en/vocab.json
+        pretrain_path:
+          immers: /media/i.kalinovskiy/GitLab2/speechflow/hubert_phoneme_en/epoch=0-step=4500.ckpt
+          debug: C:/FluentaAI/hubert_phoneme_en/epoch=0-step=4500.ckpt
+        vocab_path:
+          immers: /media/i.kalinovskiy/GitLab2/speechflow/hubert_phoneme_en/vocab.json
+          debug: C:/FluentaAI/hubert_phoneme_en/vocab.json
         # stream_mod:
         #   chunk_size: 6400
         #   context_size: [64000, 6550]
     plbert:
       type: MultilingualPLBert
       from_ssl_tokens: True
-    to_whisper:
-      type: SignalProcessor
-      pipe: [whisper]
+    audio_augment:
+      type: WaveAugProcessor
+      p: { train: 0.9, test: 1.0 }
+      pipe: [background_noise, colored_noise, room_impulse_response,
+             gain_curve, vtlp, monotonic_speech, whisper]
       pipe_cfg:
+        background_noise:
+          p: 0.0
+        colored_noise:
+          p: 0.5
+        gain_curve:
+          p: 0.5
+        room_impulse_response:
+          p: 0.0
+        vtlp:
+          p: 0.25
+          alpha_min: 0.95
+          alpha_max: 1.05
+        monotonic_speech:
+          p: 1.0
         whisper:
-          p:
-            train: 0.25
-            test: 0
+          p: 0.25
+          cache: true
     trim:
       type: SignalProcessor
       pipe: [trim]
