@@ -4,7 +4,6 @@ import logging
 import itertools
 
 from collections import Counter
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np

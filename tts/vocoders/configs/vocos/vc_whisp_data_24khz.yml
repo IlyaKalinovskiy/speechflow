@@ -18,6 +18,7 @@ dataset:
   split_ratio: { default: 0.999, debug: 0.5 }
   max_num_samples: { default: 0, debug: 40 }
   directory_filter:
+    include: { default: ~, justai: EN }
     exclude: ["!"]
 
 parser:
@@ -37,20 +38,27 @@ parser:
       max_len: 0.4
 
 preproc:
-  pipe: [load_audio, load_audio_segmentation, denoiser,
-         # target features
-         add_pauses_from_timestamps, apply_fade_inside_pauses,
+  pipe: [# load data
+         load_audio, load_audio_segmentation,
+         # audio preprocessing
+         denoiser, add_pauses_from_timestamps, apply_fade_inside_pauses,
+         # audio features
+         speech_quality,
          spectrogram, melscale,
-         energy, pitch, energy_pitch_enhancement,
+         energy, pitch, energy_enhancement,  # pitch_enhancement,
          energy_pitch_average_by_time, energy_pitch_normalize,
+         # speaker features
+         voice_bio,
+         # tts features
          text, int_durations, transcription_by_frames,
-         voice_bio, speech_quality,
          ssl, plbert,
          # audio augmentation
-         audio_augment, ssl,
+         load_audio, audio_augment,
+         # vc features
+         ssl,
          # ground truth audio
-         load_audio, apply_fade_inside_pauses,
-         trim, denoiser, mu_law]
+         load_audio, denoiser, apply_fade_inside_pauses,
+         trim, mu_law]
   pipe_cfg:
     load_audio:
       type: SignalProcessor
@@ -58,6 +66,9 @@ preproc:
       pipe_cfg:
         load:
           sample_rate: 24000
+    denoiser:
+      type: DenoisingProcessor
+      model_type: facebook
     spectrogram:
       type: SpectralProcessor
       pipe: [magnitude]
@@ -79,10 +90,14 @@ preproc:
       pipe: [energy]
     pitch:
       type: PitchProcessor
-      method: pyworld  # pyworld, torchcrepe
-    energy_pitch_enhancement:
+      method: torchcrepe  # pyworld, torchcrepe
+    energy_enhancement:
       type: signal_enhancement
-      attributes: [energy, pitch]
+      attributes: [energy]
+      smooth: true
+    pitch_enhancement:
+      type: signal_enhancement
+      attributes: [pitch]
       smooth: true
     energy_pitch_average_by_time:
       type: average_by_time
@@ -106,7 +121,7 @@ preproc:
       as_int: true
     voice_bio:
       type: VoiceBiometricProcessor
-      model_type: speechbrain
+      model_type: wespeaker
       max_audio_duration: 5
       random_crop: true
     speech_quality:
@@ -118,9 +133,11 @@ preproc:
         model_name: facebook/hubert-large-ls960-ft
         pretrain_path:
           immers: /media/i.kalinovskiy/GitLab2/speechflow/hubert_phoneme_en/epoch=0-step=4500.ckpt
+          justai: /src/EN_epoch=0-step=4500.ckpt
           debug: C:/FluentaAI/hubert_phoneme_en/epoch=0-step=4500.ckpt
         vocab_path:
           immers: /media/i.kalinovskiy/GitLab2/speechflow/hubert_phoneme_en/vocab.json
+          justai: /src/EN_epoch=0-step=4500_vocab.json
           debug: C:/FluentaAI/hubert_phoneme_en/vocab.json
         # stream_mod:
         #   chunk_size: 6400
@@ -128,11 +145,9 @@ preproc:
     plbert:
       type: MultilingualPLBert
       from_ssl_tokens: True
-    denoiser:
-      type: DenoisingProcessor
     audio_augment:
       type: WaveAugProcessor
-      p: { train: 0.9, test: 1.0 }
+      p: { train: 0.5, test: 0.0 }
       pipe: [background_noise, colored_noise, room_impulse_response,
              gain_curve, vtlp, monotonic_speech, whisper]
       pipe_cfg:
@@ -140,6 +155,8 @@ preproc:
           background_paths:
             immers:
               - /media/i.kalinovskiy/GitLab2/speechflow/aug_data/noise/noise_24k
+            justai:
+              - /src/aug_data/noise/noise_24k
             debug:
               - C:\FluentaAI\aug_data\noise\noise_24k
           p: 0.25
@@ -150,6 +167,9 @@ preproc:
             immers:
               - /media/i.kalinovskiy/GitLab2/speechflow/aug_data/rirs/smallroom_24k
               - /media/i.kalinovskiy/GitLab2/speechflow/aug_data/rirs/mediumroom_24k
+            justai:
+              - /src/aug_data/rirs/smallroom_24k
+              - /src/aug_data/rirs/mediumroom_24k
             debug:
               - C:\FluentaAI\aug_data\rirs\smallroom_24k
               - C:\FluentaAI\aug_data\rirs\mediumroom_24k
@@ -157,9 +177,9 @@ preproc:
         gain_curve:
           p: 0.25
         vtlp:
-          p: 0.2
           alpha_min: 0.95
           alpha_max: 1.05
+          p: 0.2
         monotonic_speech:
           p: 0.2
         whisper:
@@ -171,7 +191,7 @@ preproc:
         trim:
           random_chunk: true
           # num_samples_per_chunk: 40960  # 40952 for DAC head  # hop=320
-          num_samples_per_chunk: 15360  # hop=240
+          num_samples_per_chunk: 30720  # hop=240
     mu_law:
       type: SignalProcessor
       pipe: [mu_law_encode]
@@ -179,8 +199,8 @@ preproc:
 singleton_handlers:
   handlers: [SpeakerIDSetter]
   SpeakerIDSetter: {}
-  StatisticsRange:
-    statistics_file: !join [*data_root, *dump_folder, ranges.json]
+  # StatisticsRange:
+  #   statistics_file: !join [*data_root, *dump_folder, ranges.json]
 
 collate:
   type: TTSCollate
@@ -196,5 +216,7 @@ sampler:
     epoch_size: 100000
     fields_to_compute_weight: [uid, speaker_name]
     chunks_ratio: [0.5, 0.5]
+    # use_dynamic_batch: true
+    # max_batch_length: 50_000
   test:
     type: SimpleSampler

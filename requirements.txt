@@ -31,7 +31,6 @@ StrEnum==0.4.15
 toml==0.10.2
 torch-optimizer==0.3.0
 torchcrepe==0.0.22
-torchvision
 torch_audiomentations==0.11.1
 tqdm==4.66.1
 umap-learn==0.4.0

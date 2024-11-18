@@ -11,7 +11,7 @@ batch:
   type: VocoderBatchProcessor
 
 data_loaders:
-  batch_size: { default: 16, debug: 2 }
+  batch_size: { default: 8, debug: 2 }
   epoch_len: { train: 10000, test: ~ }
   min_batch_size: 2
   min_prefetch_factor: { default: 50, debug: 1 }
@@ -21,7 +21,7 @@ trainer:
   accelerator: { default: gpu, debug: cpu }
   devices: { default: [auto], debug: 1 }
   max_steps: 8000000
-  accumulate_grad_batches: 4
+  accumulate_grad_batches: 1
   limit_val_batches: 100
   log_every_n_steps: 100
   # resume_from_checkpoint: /path/to/checkpoint
@@ -54,9 +54,11 @@ engine:
     use_cdpam_loss: false
     biometric_model_name:
       immers: /media/i.kalinovskiy/GitLab2/speechflow/wespeaker-voxceleb-resnet34-LM
+      justai: /src/wespeaker-voxceleb-resnet34-LM
       debug: C:/FluentaAI/wespeaker-voxceleb-resnet34-LM
     wavlm_model_name:
       immers: /media/i.kalinovskiy/GitLab2/speechflow/wavlm-base-plus
+      justai: /src/wavlm-base-plus
       debug: C:/FluentaAI/wavlm-base-plus
 
     # automatic evaluation
@@ -64,7 +66,7 @@ engine:
     evaluate_pesq: true
     evaluate_periodicty: true
 
-    use_clearml_logger: { immers: true, debug: false }
+    use_clearml_logger: { immers: false, debug: false }
 
 model:
   feature_extractor:
@@ -76,11 +78,11 @@ model:
 
         ssl_feat_dim: 1024
 
-        speaker_emb_dim: 192
+        speaker_emb_dim: 256
         speaker_emb_proj_dim: 128
 
         feat_encoder_type: RNNEncoder
-        feat_encoder_num_layers: 1
+        feat_encoder_num_layers: 2
         feat_encoder_inner_dim: 512
         feat_encoder_use_condition: true
 

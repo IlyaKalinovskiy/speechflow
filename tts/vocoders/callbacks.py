@@ -73,4 +73,5 @@ class VisualizerCallback(Callback):
     ):
         fig_to_plot = plot_1d(signal)
         data_to_log = figure_to_ndarray(fig_to_plot)
-        module.log_image(tag, None, fig=data_to_log.swapaxes(0, 2))
+        data_to_log = data_to_log.swapaxes(0, 2).swapaxes(0, 1)
+        module.log_image(tag, None, fig=data_to_log)

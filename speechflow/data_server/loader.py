@@ -5,9 +5,7 @@ import logging
 import argparse
 
 from collections import deque
-from threading import Event
-from threading import Lock as ThreadLock
-from threading import Thread
+from threading import Event, Thread
 
 from speechflow.data_pipeline.core import Batch
 from speechflow.data_server.client import DataClient
@@ -41,10 +39,8 @@ class DataLoader:
         min_prefetch_factor: int = 50,
         max_prefetch_factor: int = 150,
     ):
-        self._msg_client = DataClient(server_addr)
-        self._batch_client = DataClient(
-            server_addr, sub_type=SubscriberTypes.LOADER, uid=self._msg_client.uid
-        )
+        self._batch_client = DataClient(server_addr, sub_type=SubscriberTypes.LOADER)
+        self._msg_client = DataClient(server_addr, uid=self._batch_client.uid)
         self._uid = self._batch_client.uid[:6]
         self._queue_monitoring_task = Thread(target=self._queue_monitoring)
         self._loading_batches_task = Thread(target=self._loading_batches)
