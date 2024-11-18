@@ -11,6 +11,7 @@ import librosa
 
 from librosa.core import istft, stft
 from librosa.util import fix_length
+from omegaconf import ListConfig
 from psola import vocode
 from scipy.signal import butter, resample, sosfilt
 from torch_audiomentations import AddBackgroundNoise, ApplyImpulseResponse
@@ -234,8 +235,8 @@ class WaveAugProcessor(BaseDSProcessor):
         ds: AudioDataSample,
         min_points: int = 2,
         max_points: int = 5,
-        min_ratio: float = 0.0,
-        max_ratio: float = 1.0,
+        min_ratio: float = 0.5,
+        max_ratio: float = 2.0,
         p: float = 1.0,
     ) -> AudioDataSample:
         """Multiply audio by random gain curve.
@@ -580,21 +581,12 @@ class WaveAugProcessor(BaseDSProcessor):
         return ds
 
     @check_probability
-    def whisper(self, ds: AudioDataSample, cache: bool = False, p: float = 1.0):
+    def whisper(self, ds: AudioDataSample, p: float = 1.0):
         if not hasattr(self, "sound_effects"):
             sound_effects = PraatSoundEffects()
             setattr(self, "sound_effects", sound_effects)
         else:
             sound_effects = getattr(self, "sound_effects")
-
-        if cache:
-            whisp_wav_path = ds.audio_chunk.file_path.with_suffix(".whisp.wav")
-            if whisp_wav_path.exists():
-                tmp = ds.audio_chunk.file_path
-                ds.audio_chunk.file_path = whisp_wav_path
-                ds.audio_chunk.load(sr=ds.audio_chunk.sr, dtype=ds.audio_chunk.dtype)
-                ds.audio_chunk.file_path = tmp
-                return ds
 
         ds.audio_chunk = sound_effects.whisper(ds.audio_chunk)
         return ds
@@ -609,6 +601,9 @@ class WaveAugProcessor(BaseDSProcessor):
         mode: str = "per_example",
         p: float = 1.0,
     ) -> AudioDataSample:
+        if isinstance(background_paths, ListConfig):
+            background_paths = list(background_paths)
+
         if not hasattr(self, "add_background_noise"):
             add_noise = AddBackgroundNoise(
                 background_paths=background_paths,
@@ -658,6 +653,9 @@ class WaveAugProcessor(BaseDSProcessor):
         mode: str = "per_example",
         p: float = 1.0,
     ) -> AudioDataSample:
+        if isinstance(ir_paths, ListConfig):
+            ir_paths = list(ir_paths)
+
         if not hasattr(self, "add_impulse_response"):
             add_impulse_response = ApplyImpulseResponse(
                 ir_paths=ir_paths, convolve_mode=convolve_mode, mode=mode, p=1.0

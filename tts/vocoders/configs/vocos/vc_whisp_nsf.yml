@@ -11,7 +11,7 @@ batch:
   type: VocoderBatchProcessor
 
 data_loaders:
-  batch_size: { default: 6, debug: 2 }
+  batch_size: { default: 16, debug: 2 }
   epoch_len: { train: 10000, test: ~ }
   min_batch_size: 2
   min_prefetch_factor: { default: 50, debug: 1 }
@@ -53,10 +53,10 @@ engine:
     use_wavlm_loss: true
     use_cdpam_loss: false
     biometric_model_name:
-      immers: /src/wespeaker-voxceleb-resnet34-LM
+      immers: /media/i.kalinovskiy/GitLab2/speechflow/wespeaker-voxceleb-resnet34-LM
       debug: C:/FluentaAI/wespeaker-voxceleb-resnet34-LM
     wavlm_model_name:
-      immers: /src/wavlm-base-plus
+      immers: /media/i.kalinovskiy/GitLab2/speechflow/wavlm-base-plus
       debug: C:/FluentaAI/wavlm-base-plus
 
     # automatic evaluation
@@ -64,7 +64,7 @@ engine:
     evaluate_pesq: true
     evaluate_periodicty: true
 
-    use_clearml_logger: false
+    use_clearml_logger: { immers: true, debug: false }
 
 model:
   feature_extractor:

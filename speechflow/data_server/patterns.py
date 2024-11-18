@@ -76,8 +76,8 @@ class ZMQClient:
             self.socket.send_pyobj(
                 message, flags=self.flags
             ) if serialize else self.socket.send(message, flags=self.flags)
-        except zmq.ZMQError:
-            pass
+        except zmq.ZMQError as e:
+            log_to_file(trace(self, e))
 
     def recv(
         self,
@@ -120,7 +120,10 @@ class ZMQClient:
         return self.recv(deserialize, timeout)
 
     def send_string(self, message: str):
-        self.socket.send_string(message, flags=self.flags)
+        try:
+            self.socket.send_string(message, flags=self.flags)
+        except zmq.ZMQError as e:
+            log_to_file(trace(self, e))
 
     def recv_string(self, timeout: tp.Optional[int] = None):  # in milliseconds
         if timeout is not None and self.socket.poll(timeout=timeout) == 0:  # wait
@@ -151,8 +154,8 @@ class ZMQWorker:
             self.socket.send_pyobj(
                 message, flags=self.flags
             ) if serialize else self.socket.send(message, flags=self.flags)
-        except zmq.ZMQError:
-            pass
+        except zmq.ZMQError as e:
+            log_to_file(trace(self, e))
 
     def recv(
         self,

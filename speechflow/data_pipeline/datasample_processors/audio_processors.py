@@ -12,8 +12,11 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torchaudio
 import numpy.typing as npt
 
+from denoiser import pretrained
+from denoiser.dsp import convert_audio
 from scipy import signal
 from torch.nn.functional import interpolate as torch_interpolate
 
@@ -38,6 +41,7 @@ __all__ = [
     "SignalProcessor",
     "SSLProcessor",
     "ACProcessor",
+    "DenoisingProcessor",
     "timedim_interpolation",
 ]
 
@@ -426,6 +430,44 @@ class ACProcessor(BaseAudioProcessor):
             ds.audio_chunk = AudioChunk(data=waveform, sr=self._ac_model.sample_rate)
 
         return ds.to_numpy()
+
+
+class DenoisingProcessor(BaseAudioProcessor):
+    def __init__(
+        self,
+        model_type: tp.Literal["facebook"] = "facebook",
+        device: str = "cpu",
+    ):
+        super().__init__(device=device)
+        self._model_type = model_type
+        self._model = None
+
+    def init(self):
+        super().init()
+
+        if self._model_type == "facebook":
+            self._model = pretrained.dns64().to(self.device)
+
+    @PipeRegistry.registry(
+        inputs={"audio_chunk"},
+        outputs={"audio_chunk"},
+    )
+    @lazy_initialization
+    def process(self, ds: tp.Union[AudioDataSample, tp.Any]) -> AudioDataSample:
+        ds = super().process(ds)
+        assert self._model is not None
+
+        if self._model_type == "facebook":
+            waveform = (
+                torch.FloatTensor(ds.audio_chunk.waveform).unsqueeze(0).to(self.device)
+            )
+
+            with torch.inference_mode():
+                denoised = self._model(waveform[None])[0]
+
+            ds.audio_chunk.waveform = denoised.cpu().data.numpy()[0]
+
+        return ds
 
 
 @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"ssl_feat", "pl_bert"})
