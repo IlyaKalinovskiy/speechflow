@@ -5,7 +5,9 @@ import logging
 import argparse
 
 from collections import deque
-from threading import Event, Thread
+from threading import Event
+from threading import Lock as ThreadLock
+from threading import Thread
 
 from speechflow.data_pipeline.core import Batch
 from speechflow.data_server.client import DataClient
@@ -72,6 +74,7 @@ class DataLoader:
         self._stop_event = Event()
         self._epoch_complete_event = Event()
         self._batch_queue: tp.Deque = deque()
+        self._queue_lock = ThreadLock()
         self._async_supported = self.client.find_info("async_supported", False)
 
     def __len__(self) -> int:
@@ -182,6 +185,7 @@ class DataLoader:
             except Exception as e:
                 LOGGER.error(trace(self, e))
             finally:
+                self._log_to_file("queue monitoring thread went to sleep")
                 Profiler.sleep(2.0)
 
     def _loading_batches(self):
@@ -207,6 +211,7 @@ class DataLoader:
     def _batch_receive(self):
         response = self._batch_client.recv(deserialize=False, timeout=1)
         if not response:
+            self._log_to_file("batch receive thread to sleep")
             Profiler.sleep(0.25)
             return
 
@@ -237,7 +242,8 @@ class DataLoader:
                 if self.pin_memory and batch.collated_samples is not None:
                     batch.collated_samples.pin_memory()
 
-                self._batch_queue.append(batch)
+                with self._queue_lock:
+                    self._batch_queue.append(batch)
 
     def start(self):
         self._stop_event.clear()
@@ -285,10 +291,11 @@ class DataLoader:
             Profiler.sleep(sleep + 3)
             return self.next_batch(sleep + 3)
 
-        try:
-            batch = self._batch_queue.popleft()
-        except IndexError:
-            return self.next_batch()
+        with self._queue_lock:
+            try:
+                batch = self._batch_queue.popleft()
+            except IndexError:
+                return self.next_batch()
 
         if self.prefetch_on_gpu and len(self._batch_queue) > 0:
             try:
