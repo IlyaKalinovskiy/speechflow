@@ -88,7 +88,7 @@ class ZMQClient:
             return None
         else:
             list_bytes = []
-            while True:
+            while True or len(list_bytes) < 10:
                 try:
                     msg = self.socket.recv_multipart(flags=self.flags)
                     if msg is not None:
