@@ -14,7 +14,6 @@ __all__ = [
     "ZMQPatterns",
     "ZMQServer",
     "ZMQClient",
-    "ZMQAsyncClient",
     "ZMQWorker",
     "ZMQProxy",
 ]
@@ -129,21 +128,6 @@ class ZMQClient:
     ):
         self.send_string(message)
         return self.recv_string(timeout)
-
-
-@dataclass
-class ZMQAsyncClient(ZMQClient):
-    poller: zmq.Poller
-    socks: tp.Dict[zmq.Socket, tp.Any] = None  # type: ignore
-
-    def close(self):
-        self.socket.close()
-
-    def pool(self, timeout: tp.Optional[int] = None):  # in milliseconds
-        self.socks = dict(self.poller.poll(timeout=timeout))
-
-    def is_ready(self) -> bool:
-        return self.socks.get(self.socket) == zmq.POLLIN
 
 
 @dataclass
@@ -307,14 +291,13 @@ class ZMQPatterns:
         return ZMQClient(context=context, socket=socket)
 
     @classmethod
-    def async_client(cls, server_addr: str) -> ZMQAsyncClient:
+    def async_client(cls, server_addr: str) -> ZMQClient:
         log_to_file(trace(cls, f"connection to {server_addr}"))
 
         context = zmq.Context()
         socket = cls.__get_dealer(context, server_addr, bind=False)
-        poller = cls.__get_poller([socket])
 
-        return ZMQAsyncClient(context=context, socket=socket, poller=poller)
+        return ZMQClient(context=context, socket=socket)
 
     @classmethod
     def worker(cls, server_addr: str) -> ZMQWorker:
