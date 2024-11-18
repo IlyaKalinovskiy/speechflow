@@ -26,6 +26,7 @@ class ZMQServer:
     backend: zmq.Socket
     poller: zmq.Poller
     socks: tp.Dict[zmq.Socket, tp.Any] = None  # type: ignore
+    flags: int = zmq.NOBLOCK
 
     def pool(self, timeout: tp.Optional[int] = None):  # in milliseconds
         self.socks = dict(self.poller.poll(timeout))
@@ -49,13 +50,13 @@ class ZMQServer:
             self.backend.close()
 
     def frontend_send(self, message):
-        self.frontend.send_multipart(message, flags=zmq.NOBLOCK)
+        self.frontend.send_multipart(message, flags=self.flags)
 
     def frontend_recv(self):
         return self.frontend.recv_multipart()
 
     def backend_send(self, message):
-        self.backend.send_multipart(message, flags=zmq.NOBLOCK)
+        self.backend.send_multipart(message, flags=self.flags)
 
     def backend_recv(self):
         return self.backend.recv_multipart()
@@ -65,14 +66,18 @@ class ZMQServer:
 class ZMQClient:
     context: zmq.Context
     socket: zmq.Socket
+    flags: int = 0
 
     def close(self):
         self.socket.close()
 
     def send(self, message, serialize: bool = True):
-        self.socket.send_pyobj(
-            message, flags=zmq.NOBLOCK
-        ) if serialize else self.socket.send(message, flags=zmq.NOBLOCK)
+        try:
+            self.socket.send_pyobj(
+                message, flags=self.flags
+            ) if serialize else self.socket.send(message, flags=self.flags)
+        except zmq.ZMQError:
+            pass
 
     def recv(
         self,
@@ -85,7 +90,7 @@ class ZMQClient:
             list_bytes = []
             while True:
                 try:
-                    msg = self.socket.recv_multipart(flags=zmq.NOBLOCK)
+                    msg = self.socket.recv_multipart(flags=self.flags)
                     if msg is not None:
                         list_bytes += msg
                     else:
@@ -115,13 +120,15 @@ class ZMQClient:
         return self.recv(deserialize, timeout)
 
     def send_string(self, message: str):
-        self.socket.send_string(message, flags=zmq.NOBLOCK)
+        self.socket.send_string(message, flags=self.flags)
 
     def recv_string(self, timeout: tp.Optional[int] = None):  # in milliseconds
         if timeout is not None and self.socket.poll(timeout=timeout) == 0:  # wait
             return None  # timeout reached before any events were queued
         else:
-            return self.socket.recv_string()  # events queued within our time limit
+            return self.socket.recv_string(
+                flags=self.flags
+            )  # events queued within our time limit
 
     def request_as_string(
         self, message: str, timeout: tp.Optional[int] = None  # in milliseconds
@@ -134,12 +141,18 @@ class ZMQClient:
 class ZMQWorker:
     context: zmq.Context
     socket: zmq.Socket
+    flags: int = 0
 
     def close(self):
         self.socket.close()
 
     def send(self, message, serialize: bool = True):
-        self.socket.send_pyobj(message) if serialize else self.socket.send(message)
+        try:
+            self.socket.send_pyobj(
+                message, flags=self.flags
+            ) if serialize else self.socket.send(message, flags=self.flags)
+        except zmq.ZMQError:
+            pass
 
     def recv(
         self,
@@ -148,7 +161,7 @@ class ZMQWorker:
         if timeout is not None and self.socket.poll(timeout=timeout) == 0:
             return None
         else:
-            return self.socket.recv_multipart()
+            return self.socket.recv_multipart(flags=self.flags)
 
 
 @dataclass
@@ -158,6 +171,7 @@ class ZMQProxy:
     backend: tp.List[zmq.Socket]
     poller: zmq.Poller
     socks: tp.Dict[zmq.Socket, tp.Any] = None  # type: ignore
+    flags: int = zmq.NOBLOCK
 
     def close(self):
         self.frontend.close()
@@ -170,14 +184,14 @@ class ZMQProxy:
         return self.socks.get(self.frontend) == zmq.POLLIN
 
     async def _send(self, sock, message):
-        return await sock.send_pyobj(message, flags=zmq.NOBLOCK)
+        return await sock.send_pyobj(message, flags=self.flags)
 
     async def _send_from_all(self, message):
         tasks = [self._send(sock, message) for sock in self.backend]
         return await asyncio.gather(*tasks)
 
     async def _request(self, sock, message):
-        await sock.send_pyobj(message, flags=zmq.NOBLOCK)
+        await sock.send_pyobj(message, flags=self.flags)
         return await sock.recv_multipart()
 
     async def _request_from_all(self, message):
@@ -189,11 +203,11 @@ class ZMQProxy:
         return loop.run_until_complete(self._request_from_all(message))
 
     def frontend_send_multipart(self, message):
-        self.frontend.send_multipart(message, flags=zmq.NOBLOCK)
+        self.frontend.send_multipart(message, flags=self.flags)
 
     def backend_send_multipart(self, message):
         for back in self.backend:
-            back.send_multipart(message, flags=zmq.NOBLOCK)
+            back.send_multipart(message, flags=self.flags)
 
 
 class ZMQPatterns:
@@ -297,7 +311,7 @@ class ZMQPatterns:
         context = zmq.Context()
         socket = cls.__get_dealer(context, server_addr, bind=False)
 
-        return ZMQClient(context=context, socket=socket)
+        return ZMQClient(context=context, socket=socket, flags=zmq.NOBLOCK)
 
     @classmethod
     def worker(cls, server_addr: str) -> ZMQWorker:

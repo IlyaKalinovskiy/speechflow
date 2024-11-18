@@ -3,8 +3,6 @@ import logging
 
 from os import environ as env
 
-import zmq
-
 from speechflow.concurrency import ProcessWorker
 from speechflow.data_pipeline.core import DataPipeline
 from speechflow.data_pipeline.core.data_processor import DataProcessor
@@ -92,8 +90,5 @@ class BatchWorker(ProcessWorker):
             LOGGER.error(trace(self, e))
 
         finally:
-            try:
-                if request is not None:
-                    self._zmq_worker.send(batch)
-            except zmq.error.ZMQError:
-                pass
+            if request is not None:
+                self._zmq_worker.send(batch)
