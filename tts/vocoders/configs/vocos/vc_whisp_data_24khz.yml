@@ -147,7 +147,7 @@ preproc:
       from_ssl_tokens: True
     audio_augment:
       type: WaveAugProcessor
-      p: { train: 0.5, test: 0.0 }
+      p: { train: 0.75, test: 0.0 }
       pipe: [background_noise, colored_noise, room_impulse_response,
              gain_curve, vtlp, monotonic_speech, whisper]
       pipe_cfg:
@@ -158,7 +158,7 @@ preproc:
             justai:
               - /src/aug_data/noise/noise_24k
             debug:
-              - C:\FluentaAI\aug_data\noise\noise_24k
+              - C:/FluentaAI/aug_data/noise/noise_24k
           p: 0.25
         colored_noise:
           p: 0.25
@@ -171,8 +171,8 @@ preproc:
               - /src/aug_data/rirs/smallroom_24k
               - /src/aug_data/rirs/mediumroom_24k
             debug:
-              - C:\FluentaAI\aug_data\rirs\smallroom_24k
-              - C:\FluentaAI\aug_data\rirs\mediumroom_24k
+              - C:/FluentaAI/aug_data/rirs/smallroom_24k
+              - C:/FluentaAI/aug_data/rirs/mediumroom_24k
           p: 0.25
         gain_curve:
           p: 0.25

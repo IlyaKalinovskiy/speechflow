@@ -233,7 +233,9 @@ class AudioFeatures(FeatureExtractor):
         if (params.use_energy or params.use_pitch) and (
             params.energy_denormalize or params.pitch_denormalize
         ):
-            self.range_predictor = Regression(condition_dim, 3 * 2, activation_fn="ReLU")
+            self.range_predictor = Regression(
+                condition_dim, 3 * 2, activation_fn="LeakyReLU"
+            )
         else:
             self.range_predictor = None
 
@@ -335,7 +337,7 @@ class AudioFeatures(FeatureExtractor):
             energy_predictor_params = FrameLevelPredictorParams(
                 frame_encoder_type=params.vp_encoder_type,
                 frame_encoder_params=var_encoder_params,
-                activation_fn="ReLU",
+                activation_fn="LeakyReLU",
                 vp_inner_dim=params.vp_encoder_inner_dim,
                 vp_num_layers=params.vp_encoder_num_layers,
                 vp_output_dim=1,
@@ -352,7 +354,7 @@ class AudioFeatures(FeatureExtractor):
             pitch_predictor_params = FrameLevelPredictorParams(
                 frame_encoder_type=params.vp_encoder_type,
                 frame_encoder_params=var_encoder_params,
-                activation_fn="ReLU",
+                activation_fn="LeakyReLU",
                 vp_inner_channels=params.vp_encoder_inner_dim,
                 vp_num_layers=params.vp_encoder_num_layers,
                 vp_output_dim=1,
