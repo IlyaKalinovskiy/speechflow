@@ -1,6 +1,7 @@
 import io
 import math
 import typing as tp
+import logging
 
 import numpy as np
 import torch
@@ -11,6 +12,7 @@ import pytorch_lightning as pl
 from clearml import Task
 
 from speechflow.io import AudioChunk, tp_PATH
+from speechflow.logging import trace
 from speechflow.training.saver import ExperimentSaver
 from tts.vocoders.batch_processor import VocoderBatchProcessor
 from tts.vocoders.data_types import VocoderForwardInput
@@ -26,6 +28,8 @@ from tts.vocoders.vocos.modules.heads.base import WaveformGenerator
 from tts.vocoders.vocos.utils.tensor_utils import safe_log
 
 __all__ = ["VocosLightningEngine"]
+
+LOGGER = logging.getLogger("root")
 
 
 class VocosLightningEngine(pl.LightningModule):
@@ -131,9 +135,11 @@ class VocosLightningEngine(pl.LightningModule):
         self.base_mel_coeff = self.mel_loss_coeff = mel_loss_coeff
 
         if use_clearml_logger:
+            LOGGER.info(trace(self, message="Init ClearML task"))
             self.clearml_task = Task.init(
                 task_name=saver.expr_path.name, project_name=saver.expr_path.parent.name
             )
+            LOGGER.info(trace(self, message="ClearML task has been initialized"))
         else:
             self.clearml_task = None
 
@@ -437,15 +443,15 @@ class VocosLightningEngine(pl.LightningModule):
     def validation_epoch_end(self, outputs):
         if self.global_rank == 0:
             *_, audio_in, audio_pred = outputs[0].values()
-            self.log_audio("val_in", audio_in)
-            self.log_audio("val_pred", audio_pred)
+            self.log_audio("val/audio_in", audio_in)
+            self.log_audio("val/audio_pred", audio_pred)
 
             mel_target = safe_log(self.melspec_loss.mel_spec(audio_in))
             mel_hat = safe_log(self.melspec_loss.mel_spec(audio_pred))
 
-            self.log_image("val_mel_target", mel_target)
+            self.log_image("val/mel_target", mel_target)
             self.log_image(
-                "val_mel_hat",
+                "val/mel_hat",
                 mel_hat,
             )
 

@@ -1,3 +1,5 @@
+import typing as tp
+
 import numpy as np
 import torch
 import numpy.typing as npt
@@ -59,19 +61,48 @@ class VisualizerCallback(Callback):
         else:
             random_idx = np.random.randint(0, batch_size - 1)
 
+        if inputs.spectrogram is not None:
+            T = inputs.spectrogram_lengths[random_idx]
+            self._log_2d(
+                "target/spectrogram", inputs.spectrogram[random_idx][:T], pl_module
+            )
+
+        if inputs.ssl_feat is not None:
+            T = inputs.ssl_feat_lengths[random_idx]
+            self._log_2d("target/ssl_feat", inputs.ssl_feat[random_idx][:T], pl_module)
+
         for name in ["energy", "pitch"]:
-            target = getattr(targets, name)[random_idx]
-            predict = ft_additional[f"{name}_predict"][random_idx]
-            data = torch.stack([target, predict]).cpu().numpy()
-            self._log_1d_signal(pl_module, data, f"{name}_predict")
+            T = inputs.output_lengths[random_idx]
+            target_signal = getattr(targets, name)
+            if target_signal is not None:
+                target_signal = target_signal[random_idx][:T]
+                predict = ft_additional[f"{name}_predict"][random_idx][:T]
+                data = torch.stack([target_signal, predict])
+                self._log_1d(f"predict/{name}", data, pl_module)
 
     @staticmethod
-    def _log_1d_signal(
-        module: pl.LightningModule,
-        signal: npt.NDArray,
+    def _log_2d(
         tag: str,
+        tensor: tp.Union[npt.NDArray, torch.Tensor],
+        pl_module: pl.LightningModule,
     ):
+        if isinstance(tensor, torch.Tensor):
+            tensor = tensor.cpu()
+        else:
+            tensor = torch.from_numpy(tensor)
+
+        pl_module.log_image(tag, tensor.t())
+
+    @staticmethod
+    def _log_1d(
+        tag: str,
+        signal: tp.Union[npt.NDArray, torch.Tensor],
+        pl_module: pl.LightningModule,
+    ):
+        if isinstance(signal, torch.Tensor):
+            signal = signal.cpu().numpy()
+
         fig_to_plot = plot_1d(signal)
         data_to_log = figure_to_ndarray(fig_to_plot)
         data_to_log = data_to_log.swapaxes(0, 2).swapaxes(0, 1)
-        module.log_image(tag, None, fig=data_to_log)
+        pl_module.log_image(tag, None, fig=data_to_log)
