@@ -5,6 +5,7 @@ import logging
 from threading import Lock as ThreadLock
 
 from speechflow.data_server.patterns import ZMQPatterns
+from speechflow.data_server.server import SubscriberTypes
 from speechflow.logging import trace
 from speechflow.utils.dictutils import flatten_dict
 
@@ -14,18 +15,23 @@ LOGGER = logging.getLogger("root")
 
 
 class DataClient:
-    def __init__(self, server_addr: str, sub_type: str = "client", uid: str = None):
+    def __init__(
+        self, server_addr: str, sub_type: str = SubscriberTypes.CLIENT, uid: str = None
+    ):
         self._uid = uid if uid else uuid.uuid4().hex
         self._server_addr = server_addr
-        self._request_lock = ThreadLock()
-        self._send_lock = ThreadLock()
-        self._recv_lock = ThreadLock()
         self._zmq_client = ZMQPatterns.async_client(server_addr)
-        self._info = self.request(
-            {"message": "info", "sub_type": sub_type}, timeout=600_000
-        )
-        if self._info is None:
-            raise RuntimeError("DataServer not responding!")
+        self._lock = ThreadLock()
+        self._info = None
+
+        while self._info is None:
+            try:
+                self._info = self.request(
+                    {"message": "info", "sub_type": sub_type}, timeout=1000
+                )
+            except Exception as e:
+                LOGGER.error(trace(self, e))
+                raise RuntimeError("DataServer not responding!")
 
         LOGGER.debug(trace(self, message=f"Start DataClient {self._server_addr}"))
 
@@ -72,9 +78,9 @@ class DataClient:
         message,
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
-    ):
+    ) -> tp.Optional[tp.Union[tp.List, tp.Any]]:
         message["client_uid"] = self._uid
-        with self._request_lock:
+        with self._lock:
             try:
                 return self._zmq_client.request(
                     message, deserialize=deserialize, timeout=timeout
@@ -82,11 +88,9 @@ class DataClient:
             except Exception as e:
                 LOGGER.error(trace(self, e))
 
-        return []
-
     def send(self, message):
         message["client_uid"] = self._uid
-        with self._send_lock:
+        with self._lock:
             try:
                 self._zmq_client.send(message)
             except Exception as e:
@@ -96,13 +100,9 @@ class DataClient:
         self,
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
-    ):
-        with self._recv_lock:
+    ) -> tp.Optional[tp.Union[tp.List, tp.Any]]:
+        with self._lock:
             try:
-                self._zmq_client.pool(timeout=timeout)
-                if self._zmq_client.is_ready():
-                    return self._zmq_client.recv(deserialize)
+                return self._zmq_client.recv(deserialize, timeout)
             except Exception as e:
                 LOGGER.error(trace(self, e))
-
-        return []

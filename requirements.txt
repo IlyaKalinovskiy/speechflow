@@ -31,13 +31,14 @@ StrEnum==0.4.15
 toml==0.10.2
 torch-optimizer==0.3.0
 torchcrepe==0.0.22
-torchvision
+torch_audiomentations==0.11.1
 tqdm==4.66.1
 umap-learn==0.4.0
 vector-quantize-pytorch==1.11.6
 jsonargparse[signatures]>=4.15.2
 pesq==0.0.4
 clearml==1.16.4
+denoiser==0.1.5
 
 resemblyzer @ git+https://github.com/resemble-ai/Resemblyzer.git@15d828edebe06bc72b9cabc8ef8ca5ab2cb457ce
 whisper-timestamped @ git+https://github.com/linto-ai/whisper-timestamped.git@5d4fdaa93e9c6e1b8d3152903993c85f5c7c0334

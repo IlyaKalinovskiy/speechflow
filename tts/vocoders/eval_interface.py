@@ -112,6 +112,7 @@ class VocoderLoader:
             state_dict = {k.replace("lstms.", "rnns."): v for k, v in state_dict.items()}
             model.load_state_dict(state_dict)
 
+        model.head.remove_weight_norm()
         return model
 
 

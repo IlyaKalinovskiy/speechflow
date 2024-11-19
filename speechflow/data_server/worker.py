@@ -25,8 +25,20 @@ class BatchWorker(ProcessWorker):
         self._data_processor: tp.Dict = {}
 
     def on_start(self):
+        from speechflow.data_server.server import SubscriberTypes
+
         self._zmq_client = ZMQPatterns.client(self._server_addr)
-        info = self._zmq_client.request({"message": "info", "sub_type": "worker"})
+
+        info = None
+        while info is None:
+            try:
+                info = self._zmq_client.request(
+                    {"message": "info", "sub_type": SubscriberTypes.WORKER},
+                    timeout=1000,
+                )
+            except Exception as e:
+                LOGGER.error(trace(self, e))
+                raise RuntimeError("DataServer not responding!")
 
         addr_for_workers = info["addr_for_workers"]
         self._zmq_worker = ZMQPatterns.worker(addr_for_workers)
@@ -39,7 +51,7 @@ class BatchWorker(ProcessWorker):
         else:
             self._data_pipeline = DataPipeline(info["data_config"])
             self._data_pipeline.init_components(
-                preinit_handlers=info.get("singleton_handlers")
+                preinit_singleton_handlers=info.get("singleton_handlers")
             )
 
         for subset_name in self._data_pipeline.subsets:
@@ -54,11 +66,15 @@ class BatchWorker(ProcessWorker):
         LOGGER.debug(trace(self, message=f"Finish Batch Worker {self._server_addr}"))
 
     def do_work_once(self):
+        request = None
         batch = None
         try:
-            request = self._zmq_worker.socket.recv_multipart()
-            if request[0] == b"":
+            request = self._zmq_worker.recv(timeout=10)
+            if not request:
+                return
+            elif request[0] == b"":
                 request = request[1:]
+
             message = Serialize.load(request[0])
             samples = Serialize.loads(request[1:])
 
@@ -68,11 +84,11 @@ class BatchWorker(ProcessWorker):
             if batch is not None:
                 batch.tag = self._data_pipeline.tag
 
-        except KeyboardInterrupt:
-            LOGGER.error(trace(self, "Interrupt received, stopping ..."))
-            self.finish()
+        except KeyboardInterrupt as e:
+            raise e
         except Exception as e:
             LOGGER.error(trace(self, e))
 
         finally:
-            self._zmq_worker.socket.send_pyobj(batch)
+            if request is not None:
+                self._zmq_worker.send(batch)

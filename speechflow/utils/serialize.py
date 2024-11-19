@@ -69,6 +69,7 @@ class Serialize:
         if inplace:
             for index in range(len(list_dump)):
                 list_dump[index] = Serialize.load(list_dump[index])
+            return list_dump
         else:
             return [Serialize.load(dump) for dump in list_dump]
 

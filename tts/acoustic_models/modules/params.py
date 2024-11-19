@@ -116,10 +116,11 @@ class EmbeddingParams(BaseTorchModelParams):
     def check_deprecated_params(cfg: dict) -> dict:
         if "n_symbols" in cfg:
             cfg["alphabet_size"] = cfg.pop("n_symbols")
-        if cfg["input"] == "mel_spectrogram":
-            cfg["input"] = "spectrogram"
-        if cfg["target"] == "mel_spectrogram":
-            cfg["target"] = "spectrogram"
+        if "input" in cfg:
+            if cfg["input"] == "mel_spectrogram":
+                cfg["input"] = "spectrogram"
+            if cfg["target"] == "mel_spectrogram":
+                cfg["target"] = "spectrogram"
 
         return cfg
 

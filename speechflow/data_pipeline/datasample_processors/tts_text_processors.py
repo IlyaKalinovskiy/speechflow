@@ -4,7 +4,6 @@ import logging
 import itertools
 
 from collections import Counter
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -30,7 +29,7 @@ from speechflow.utils.init import lazy_initialization
 from speechflow.utils.profiler import Profiler
 
 __all__ = [
-    "load_text_from_sega",
+    "load_audio_segmentation",
     "TTSTextProcessor",
     "TextProcessor",
     "LMProcessor",
@@ -49,7 +48,7 @@ class ZeroSilTokensError(Exception):
 @PipeRegistry.registry(
     inputs={"file_path"}, outputs={"word_timestamps", "phoneme_timestamps"}
 )
-def load_text_from_sega(ds: TextDataSample):
+def load_audio_segmentation(ds: TextDataSample):
     sega = AudioSeg.load(ds.file_path)
 
     sega.ts_bos = ds.audio_chunk.begin

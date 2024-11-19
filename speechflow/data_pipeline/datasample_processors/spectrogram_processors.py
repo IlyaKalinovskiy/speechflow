@@ -692,7 +692,7 @@ class PitchProcessor(BaseSpectrogramProcessor):
         n_bins: int = 80,
         pyworld_frame_period: tp.Literal["default", "adaptive"] = "default",
         torchcrepe_model: tp.Literal["full", "tiny"] = "full",
-        torchcrepe_batch_size: int = 1,
+        torchcrepe_batch_size: int = 128,
         device: str = "cpu",
     ):
         super().__init__(device=device)
@@ -706,6 +706,7 @@ class PitchProcessor(BaseSpectrogramProcessor):
         self.logging_transform_params(locals())
 
     @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"pitch"})
+    @lazy_initialization  # required for automatic device selection
     def process(self, ds: SpectrogramDataSample) -> SpectrogramDataSample:
         ds = super().process(ds)
 
@@ -1294,7 +1295,7 @@ def average_by_time(
     attributes: tp.Union[str, tp.List[str]],
     use_quantile: bool = False,
     quantile: float = 0.95,
-    min_value: float = 1e-2,
+    min_value: tp.Optional[float] = None,
 ):
     def reject_outliers(x, m: float = 2.0):
         return x[abs(x - np.mean(x)) < m * np.std(x)]
@@ -1313,7 +1314,8 @@ def average_by_time(
         values = getattr(ds, attr)
         assert values.ndim == 1
 
-        values = values[values > min_value]
+        if min_value is not None:
+            values = values[values > min_value]
 
         if len(values) > 0:
             if use_quantile:
@@ -1373,7 +1375,7 @@ def __get_nemo_mel_proc(
     )
 
 
-def __get_pitch_proc(method: str):
+def __get_pitch_proc(method: tp.Literal["pyworld", "torchcrepe", "yingram"]):
     return PitchProcessor(method=method, pyworld_frame_period="default")
 
 
@@ -1501,9 +1503,13 @@ if __name__ == "__main__":
     _audio_chunk = AudioChunk(file_path=_file_path).load(sr=16000).trim(end=8)
     _librosa_spec_proc = __get_spec_proc(512, 160, 400, 80)
     _librosa_mel_proc = __get_mel_proc(80)
-    _nemo_mel_proc = __get_nemo_mel_proc(_audio_chunk.sr, 512, 160, 400, 80)
-    __plot_nemo_features(
-        _audio_chunk, _librosa_spec_proc, _librosa_mel_proc, _nemo_mel_proc
-    )
+
+    try:
+        _nemo_mel_proc = __get_nemo_mel_proc(_audio_chunk.sr, 512, 160, 400, 80)
+        __plot_nemo_features(
+            _audio_chunk, _librosa_spec_proc, _librosa_mel_proc, _nemo_mel_proc
+        )
+    except Exception as e:
+        print(f"NeMo is not available: {e}")
 
     plt.show()

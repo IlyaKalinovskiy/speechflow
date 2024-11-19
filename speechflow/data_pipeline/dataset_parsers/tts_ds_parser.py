@@ -215,7 +215,12 @@ class TTSDSParser(BaseDSParser):
 
         if max_len:
             assert sega.ts_by_phonemes
-            longer_phoneme = np.diff(sega.ts_by_phonemes.intervals).max()
+            if isinstance(sega.ts_by_phonemes, list):
+                ts_phonemes = np.concatenate(sega.ts_by_phonemes)
+            else:
+                ts_phonemes = np.asarray(sega.ts_by_phonemes, dtype=np.float32)
+
+            longer_phoneme = np.diff(ts_phonemes).max()
             is_valid = longer_phoneme < max_len
 
         if is_valid:

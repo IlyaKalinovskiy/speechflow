@@ -12,8 +12,11 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torchaudio
 import numpy.typing as npt
 
+from denoiser import pretrained
+from denoiser.dsp import convert_audio
 from scipy import signal
 from torch.nn.functional import interpolate as torch_interpolate
 
@@ -30,7 +33,6 @@ from speechflow.data_pipeline.datasample_processors.data_types import (
     AudioDataSample,
     SSLFeatures,
 )
-from speechflow.data_pipeline.datasample_processors.tts_singletons import StatisticsRange
 from speechflow.io import AudioChunk, Config
 from speechflow.utils.fs import get_root_dir
 from speechflow.utils.init import init_class_from_config, lazy_initialization
@@ -39,17 +41,12 @@ __all__ = [
     "SignalProcessor",
     "SSLProcessor",
     "ACProcessor",
-    "monotonic_speech",
+    "DenoisingProcessor",
     "timedim_interpolation",
 ]
 
 LOGGER = logging.getLogger("root")
 
-try:
-    import pyworld as pw
-except ImportError as e:
-    if mp.current_process().name == "MainProcess":
-        LOGGER.warning(f"pyworld is not available: {e}")
 
 try:
     from torchaudio import functional as F
@@ -435,41 +432,42 @@ class ACProcessor(BaseAudioProcessor):
         return ds.to_numpy()
 
 
-@PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"audio_chunk"})
-def monotonic_speech(
-    ds: AudioDataSample, ranges: StatisticsRange = None
-) -> AudioDataSample:
-    x = ds.audio_chunk.waveform.astype(np.float64)
-    _f0, t = pw.dio(x, ds.audio_chunk.sr)  # raw pitch extractor
-    f0 = pw.stonemask(x, _f0, t, ds.audio_chunk.sr)  # pitch refinement
-    sp = pw.cheaptrick(x, f0, t, ds.audio_chunk.sr)  # extract smoothed spectrogram
-    ap = pw.d4c(x, f0, t, ds.audio_chunk.sr)  # extract aperiodicity
+class DenoisingProcessor(BaseAudioProcessor):
+    def __init__(
+        self,
+        model_type: tp.Literal["facebook"] = "facebook",
+        device: str = "cpu",
+    ):
+        super().__init__(device=device)
+        self._model_type = model_type
+        self._model = None
 
-    if ranges is not None:
-        f0_mean, _ = ranges.get_stat("pitch", ds.speaker_name)
-    else:
-        f0_mean = np.mean(f0)
+    def init(self):
+        super().init()
 
-    # smooth pitch to synthesize monotonic speech
-    v = f0 > 0
-    uv = f0 <= 0
-    if any(v):
-        f0 = np.ones_like(f0) * f0_mean
-        f0[uv] = 0
+        if self._model_type == "facebook":
+            self._model = pretrained.dns64().to(self.device)
 
-    y = pw.synthesize(
-        f0, sp, ap, ds.audio_chunk.sr
-    )  # synthesize an utterance using the parameters
-    if len(y) < len(x):
-        y = np.pad(y, (0, len(x) - len(y)))
+    @PipeRegistry.registry(
+        inputs={"audio_chunk"},
+        outputs={"audio_chunk"},
+    )
+    @lazy_initialization
+    def process(self, ds: tp.Union[AudioDataSample, tp.Any]) -> AudioDataSample:
+        ds = super().process(ds)
+        assert self._model is not None
 
-    if not np.isfinite(y).all():
+        if self._model_type == "facebook":
+            waveform = (
+                torch.FloatTensor(ds.audio_chunk.waveform).unsqueeze(0).to(self.device)
+            )
+
+            with torch.inference_mode():
+                denoised = self._model(waveform[None])[0]
+
+            ds.audio_chunk.waveform = denoised.cpu().data.numpy()[0]
+
         return ds
-
-    assert len(y) >= len(x)
-    ds.audio_chunk.waveform = y[: len(x)].astype(np.float32)
-    ds.transform_params[monotonic_speech.__name__] = {}
-    return ds
 
 
 @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"ssl_feat", "pl_bert"})

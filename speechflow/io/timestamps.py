@@ -15,7 +15,7 @@ class Timestamps:
     intervals: npt.NDArray
 
     def __post_init__(self):
-        self.intervals = np.asarray(self.intervals, dtype=np.float32)
+        self.intervals = np.asarray(self.intervals, dtype=np.float64)
 
         if self.intervals.ndim != 2:
             raise ValueError(
@@ -57,7 +57,7 @@ class Timestamps:
         ]
     ) -> "Timestamps":
         if isinstance(array_list[0], tuple):
-            return Timestamps(np.asarray(array_list, dtype=np.float32))
+            return Timestamps(np.asarray(array_list, dtype=np.float64))
         else:
             return Timestamps(np.concatenate(array_list))
 
@@ -161,7 +161,7 @@ class Timestamps:
         ts_frame = list(zip(ts_frame[:-1], ts_frame[1:]))
         assert len(ts_frame) == len(self)
 
-        return Timestamps(np.asarray(ts_frame, dtype=np.float32))
+        return Timestamps(np.asarray(ts_frame, dtype=np.float64))
 
     def shift(self, index: int, duration: float) -> None:
         if duration == 0.0:

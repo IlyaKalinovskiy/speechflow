@@ -1,4 +1,7 @@
 import os
+import ssl
+
+ssl._create_default_https_context = ssl._create_unverified_context  # fix for Torch Hub
 
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"

@@ -1,10 +1,10 @@
 from strenum import StrEnum
 
-__all__ = ["DataServerMessages", "DataLoaderMessages"]
+__all__ = ["DataServerMessages", "DataClientMessages"]
 
 
 class DataServerMessages(StrEnum):
-    READY = "ok"
+    READY = "ready"
     NO_WORKERS = "workers not found"
     OVERLOAD = "server overload"
     SKIP_BATCH = "batch skipped"
@@ -16,7 +16,8 @@ class DataServerMessages(StrEnum):
     RESET = "reset sampler state"
 
 
-class DataLoaderMessages(StrEnum):
+class DataClientMessages(StrEnum):
+    INFO = "info"
     IS_READY = "is ready"
     GET_BATCH = "get batch"
     EPOCH_COMPLETE = "all batches received"

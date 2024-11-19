@@ -11,14 +11,22 @@ import librosa
 
 from librosa.core import istft, stft
 from librosa.util import fix_length
+from omegaconf import ListConfig
 from psola import vocode
 from scipy.signal import butter, resample, sosfilt
+from torch_audiomentations import AddBackgroundNoise, ApplyImpulseResponse
 
 from speechflow.data_pipeline.core.base_ds_processor import (
     BaseDSProcessor,
     ComputeBackend,
 )
 from speechflow.data_pipeline.core.registry import PipeRegistry
+from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing.colored_noise import (
+    ColoredNoise,
+)
+from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing.praat_sound_effects import (
+    PraatSoundEffects,
+)
 from speechflow.data_pipeline.datasample_processors.data_types import AudioDataSample
 from speechflow.data_pipeline.datasample_processors.utils import check_probability
 from speechflow.io import AudioChunk, Config
@@ -27,6 +35,12 @@ from speechflow.utils.fs import get_root_dir
 __all__ = ["WaveAugProcessor"]
 
 LOGGER = logging.getLogger("root")
+
+try:
+    import pyworld as pw
+except ImportError as e:
+    if mp.current_process().name == "MainProcess":
+        LOGGER.warning(f"pyworld is not available: {e}")
 
 try:
     from torchaudio import functional as F
@@ -63,7 +77,7 @@ class WaveAugProcessor(BaseDSProcessor):
 
         handlers = list(self.components.values())
         if self._shuffle:
-            random._shuffle(handlers)
+            random.shuffle(handlers)
 
         tmp_audio_chunk = ds.audio_chunk.copy()
         for handler in handlers:
@@ -104,47 +118,14 @@ class WaveAugProcessor(BaseDSProcessor):
         return y
 
     @staticmethod
-    def _calculate_desired_noise_rms(clean_rms: float, snr: float):
-        a = float(snr) / 20
-        noise_rms = clean_rms / (10**a)
-        return noise_rms
-
-    @staticmethod
-    def _get_random_slice(waveform: np.ndarray, slice_size: int):
-        if len(waveform) < slice_size:
-            waveform = np._pad(waveform, (0, slice_size - len(waveform)), "constant")
-        else:
-            offset = random.randint(0, len(waveform) - slice_size)
-            waveform = waveform[offset : offset + slice_size]
-        return waveform
-
-    @staticmethod
-    @check_probability
-    def random_segment(
-        ds: AudioDataSample,
-        min_size: int,
-        max_size: int,
-        p: float = 1.0,
+    def _apply_torch_audiomentations(
+        ds: AudioDataSample, func: tp.Callable
     ) -> AudioDataSample:
-        """Cut random segment from mu_law.
+        waveform = torch.FloatTensor(ds.audio_chunk.waveform)
+        waveform = waveform.unsqueeze(0).unsqueeze(0)
 
-        Args:
-            ds (AudioDataSample): Datasample with mu_law waveform
-            min_size (float): Min size of segment (in seconds)
-            max_size (float): Max size of segment (in seconds)
-
-        Returns: ds (WaveDataSample)
-
-        """
-
-        segment_size = random.randint(
-            min(ds.mu_law_waveform.shape[0], min_size),
-            min(ds.mu_law_waveform.shape[0], max_size),
-        )
-        offset = random.randint(0, ds.mu_law_waveform.shape[0] - segment_size)
-
-        ds.mu_law_waveform = ds.mu_law_waveform[offset : segment_size + offset]
-
+        waveform_aug = func(waveform, ds.audio_chunk.sr)
+        ds.audio_chunk.waveform = waveform_aug.squeeze(0).squeeze(0).numpy()
         return ds
 
     @check_probability
@@ -179,7 +160,7 @@ class WaveAugProcessor(BaseDSProcessor):
             ComputeBackend.torchaudio,
             ComputeBackend.nvidia,
         ]:
-            ds.audio_chunk.data = librosa.effects._pitch_shift(
+            ds.audio_chunk.data = librosa.effects.pitch_shift(
                 ds.audio_chunk.data, sr=ds.audio_chunk.sr, n_steps=num_semitones
             )
         else:
@@ -254,8 +235,8 @@ class WaveAugProcessor(BaseDSProcessor):
         ds: AudioDataSample,
         min_points: int = 2,
         max_points: int = 5,
-        min_ratio: float = 0.0,
-        max_ratio: float = 1.0,
+        min_ratio: float = 0.5,
+        max_ratio: float = 2.0,
         p: float = 1.0,
     ) -> AudioDataSample:
         """Multiply audio by random gain curve.
@@ -508,6 +489,40 @@ class WaveAugProcessor(BaseDSProcessor):
         return ds
 
     @check_probability
+    def monotonic_speech(
+        self,
+        ds: AudioDataSample,
+        p: float = 1.0,
+    ) -> AudioDataSample:
+        x = ds.audio_chunk.waveform.astype(np.float64)
+        _f0, t = pw.dio(x, ds.audio_chunk.sr)  # raw pitch extractor
+        f0 = pw.stonemask(x, _f0, t, ds.audio_chunk.sr)  # pitch refinement
+        sp = pw.cheaptrick(x, f0, t, ds.audio_chunk.sr)  # extract smoothed spectrogram
+        ap = pw.d4c(x, f0, t, ds.audio_chunk.sr)  # extract aperiodicity
+
+        f0_mean = np.mean(f0[f0 > 1.0e-2])
+
+        # smooth pitch to synthesize monotonic speech
+        v = f0 > 0
+        uv = f0 <= 0
+        if any(v):
+            f0 = np.ones_like(f0) * f0_mean
+            f0[uv] = 0
+
+        y = pw.synthesize(
+            f0, sp, ap, ds.audio_chunk.sr
+        )  # synthesize an utterance using the parameters
+        if len(y) < len(x):
+            y = np.pad(y, (0, len(x) - len(y)))
+
+        if not np.isfinite(y).all():
+            return ds
+
+        assert len(y) >= len(x)
+        ds.audio_chunk.waveform = y[: len(x)].astype(np.float32)
+        return ds
+
+    @check_probability
     def vtlp(
         self,
         ds: AudioDataSample,
@@ -565,6 +580,92 @@ class WaveAugProcessor(BaseDSProcessor):
         ds.audio_chunk.waveform = y.astype(np.float32)
         return ds
 
+    @check_probability
+    def whisper(self, ds: AudioDataSample, p: float = 1.0):
+        if not hasattr(self, "sound_effects"):
+            sound_effects = PraatSoundEffects()
+            setattr(self, "sound_effects", sound_effects)
+        else:
+            sound_effects = getattr(self, "sound_effects")
+
+        ds.audio_chunk = sound_effects.whisper(ds.audio_chunk)
+        return ds
+
+    @check_probability
+    def background_noise(
+        self,
+        ds: AudioDataSample,
+        background_paths: tp.Union[tp.List[Path], tp.List[str], Path, str],
+        min_snr_in_db: float = 7.0,
+        max_snr_in_db: float = 20.0,
+        mode: str = "per_example",
+        p: float = 1.0,
+    ) -> AudioDataSample:
+        if isinstance(background_paths, ListConfig):
+            background_paths = list(background_paths)
+
+        if not hasattr(self, "add_background_noise"):
+            add_noise = AddBackgroundNoise(
+                background_paths=background_paths,
+                min_snr_in_db=min_snr_in_db,
+                max_snr_in_db=max_snr_in_db,
+                mode=mode,
+                p=1.0,
+            )
+            setattr(self, "add_background_noise", add_noise)
+        else:
+            add_noise = getattr(self, "add_background_noise")
+
+        return self._apply_torch_audiomentations(ds, add_noise)
+
+    @check_probability
+    def colored_noise(
+        self,
+        ds: AudioDataSample,
+        min_snr_in_db: float = 10.0,
+        max_snr_in_db: float = 20.0,
+        min_f_decay: float = 0,
+        max_f_decay: float = 0,
+        mode: str = "per_example",
+        p: float = 1.0,
+    ) -> AudioDataSample:
+        if not hasattr(self, "add_colored_noise"):
+            add_noise = ColoredNoise(
+                min_snr_in_db=min_snr_in_db,
+                max_snr_in_db=max_snr_in_db,
+                min_f_decay=min_f_decay,
+                max_f_decay=max_f_decay,
+                mode=mode,
+                p=1.0,
+            )
+            setattr(self, "add_colored_noise", add_noise)
+        else:
+            add_noise = getattr(self, "add_colored_noise")
+
+        return self._apply_torch_audiomentations(ds, add_noise)
+
+    @check_probability
+    def room_impulse_response(
+        self,
+        ds: AudioDataSample,
+        ir_paths: tp.Union[tp.List[Path], tp.List[str], Path, str],
+        convolve_mode: str = "full",
+        mode: str = "per_example",
+        p: float = 1.0,
+    ) -> AudioDataSample:
+        if isinstance(ir_paths, ListConfig):
+            ir_paths = list(ir_paths)
+
+        if not hasattr(self, "add_impulse_response"):
+            add_impulse_response = ApplyImpulseResponse(
+                ir_paths=ir_paths, convolve_mode=convolve_mode, mode=mode, p=1.0
+            )
+            setattr(self, "add_impulse_response", add_impulse_response)
+        else:
+            add_impulse_response = getattr(self, "add_impulse_response")
+
+        return self._apply_torch_audiomentations(ds, add_impulse_response)
+
 
 if __name__ == "__main__":
 
@@ -586,8 +687,6 @@ if __name__ == "__main__":
         }
     )
 
-    signal_proc = SignalProcessor(("load",), _pipe_cfg)
-
     _pipe = (
         "gain_curve",
         "pitch_shift",
@@ -596,14 +695,20 @@ if __name__ == "__main__":
         # "gsm_simulation",
     )
 
+    _pipe = (
+        # "background_noise",
+        "colored_noise",
+        # "impulse_response"
+    )
+
+    signal_proc = SignalProcessor(("load",), _pipe_cfg)
+    wave_aug = WaveAugProcessor(_pipe, _pipe_cfg, shuffle=True)
+
     temp_folder = Path("temp")
     temp_folder.mkdir(exist_ok=True)
 
     for i in range(10):
-        wave_aug = WaveAugProcessor(_pipe, _pipe_cfg, shuffle=True)
-
         _ds = AudioDataSample(file_path=wav_path)
-        _ds = signal_proc._process(_ds)
-        _ds = wave_aug._process(_ds)
-
+        _ds = signal_proc.process(_ds)
+        _ds = wave_aug.process(_ds)
         _ds.audio_chunk.save(temp_folder / f"test_aug_test_{i}.wav", overwrite=True)

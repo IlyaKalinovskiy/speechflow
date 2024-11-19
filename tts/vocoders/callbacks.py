@@ -1,30 +1,108 @@
+import typing as tp
+
+import numpy as np
 import torch
+import numpy.typing as npt
+import pytorch_lightning as pl
 
 from pytorch_lightning import Callback
 
-__all__ = ["GradNormCallback"]
+from speechflow.utils.plotting import figure_to_ndarray, plot_1d
+
+__all__ = ["GradNormCallback", "VisualizerCallback"]
 
 
 class GradNormCallback(Callback):
     """Callback to log the gradient norm."""
 
+    @staticmethod
+    def _gradient_norm(model: torch.nn.Module, norm_type: float = 2.0) -> torch.Tensor:
+        """Compute the gradient norm.
+
+        Args:
+            model (Module): PyTorch modules.
+            norm_type (float, optional): Type of the norm. Defaults to 2.0.
+
+        Returns:
+            Tensor: Gradient norm.
+
+        """
+        grads = [p.grad for p in model.parameters() if p.grad is not None]
+        total_norm = torch.norm(
+            torch.stack([torch.norm(g.detach(), norm_type) for g in grads]), norm_type
+        )
+        return total_norm
+
     def on_after_backward(self, trainer, model):
-        model.log("grad_norm", gradient_norm(model))
+        model.log("grad_norm", self._gradient_norm(model))
 
 
-def gradient_norm(model: torch.nn.Module, norm_type: float = 2.0) -> torch.Tensor:
-    """Compute the gradient norm.
+class VisualizerCallback(Callback):
+    def on_validation_batch_end(
+        self,
+        trainer: pl.Trainer,
+        pl_module: pl.LightningModule,
+        outputs,
+        batch,
+        batch_idx,
+        dataloader_idx=0,
+    ):
+        if batch_idx != 0:
+            return
 
-    Args:
-        model (Module): PyTorch modules.
-        norm_type (float, optional): Type of the norm. Defaults to 2.0.
+        with torch.no_grad():
+            inputs, targets, metadata = pl_module.batch_processor(batch, batch_idx, 0)
+            _, _, ft_additional = pl_module.feature_extractor(inputs)
 
-    Returns:
-        Tensor: Gradient norm.
+        batch_size = targets.spectrogram.size(0)
 
-    """
-    grads = [p.grad for p in model.parameters() if p.grad is not None]
-    total_norm = torch.norm(
-        torch.stack([torch.norm(g.detach(), norm_type) for g in grads]), norm_type
-    )
-    return total_norm
+        if batch_size <= 1:
+            random_idx = 0
+        else:
+            random_idx = np.random.randint(0, batch_size - 1)
+
+        if inputs.spectrogram is not None:
+            T = inputs.spectrogram_lengths[random_idx]
+            self._log_2d(
+                "target/spectrogram", inputs.spectrogram[random_idx][:T], pl_module
+            )
+
+        if inputs.ssl_feat is not None:
+            T = inputs.ssl_feat_lengths[random_idx]
+            self._log_2d("target/ssl_feat", inputs.ssl_feat[random_idx][:T], pl_module)
+
+        for name in ["energy", "pitch"]:
+            T = inputs.output_lengths[random_idx]
+            target_signal = getattr(targets, name)
+            if target_signal is not None:
+                target_signal = target_signal[random_idx][:T]
+                predict = ft_additional[f"{name}_predict"][random_idx][:T]
+                data = torch.stack([target_signal, predict])
+                self._log_1d(f"predict/{name}", data, pl_module)
+
+    @staticmethod
+    def _log_2d(
+        tag: str,
+        tensor: tp.Union[npt.NDArray, torch.Tensor],
+        pl_module: pl.LightningModule,
+    ):
+        if isinstance(tensor, torch.Tensor):
+            tensor = tensor.cpu()
+        else:
+            tensor = torch.from_numpy(tensor)
+
+        pl_module.log_image(tag, tensor.t())
+
+    @staticmethod
+    def _log_1d(
+        tag: str,
+        signal: tp.Union[npt.NDArray, torch.Tensor],
+        pl_module: pl.LightningModule,
+    ):
+        if isinstance(signal, torch.Tensor):
+            signal = signal.cpu().numpy()
+
+        fig_to_plot = plot_1d(signal)
+        data_to_log = figure_to_ndarray(fig_to_plot)
+        data_to_log = data_to_log.swapaxes(0, 2).swapaxes(0, 1)
+        pl_module.log_image(tag, None, fig=data_to_log)

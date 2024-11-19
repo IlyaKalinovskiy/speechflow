@@ -37,6 +37,7 @@ class ExperimentSaver:
         additional_files: tp.Optional[tp.Dict[str, str]] = None,
     ):
         self.expr_path = expr_path
+        self.expr_path.mkdir(parents=True, exist_ok=True)
         LOGGER.info(
             trace(self, message=f"Experiment folder: {self.expr_path.as_posix()}")
         )
@@ -143,6 +144,9 @@ class ExperimentSaver:
     @staticmethod
     @check_path(assert_file_exists=True)
     def load_checkpoint(file_path: tp_PATH, map_location: str = "cpu") -> tp.Dict:
+        if file_path.is_dir():
+            file_path = ExperimentSaver.get_last_checkpoint(file_path)
+
         print(f"Load checkpoint from path: {file_path.as_posix()}")
         if file_path.suffix in [".ckpt", ".pt"]:
             with ExperimentSaver.portable_pathlib():

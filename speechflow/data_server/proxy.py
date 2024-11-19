@@ -128,7 +128,7 @@ class Proxy(ProcessWorker):
                         all_info.append(info)
 
                     message[-1] = Serialize.dump(DataPipeline.aggregate_info(all_info))
-                    self._zmq_proxy.frontend.send_multipart(message)
+                    self._zmq_proxy.frontend_send_multipart(message)
                 elif request["message"] == "batch":
                     try:
                         message.pop(-1)
@@ -136,10 +136,12 @@ class Proxy(ProcessWorker):
                     except Exception as e:
                         LOGGER.error(trace(self, e))
 
-                    self._zmq_proxy.frontend.send_multipart(message)
+                    self._zmq_proxy.frontend_send_multipart(message)
                 else:
                     message[-1] = self._zmq_proxy.request(request)[0][-1]
-                    self._zmq_proxy.frontend.send_multipart(message)
+                    self._zmq_proxy.frontend_send_multipart(message)
 
+        except KeyboardInterrupt as e:
+            raise e
         except Exception as e:
             LOGGER.error(trace(self, e))

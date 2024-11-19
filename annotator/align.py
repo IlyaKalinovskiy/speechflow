@@ -238,8 +238,8 @@ class Aligner:
         cfg_data["sampler"] = {"type": "SimpleSampler", "comb_by_len": True}
 
         # TODO: support legacy models
-        if "load_text_from_sega" not in cfg_data["preproc"]["pipe"]:
-            cfg_data["preproc"]["pipe"].insert(1, "load_text_from_sega")
+        if "load_audio_segmentation" not in cfg_data["preproc"]["pipe"]:
+            cfg_data["preproc"]["pipe"].insert(1, "load_audio_segmentation")
         if "symbols" in cfg_data.collate.additional_fields:
             cfg_data.collate.additional_fields.remove("symbols")
 

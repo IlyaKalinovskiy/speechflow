@@ -39,7 +39,7 @@ parser:
       punctuation_marks: [".", "?"]
 
 preproc:
-  pipe: [load_audio, load_text_from_sega,
+  pipe: [load_audio, load_audio_segmentation,
          voice_bio_speechbrain, store_bio_emb, voice_bio_wespeaker, mean_bio_embedding,
          speech_quality, spectrogram, melscale, add_gate_value,
          pitch, enhancement_energy, enhancement_pitch,
