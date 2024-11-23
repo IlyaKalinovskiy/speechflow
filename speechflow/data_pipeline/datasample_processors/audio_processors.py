@@ -141,7 +141,7 @@ class SignalProcessor(BaseAudioProcessor):
             hop_len = ds.get_param_val("hop_len")
             assert y.size >= num_samples_per_chunk + 1
             begin = np.random.randint(low=0, high=y.size - num_samples_per_chunk + 1)
-            begin = int(begin / hop_len) * hop_len
+            begin = int(begin / (2 * hop_len)) * 2 * hop_len
             y = y[begin : begin + num_samples_per_chunk]
             ds.audio_chunk = AudioChunk(data=y, sr=ds.audio_chunk.sr)
             add_chunk_bound(ds, begin, begin + num_samples_per_chunk)

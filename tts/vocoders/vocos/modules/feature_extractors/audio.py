@@ -74,6 +74,7 @@ class AudioFeaturesParams(BaseTorchModelParams):
     vp_encoder_inner_dim: int = 512
     vp_encoder_use_condition: bool = True
     vp_condition_type: tp.Literal["cat", "adanorm"] = "cat"
+    vp_encoder_params: tp.Optional[tp.Dict[str, tp.Any]] = None
     # vq encoder
     vq_encoder_type: str = "RNNEncoder"
     vq_encoder_num_layers: int = 1
@@ -129,6 +130,7 @@ class AudioFeaturesParams(BaseTorchModelParams):
     use_averages: bool = False
     use_vq: bool = False
     use_upsample: bool = False
+    use_sf_encoder: bool = False
     use_auxiliary_classification_loss: bool = False
     use_auxiliary_linear_spec_loss: bool = False
     use_auxiliary_mel_spec_loss: bool = False
@@ -323,6 +325,8 @@ class AudioFeatures(FeatureExtractor):
             "max_input_length": max_input_length,
             "max_output_length": max_output_length,
         }
+        if params.vp_encoder_params:
+            var_encoder_params.update(params.vp_encoder_params)
 
         if params.vp_encoder_use_condition:
             var_encoder_params.update(
@@ -371,23 +375,26 @@ class AudioFeatures(FeatureExtractor):
 
         # ----- source-filter encoder -----
 
-        enc_params = SFEncoderWithClassificationAdaptorParams(
-            base_encoder_type=params.sf_encoder_type,
-            encoder_inner_dim=params.sf_encoder_inner_dim,
-            encoder_num_layers=params.sf_encoder_num_layers,
-            encoder_output_dim=params.inner_dim,
-            var_as_embedding=(True, True),
-            var_interval=(params.energy_interval, params.pitch_interval),
-            var_log_scale=(False, True),
-            max_input_length=max_input_length,
-            max_output_length=max_output_length,
-        )
-        if params.sf_encoder_use_condition:
-            enc_params.condition = tuple(condition)
-            enc_params.condition_dim = condition_dim
-            enc_params.condition_type = params.feat_condition_type
+        if params.use_sf_encoder:
+            enc_params = SFEncoderWithClassificationAdaptorParams(
+                base_encoder_type=params.sf_encoder_type,
+                encoder_inner_dim=params.sf_encoder_inner_dim,
+                encoder_num_layers=params.sf_encoder_num_layers,
+                encoder_output_dim=params.inner_dim,
+                var_as_embedding=(True, True),
+                var_interval=(params.energy_interval, params.pitch_interval),
+                var_log_scale=(False, True),
+                max_input_length=max_input_length,
+                max_output_length=max_output_length,
+            )
+            if params.sf_encoder_use_condition:
+                enc_params.condition = tuple(condition)
+                enc_params.condition_dim = condition_dim
+                enc_params.condition_type = params.feat_condition_type
 
-        self.sf_encoder = SFEncoderWithClassificationAdaptor(enc_params, in_dim)
+            self.sf_encoder = SFEncoderWithClassificationAdaptor(enc_params, in_dim)
+        else:
+            self.sf_encoder = None
 
         # ----- init additional modules -----
 
@@ -662,11 +669,14 @@ class AudioFeatures(FeatureExtractor):
             if self.params.pitch_denormalize:
                 inputs.pitch = inputs.pitch * rp[:, 2:3] + rp[:, 0:1]
 
-        sf_enc_input = ComponentInput(
-            content=x, content_lengths=x_lens, model_inputs=inputs
-        )
-        sf_enc_output = self.sf_encoder(sf_enc_input)
-        x = self.sf_encoder.get_content(sf_enc_output)[0]
+        if self.sf_encoder is not None:
+            sf_enc_input = ComponentInput(
+                content=x, content_lengths=x_lens, model_inputs=inputs
+            )
+            sf_enc_output = self.sf_encoder(sf_enc_input)
+            x = self.sf_encoder.get_content(sf_enc_output)[0]
+        else:
+            sf_enc_output = feat_enc_output
 
         if self.training and self.addm is not None:
             sf_enc_output.additional_content.update(condition)
@@ -695,7 +705,10 @@ class AudioFeatures(FeatureExtractor):
             energy = []
             pitch = []
             for i, (a, b) in enumerate(inputs.additional_inputs["spec_chunk"]):
-                chunk.append(x[i, a:b, :])
+                if self.params.use_upsample:
+                    chunk.append(x[i, a:b, :])
+                else:
+                    chunk.append(x[i, a // 2 : b // 2, :])
                 energy.append(inputs.energy[i, a:b])
                 pitch.append(inputs.pitch[i, a:b])
 

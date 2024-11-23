@@ -42,6 +42,7 @@ preproc:
          load_audio, load_audio_segmentation,
          # audio preprocessing
          denoiser, add_pauses_from_timestamps, apply_fade_inside_pauses,
+         multiple480,
          # audio features
          speech_quality,
          spectrogram, melscale,
@@ -50,14 +51,14 @@ preproc:
          # speaker features
          voice_bio,
          # tts features
-         text, int_durations, transcription_by_frames,
+         # text, int_durations, transcription_by_frames,
          ssl, plbert,
          # audio augmentation
-         load_audio, audio_augment,
+         load_audio, multiple320, audio_augment,
          # vc features
          ssl,
          # ground truth audio
-         load_audio, denoiser, apply_fade_inside_pauses,
+         load_audio, denoiser, apply_fade_inside_pauses, multiple480,
          trim, mu_law]
   pipe_cfg:
     load_audio:
@@ -66,6 +67,20 @@ preproc:
       pipe_cfg:
         load:
           sample_rate: 24000
+    multiple480:
+      type: SignalProcessor
+      pipe: [multiple]
+      pipe_cfg:
+        multiple:
+          value: 480
+          odd: true
+    multiple320:
+      type: SignalProcessor
+      pipe: [multiple]
+      pipe_cfg:
+        multiple:
+          value: 320
+          odd: true
     denoiser:
       type: DenoisingProcessor
       model_type: facebook

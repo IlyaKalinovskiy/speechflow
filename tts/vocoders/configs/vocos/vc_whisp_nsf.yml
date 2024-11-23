@@ -86,10 +86,12 @@ model:
         feat_encoder_inner_dim: 512
         feat_encoder_use_condition: true
 
-        vp_encoder_type: RNNEncoder
+        vp_encoder_type: AdainEncoder
         vp_encoder_num_layers: 1
         vp_encoder_inner_dim: 512
         vp_encoder_use_condition: true
+        vp_encoder_params:
+          adain_upsample: true
 
         # vq_encoder_type: RNNEncoder
         # vq_encoder_use_condition: true
@@ -120,10 +122,10 @@ model:
         use_plbert: true
         use_averages: true
         use_vq: false
-        use_upsample: true
-        use_auxiliary_classification_loss: true
+        use_upsample: false
+        use_auxiliary_classification_loss: false
         use_auxiliary_linear_spec_loss: false
-        use_auxiliary_mel_spec_loss: true
+        use_auxiliary_mel_spec_loss: false
 
   backbone:
     class_name: DummyBackbone  # VocosBackbone
@@ -143,3 +145,4 @@ model:
       upsample_kernel_sizes: [20, 12]
       istft_n_fft: 20
       istft_hop_size: 4
+      adain_upsample: true
