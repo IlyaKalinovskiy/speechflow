@@ -106,6 +106,7 @@ class BaseCollate:
             additional_fields.update({field: [getattr(b, field) for b in batch]})
 
         collated.additional_fields = additional_fields
+        collated.transform_params = batch[0].transform_params
         return collated
 
     def __call__(self, batch: tp.List[DataSample]) -> BaseCollateOutput:

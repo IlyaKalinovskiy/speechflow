@@ -35,20 +35,12 @@ class BaseSSLModel(torch.nn.Module):
     def __init__(
         self,
         device: str = "cpu",
-        min_audio_duration: tp.Optional[float] = None,
-        max_audio_duration: tp.Optional[float] = None,
     ):
         super().__init__()
 
         self.device = device
         self.sample_rate = 16000
         self.embedding_dim = 0
-
-        self._min_audio_duration = min_audio_duration
-        self._max_audio_duration = max_audio_duration
-
-        if self._max_audio_duration is not None:
-            self._max_audio_duration = int(max_audio_duration * self.sample_rate)
 
     def preprocessing(self, audio_chunk: AudioChunk) -> torch.Tensor:
         assert np.issubdtype(
@@ -66,17 +58,7 @@ class BaseSSLModel(torch.nn.Module):
         #     )
 
         audio_chunk = audio_chunk.resample(sr=self.sample_rate, fast=True)
-
-        if self._min_audio_duration is not None:
-            pass
-
-        if self._max_audio_duration is not None:
-            data = torch.tensor(
-                audio_chunk.waveform[: self._max_audio_duration], device=self.device
-            )
-        else:
-            data = torch.tensor(audio_chunk.waveform, device=self.device)
-
+        data = torch.from_numpy(audio_chunk.waveform).to(self.device)
         return data.unsqueeze(0)
 
     def postprocessing(self, ssl_feat: SSLFeatures) -> SSLFeatures:
@@ -88,23 +70,18 @@ class BaseSSLModel(torch.nn.Module):
         if ssl_feat.centroids is not None:
             ssl_feat.centroids = ssl_feat.centroids.cpu()
 
-        if self._min_audio_duration is not None:
-            pass
-
         return ssl_feat
 
 
 class Whisper(BaseSSLModel):
     def __init__(
         self,
-        device: str = "cpu",
-        min_audio_duration: tp.Optional[float] = None,
-        max_audio_duration: tp.Optional[float] = None,
         model_name: tp.Literal[
             "tiny", "base", "small", "medium", "large-v2"
         ] = "large-v2",
+        device: str = "cpu",
     ):
-        super().__init__(device, min_audio_duration, max_audio_duration)
+        super().__init__(device)
 
         self.model = whisper.load_model(model_name, device)
         self.options = whisper.DecodingOptions(fp16=False)
@@ -135,9 +112,6 @@ class Wav2Vec(BaseSSLModel):
     @check_path(assert_file_exists=True)
     def __init__(
         self,
-        device: str = "cpu",
-        min_audio_duration: tp.Optional[float] = None,
-        max_audio_duration: tp.Optional[float] = None,
         model_name: str = "anton-l/wav2vec2-large-xlsr-53-russian",
         pretrain_path: tp.Optional[tp_PATH] = None,
         vocab_path: tp.Optional[tp_PATH] = None,
@@ -147,8 +121,9 @@ class Wav2Vec(BaseSSLModel):
         ] = "last_hidden_state",
         level: int = 4,
         stream_mod: tp.Optional[dict] = None,
+        device: str = "cpu",
     ):
-        super().__init__(device, min_audio_duration, max_audio_duration)
+        super().__init__(device)
 
         self._feature_type = feature_type
         self._level = level
@@ -333,14 +308,12 @@ class Wav2Vec(BaseSSLModel):
 class WavLM(BaseSSLModel):
     def __init__(
         self,
-        device: str = "cpu",
-        min_audio_duration: tp.Optional[float] = None,
-        max_audio_duration: tp.Optional[float] = None,
         model_name: tp.Literal["WAVLM_BASE_PLUS", "WAVLM_LARGE"] = "WAVLM_LARGE",
         model_dir: tp.Optional[tp_PATH] = None,
         num_layer: int = 9,
+        device: str = "cpu",
     ):
-        super().__init__(device, min_audio_duration, max_audio_duration)
+        super().__init__(device)
         """
         num_layer: 9 - asr task, base+; -1 asr task large
         more details: https://arxiv.org/pdf/2110.13900.pdf (see Fig. 2)
@@ -379,12 +352,10 @@ class WavLM(BaseSSLModel):
 class ECAPABiometric(BaseSSLModel):
     def __init__(
         self,
+        model_name: tp.Union[str, Path] = "spkrec-ecapa-voxceleb",
         device: str = "cpu",
-        min_audio_duration: tp.Optional[float] = None,
-        max_audio_duration: tp.Optional[float] = None,
-        model_name: tp.Optional[tp.Union[str, Path]] = "spkrec-ecapa-voxceleb",
     ):
-        super().__init__(device, min_audio_duration, max_audio_duration)
+        super().__init__(device)
 
         self.sample_rate = 16000
         self.embedding_dim = 192
@@ -471,7 +442,7 @@ class ECAPABiometric(BaseSSLModel):
         return self.postprocessing(ssl_feat)
 
 
-class ApplyKmeans:
+class Kmeans:
     def __init__(self, model_path: Path, device: str = "cpu"):
         self.km_model = joblib.load(model_path)
         self.C_np = self.km_model.cluster_centers_.transpose()

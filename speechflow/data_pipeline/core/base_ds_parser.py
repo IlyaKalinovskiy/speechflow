@@ -381,7 +381,7 @@ class BaseDSParser:
         cache_fpath = self._get_cache_fpath(len(file_list))
 
         if cache_fpath and cache_fpath.exists():
-            LOGGER.info(f"Load DSParser cache from {cache_fpath.name}")
+            LOGGER.info(f"Load DSParser cache from {cache_fpath.as_posix()}")
             dataset = pickle.loads(cache_fpath.read_bytes())
         else:
             # read

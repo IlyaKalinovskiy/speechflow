@@ -37,6 +37,7 @@ umap-learn==0.4.0
 vector-quantize-pytorch==1.11.6
 jsonargparse[signatures]>=4.15.2
 pesq==0.0.4
+hydra-core==1.4.0.dev1
 clearml==1.16.4
 denoiser==0.1.5
 

@@ -11,7 +11,7 @@ __all__ = ["trace", "log_to_console", "log_to_file", "log_profiler", "track_proc
 
 
 def trace(
-    self,
+    self: tp.Optional = None,
     exception: tp.Optional[tp.Union[Exception, str]] = None,
     message: tp.Optional[str] = None,
     full: bool = True,
@@ -31,7 +31,9 @@ def trace(
             if "NoneType: None" not in exc:
                 exception = exc
 
-        if isinstance(self, str):
+        if self is None:
+            class_name = ""
+        elif isinstance(self, str):
             class_name = self
         else:
             class_name = self.__name__ if type(self) == type else self.__class__.__name__

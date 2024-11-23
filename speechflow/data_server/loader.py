@@ -68,7 +68,6 @@ class DataLoader:
             self.epoch_len = math.ceil(self.epoch_size / batch_size)
 
         self._stop_event = Event()
-        self._epoch_complete_event = Event()
         self._batch_queue: tp.Deque = deque()
         self._async_supported = self.client.find_info("async_supported", False)
 
@@ -133,7 +132,7 @@ class DataLoader:
         self._log_to_file(text)
 
     def _is_stop_iteration(self):
-        if not self.non_stop and self._epoch_complete_event.is_set():
+        if self._stop_event.is_set():
             self._log_to_file("stop iteration")
             raise StopIteration
 
@@ -168,7 +167,7 @@ class DataLoader:
 
                 if not self.non_stop:
                     if is_epoch_complete and len(self._batch_queue) == 0:
-                        self._epoch_complete_event.set()
+                        self._stop_event.set()
                         self._send_info_message(DCM.EPOCH_COMPLETE)
                 else:
                     if is_epoch_complete:
@@ -214,7 +213,7 @@ class DataLoader:
         batch_list = []
         for _bytes in response:
             self._log_to_file(_bytes)
-            if _bytes == b"" or b"info:" in _bytes[:100]:
+            if _bytes == b"" or len(_bytes) == 5 or b"info:" in _bytes[:100]:
                 continue
             else:
                 batch_list.append(_bytes)
@@ -242,7 +241,6 @@ class DataLoader:
 
     def start(self):
         self._stop_event.clear()
-        self._epoch_complete_event.clear()
         self._queue_monitoring_task.start()
         self._loading_batches_task.start()
 
@@ -260,10 +258,11 @@ class DataLoader:
 
     def next_batch(self, sleep: float = 0) -> Batch:
         if len(self._batch_queue) == 0:
+            self._is_stop_iteration()
+
             assert (
                 self._loading_batches_task.is_alive()
             ), "DataLoader has not been started!"
-            self._is_stop_iteration()
 
             if sleep > 0:
                 LOGGER.warning(
@@ -306,7 +305,6 @@ class DataLoader:
 
     def reset(self):
         self._batch_queue.clear()
-        self._epoch_complete_event.clear()
         self._send_info_message(DCM.RESET)
         self.prefetch_factor = self.min_prefetch_factor
 

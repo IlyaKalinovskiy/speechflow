@@ -158,10 +158,22 @@ class DataServer(ProcessWorker):
             self._timer.reset()
 
     def send_info_message(self, message, text: str, subset: tp.Optional[str] = None):
-        client_id = self._uid_map[message[0]][:6]
-        info = f"[{client_id}] info: {text}"
-        message = [message[0], b"", info.encode()]
-        self._zmq_server.frontend_send(message)
+        subscriber_uid = self._get_subscriber_uid(message)
+        client_uid = self._uid_map[subscriber_uid][:6]
+        info = f"[{client_uid}] info: {text}"
+
+        response = []
+        for i in range(len(message)):
+            if message[i] == b"":
+                continue
+            elif len(message[i]) == 5:
+                response.append(message[i])
+            else:
+                response.append(info.encode())
+                break
+
+        self._zmq_server.frontend_send_multipart(response)
+
         if is_verbose_logging():
             log_to_file(trace(self, f"{subset}: {info}" if subset else info))
 
@@ -195,8 +207,13 @@ class DataServer(ProcessWorker):
 
     def gen_response(self, message):
         request = Serialize.load(message[-1])
-        if message[0] not in self._uid_map:
-            self._uid_map[message[0]] = request.get("client_uid", uuid.uuid4().hex)
+        subscriber_uid = self._get_subscriber_uid(message)
+        client_uid = request.get("client_uid", uuid.uuid4().hex)
+
+        if subscriber_uid not in self._uid_map:
+            self._uid_map[subscriber_uid] = client_uid
+        else:
+            client_uid = self._uid_map[subscriber_uid]
 
         if request["message"] == DCM.INFO:
             response = {
@@ -210,8 +227,7 @@ class DataServer(ProcessWorker):
             elif request["sub_type"] == SubscriberTypes.LOADER:
                 response.update(self._info_for_loader)
                 if self._synchronize_loaders:
-                    uid = request["client_uid"]
-                    samplers = self._sync_samplers.setdefault(uid, {})
+                    samplers = self._sync_samplers.setdefault(client_uid, {})
                     for subset in self._pipe.subsets:
                         samplers[subset] = self._pipe[subset].sampler.copy()
             elif request["sub_type"] == SubscriberTypes.WORKER:
@@ -225,11 +241,11 @@ class DataServer(ProcessWorker):
                 )
 
             message[-1] = Serialize.dump(response)
-            self._zmq_server.frontend_send(message)
+            self._zmq_server.frontend_send_multipart(message)
             self._subscribers[request["sub_type"]] += 1
 
         elif request["message"] == DCM.IS_READY:
-            queue_info = self._work_queues[self._uid_map[message[0]]]
+            queue_info = self._work_queues[client_uid]
             if not self.is_reject_request(message, queue_info):
                 self.send_info_message(message, DSM.READY, queue_info.subset)
 
@@ -238,7 +254,7 @@ class DataServer(ProcessWorker):
             batch_size = request["batch_size"]
             batch_num = request.get("batch_num", 1)
 
-            queue_info = self._work_queues[self._uid_map[message[0]]]
+            queue_info = self._work_queues[client_uid]
             queue_info.async_mode = request.get("async_mode", True)
             queue_info.subset = subset
             if self.is_reject_request(message, queue_info):
@@ -266,17 +282,19 @@ class DataServer(ProcessWorker):
             queue_info.num_batch_in_processing += len(batch_list)
 
             for samples in batch_list:
-                self._zmq_server.backend_send(message + Serialize.dumps(samples))
+                self._zmq_server.backend_send_multipart(
+                    message + Serialize.dumps(samples)
+                )
 
         elif request["message"] == DCM.EPOCH_COMPLETE:
-            status = self._work_queues[self._uid_map[message[0]]]
+            status = self._work_queues[client_uid]
             status.is_last_batch = False
             status.num_batch_in_processing = 0
 
         elif request["message"] in [DCM.ABORT, DCM.RESET]:
-            status = self._work_queues[self._uid_map[message[0]]]
+            status = self._work_queues[client_uid]
             if status.batches:
-                self._zmq_server.frontend_send(message + status.batches)
+                self._zmq_server.frontend_send_multipart(message + status.batches)
                 self.send_info_message(message, DSM.QUEUE_CLEARED, status.subset)
                 status.batches = []
 
@@ -298,16 +316,19 @@ class DataServer(ProcessWorker):
             self._zmq_server.pool(timeout=10)
 
             if self._zmq_server.is_frontend_ready():
-                message = self._zmq_server.frontend_recv()
+                message = self._zmq_server.frontend_recv_multipart()
                 self.gen_response(message)
 
             if self._zmq_server.is_backend_ready():
-                message = self._zmq_server.backend_recv()
+                message = self._zmq_server.backend_recv_multipart()
+                subscriber_uid = self._get_subscriber_uid(message)
+                client_uid = self._uid_map[subscriber_uid]
+
                 self._total_batch_in_processing = max(
                     0, self._total_batch_in_processing - 1
                 )
 
-                queue_info = self._work_queues.get(self._uid_map[message[0]])
+                queue_info = self._work_queues.get(client_uid)
                 if queue_info is None:
                     self.send_info_message(message, DSM.SKIP_BATCH)
                     return
@@ -317,10 +338,12 @@ class DataServer(ProcessWorker):
                 )
 
                 if queue_info.async_mode:
-                    self._zmq_server.frontend_send(message)
+                    self._zmq_server.frontend_send_multipart(message)
                 else:
                     if queue_info.num_batch_in_processing == 0:
-                        self._zmq_server.frontend_send(message + queue_info.batches)
+                        self._zmq_server.frontend_send_multipart(
+                            message + queue_info.batches
+                        )
                         queue_info.batches = []
                     else:
                         queue_info.batches.append(message[2])
@@ -336,6 +359,19 @@ class DataServer(ProcessWorker):
             raise e
         except Exception as e:
             LOGGER.error(trace(self, e))
+
+    @staticmethod
+    def _get_subscriber_uid(message: tp.List[bytes]):
+        client_uid = []
+        for i in range(len(message)):
+            if message[i] == b"":
+                continue
+            elif len(message[i]) == 5:
+                client_uid.append(message[i])
+            else:
+                break
+
+        return client_uid[-1]
 
 
 if __name__ == "__main__":
