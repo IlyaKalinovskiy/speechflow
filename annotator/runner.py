@@ -623,6 +623,7 @@ def main(
                     data_root=data_root / meta["root"],
                     lang=meta.get("lang", lang),
                     asr_credentials=asr_credentials,
+                    output_sample_rate=sample_rate,
                     num_samples=num_samples,
                     n_processes=n_processes,
                     n_gpus=n_gpus,

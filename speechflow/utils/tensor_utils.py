@@ -334,7 +334,8 @@ def unfold(
     context_right: int = 0,
     pad_size: int = 0,
 ) -> tp.Union[npt.NDArray, torch.Tensor]:
-    assert data.ndim == 1
+    assert data.ndim < 3
+
     if isinstance(data, torch.Tensor):
         t = data
     else:
@@ -344,14 +345,22 @@ def unfold(
     if pad_size_left == chunk_size:
         pad_size_left = 0
 
-    a = torch.zeros(context_left)
-    b = torch.zeros(context_right)
-    c = torch.zeros(pad_size_left)
+    if data.ndim == 1:
+        a = torch.zeros(context_left).to(t.device)
+        b = torch.zeros(context_right).to(t.device)
+        c = torch.zeros(pad_size_left).to(t.device)
+    else:
+        a = torch.zeros(context_left, data.shape[1]).to(t.device)
+        b = torch.zeros(context_right, data.shape[1]).to(t.device)
+        c = torch.zeros(pad_size_left, data.shape[1]).to(t.device)
 
     data_pad = torch.cat([a, t, b, c])
     total_size = context_left + chunk_size + context_right
     chunks = data_pad.unfold(0, total_size, chunk_size)
     chunks = torch.nn.functional.pad(chunks, (pad_size, pad_size, 0, 0), "constant", 0)
+
+    if data.ndim == 2:
+        chunks = chunks.transpose(1, -1)
 
     if isinstance(data, torch.Tensor):
         return chunks

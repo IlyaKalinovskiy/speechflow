@@ -29,16 +29,17 @@ class BatchWorker(ProcessWorker):
 
         self._zmq_client = ZMQPatterns.client(self._server_addr)
 
-        info = None
-        while info is None:
-            try:
+        try:
+            while True:
                 info = self._zmq_client.request(
                     {"message": "info", "sub_type": SubscriberTypes.WORKER},
                     timeout=1000,
                 )
-            except Exception as e:
-                LOGGER.error(trace(self, e))
-                raise RuntimeError("DataServer not responding!")
+                if info:
+                    break
+        except Exception as e:
+            LOGGER.error(trace(self, e))
+            raise RuntimeError("DataServer not responding!")
 
         addr_for_workers = info["addr_for_workers"]
         self._zmq_worker = ZMQPatterns.worker(addr_for_workers)
@@ -66,19 +67,27 @@ class BatchWorker(ProcessWorker):
         LOGGER.debug(trace(self, message=f"Finish Batch Worker {self._server_addr}"))
 
     def do_work_once(self):
-        request = None
         batch = None
+        message = []
+        client_uid = []
         try:
-            request = self._zmq_worker.recv(timeout=10)
-            if not request:
+            message = self._zmq_worker.recv_multipart(timeout=10, deserialize=False)
+            if not message:
                 return
-            elif request[0] == b"":
-                request = request[1:]
 
-            message = Serialize.load(request[0])
-            samples = Serialize.loads(request[1:])
+            for i in range(len(message)):
+                if message[i] == b"":
+                    continue
+                elif len(message[i]) == 5:
+                    client_uid.append(message[i])
+                else:
+                    message = message[i:]
+                    break
 
-            data_processor = self._data_processor[message["subset_name"]]
+            request = Serialize.load(message[0])
+            samples = Serialize.loads(message[1:])
+
+            data_processor = self._data_processor[request["subset_name"]]
             batch = data_processor.process(samples)
 
             if batch is not None:
@@ -90,5 +99,6 @@ class BatchWorker(ProcessWorker):
             LOGGER.error(trace(self, e))
 
         finally:
-            if request is not None:
-                self._zmq_worker.send(batch)
+            if message:
+                data = client_uid + [Serialize.dump(batch)]
+                self._zmq_worker.send_multipart(data, serialize=False)

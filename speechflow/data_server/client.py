@@ -24,14 +24,17 @@ class DataClient:
         self._lock = ThreadLock()
         self._info = None
 
-        while self._info is None:
-            try:
+        try:
+            while True:
                 self._info = self.request(
-                    {"message": "info", "sub_type": sub_type}, timeout=1000
+                    {"message": "info", "sub_type": sub_type, "client_uid": self._uid},
+                    timeout=1000,
                 )
-            except Exception as e:
-                LOGGER.error(trace(self, e))
-                raise RuntimeError("DataServer not responding!")
+                if self._info:
+                    break
+        except Exception as e:
+            LOGGER.error(trace(self, e))
+            raise RuntimeError("DataServer not responding!")
 
         LOGGER.debug(trace(self, message=f"Start DataClient {self._server_addr}"))
 

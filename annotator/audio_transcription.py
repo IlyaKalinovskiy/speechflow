@@ -1,4 +1,5 @@
 import time
+import typing as tp
 import logging
 import argparse
 
@@ -11,6 +12,7 @@ from speechflow.data_pipeline.dataset_parsers import EasyDSParser
 from speechflow.io import AudioChunk, construct_file_list
 from speechflow.logging.server import LoggingServer
 from speechflow.utils.gpu_info import get_total_gpu_memory
+from speechflow.utils.init import init_method_from_config
 
 __all__ = ["main"]
 
@@ -35,6 +37,13 @@ def parse_args():
         type=Path,
     )
     arguments_parser.add_argument(
+        "-sr",
+        "--output_sample_rate",
+        help="sample rate for output audio",
+        type=int,
+        default=None,
+    )
+    arguments_parser.add_argument(
         "-ns",
         "--num_samples",
         help="max samples to load",
@@ -54,17 +63,20 @@ def parse_args():
     return arguments_parser.parse_args()
 
 
-def _convert_to_wav(audio_path: Path):
+def _convert_to_wav(audio_path: Path, output_sample_rate: tp.Optional[int] = None):
     wav_path = audio_path.with_suffix(".wav")
     if not wav_path.exists():
-        audio_chunk = AudioChunk(audio_path).load()
+        audio_chunk = AudioChunk(audio_path).load(sr=output_sample_rate)
+        if audio_chunk.waveform.ndim == 2:
+            audio_chunk.data = audio_chunk.data[0]
         audio_chunk.save(wav_path)
 
 
 def main(
     data_root: Path,
     lang: str,
-    asr_credentials: Path,
+    asr_credentials: tp.Optional[Path] = None,
+    output_sample_rate: tp.Optional[int] = None,
     num_samples: int = 0,
     n_processes: int = 0,
     n_gpus: int = 0,
@@ -129,8 +141,21 @@ def main(
                 LOGGER.error(e)
                 time.sleep(5)
 
-        parser = EasyDSParser(func=_convert_to_wav)
-        for file_ext in ["*.mp3", "*.flac", "*.ogg", "*.opus"]:
+        func = init_method_from_config(
+            _convert_to_wav, {"output_sample_rate": output_sample_rate}
+        )
+        parser = EasyDSParser(func=func)
+        for file_ext in [
+            "*.mp3",
+            "*.flac",
+            "*.ogg",
+            "*.opus",
+            "*.aac",
+            "*.mp4",
+            "*.mkv",
+            "*.mov",
+            "*.m4a",
+        ]:
             flist = list(data_root.rglob(file_ext))
             if flist:
                 parser.run_from_path_list(flist, n_processes)

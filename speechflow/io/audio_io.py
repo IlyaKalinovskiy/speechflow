@@ -298,13 +298,19 @@ class AudioChunk:
                 sr=sr,
             )
 
-    def multiple(self, value: int, mode: str = "constant", inplace: bool = False):
+    def multiple(
+        self, value: int, mode: str = "constant", odd: bool = False, inplace: bool = False
+    ):
         data = self.data
         pad_size = value - data.shape[0] % value
         if pad_size == value:
             pad_size = 0
 
         data = np.pad(data, (0, pad_size), mode=mode, constant_values=0)  # type: ignore
+
+        if odd:
+            data = data[:-1]
+            pad_size -= 1
 
         if inplace:
             self.data = data

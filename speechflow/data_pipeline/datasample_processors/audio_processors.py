@@ -110,6 +110,7 @@ class SignalProcessor(BaseAudioProcessor):
         ds.audio_chunk.load(
             sr=sample_rate, dtype=dtype, load_entire_file=load_entire_file
         )
+        ds.transform_params["sample_rate"] = ds.audio_chunk.sr
         return ds
 
     @staticmethod
@@ -189,9 +190,9 @@ class SignalProcessor(BaseAudioProcessor):
 
     @staticmethod
     def multiple(
-        ds: AudioDataSample, value: int = 1, mode: str = "constant"
+        ds: AudioDataSample, value: int = 1, mode: str = "constant", odd: bool = False
     ) -> AudioDataSample:
-        ds.audio_chunk.multiple(value, mode, inplace=True)
+        ds.audio_chunk.multiple(value, mode, odd=odd, inplace=True)
         return ds
 
     @staticmethod
@@ -209,6 +210,8 @@ class SignalProcessor(BaseAudioProcessor):
             ds.audio_chunk.sr = sample_rate
         except ModuleNotFoundError:
             ds.audio_chunk.resample(sample_rate, inplace=True)
+
+        ds.transform_params["sample_rate"] = ds.audio_chunk.sr
         return ds
 
     @staticmethod
