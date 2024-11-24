@@ -164,10 +164,11 @@ class DataServer(ProcessWorker):
 
         response = []
         for m in message:
-            response.append(m)
             if m and m[0] != 0:
                 response.append(info.encode())
                 break
+            else:
+                response.append(m)
 
         self._zmq_server.frontend_send_multipart(response)
 

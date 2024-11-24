@@ -385,7 +385,7 @@ class Hubert(Wav2Vec):
         self.model.lm_head.load_state_dict(aux_state_dict)
         self.model.mask_generator.load_state_dict(mask_state_dict)
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def _evaluate(
         self,
         input_values: torch.Tensor,

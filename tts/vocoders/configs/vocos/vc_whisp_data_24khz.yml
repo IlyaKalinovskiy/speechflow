@@ -42,7 +42,7 @@ preproc:
          load_audio, load_audio_segmentation,
          # audio preprocessing
          denoiser, add_pauses_from_timestamps, apply_fade_inside_pauses,
-         multiple480,
+         multiple,
          # audio features
          speech_quality,
          spectrogram, melscale,
@@ -54,12 +54,12 @@ preproc:
          # text, int_durations, transcription_by_frames,
          ssl, plbert,
          # audio augmentation
-         load_audio, multiple320, audio_augment,
+         load_audio, multiple, audio_augment,
          # vc features
          ssl,
          # ground truth audio
-         load_audio, denoiser, apply_fade_inside_pauses, multiple480,
-         trim, mu_law]
+         load_audio, denoiser, apply_fade_inside_pauses,
+         multiple, trim, mu_law]
   pipe_cfg:
     load_audio:
       type: SignalProcessor
@@ -67,19 +67,12 @@ preproc:
       pipe_cfg:
         load:
           sample_rate: 24000
-    multiple480:
+    multiple:
       type: SignalProcessor
       pipe: [multiple]
       pipe_cfg:
         multiple:
-          value: 480
-          odd: true
-    multiple320:
-      type: SignalProcessor
-      pipe: [multiple]
-      pipe_cfg:
-        multiple:
-          value: 320
+          value: 960
           odd: true
     denoiser:
       type: DenoisingProcessor
