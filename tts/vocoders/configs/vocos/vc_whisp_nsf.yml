@@ -85,6 +85,7 @@ model:
         feat_encoder_num_layers: 2
         feat_encoder_inner_dim: 512
         feat_encoder_use_condition: true
+        feat_condition_type: adanorm
 
         vp_encoder_type: AdainEncoder
         vp_encoder_num_layers: 1

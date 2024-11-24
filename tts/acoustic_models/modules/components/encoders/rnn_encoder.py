@@ -50,14 +50,14 @@ class RNNEncoder(CNNEncoder):
                 batch_first=True,
             )
         elif params.condition_type == "cat":
-            self.rnns = nn.ModuleList()
+            self.blocks = nn.ModuleList()
             for i in range(params.encoder_num_layers):
                 if i == 0:
                     in_dim = in_dim + params.condition_dim
                 else:
                     in_dim = params.encoder_inner_dim + params.condition_dim
 
-                self.rnns.append(
+                self.blocks.append(
                     nn.LSTM(
                         in_dim,
                         params.encoder_inner_dim // (params.rnn_bidirectional + 1),
@@ -68,12 +68,10 @@ class RNNEncoder(CNNEncoder):
                     )
                 )
         elif params.condition_type == "adanorm":
-            in_dim += params.condition_dim
-
-            self.rnns = nn.ModuleList()
+            self.blocks = nn.ModuleList()
             for i in range(params.encoder_num_layers):
                 if i == 0:
-                    self.rnns.append(
+                    self.blocks.append(
                         nn.LSTM(
                             in_dim,
                             params.encoder_inner_dim // (params.rnn_bidirectional + 1),
@@ -84,9 +82,9 @@ class RNNEncoder(CNNEncoder):
                         )
                     )
                 else:
-                    self.rnns.append(
+                    self.blocks.append(
                         nn.LSTM(
-                            params.encoder_inner_dim + params.condition_dim,
+                            params.encoder_inner_dim,
                             params.encoder_inner_dim // (params.rnn_bidirectional + 1),
                             num_layers=1,
                             bidirectional=params.rnn_bidirectional,
@@ -96,7 +94,7 @@ class RNNEncoder(CNNEncoder):
                     )
 
                 if i + 1 != params.encoder_num_layers:
-                    self.rnns.append(
+                    self.blocks.append(
                         AdaLayerNorm(params.encoder_inner_dim, params.condition_dim)
                     )
 
@@ -133,12 +131,14 @@ class RNNEncoder(CNNEncoder):
 
             s = cond.unsqueeze(1).expand(x.shape[0], x.shape[1], -1)
 
-            for block in self.rnns:
+            for block in self.blocks:
                 if isinstance(block, AdaLayerNorm):
                     x = block(x, cond)
                     continue
 
-                x = torch.cat([x, s], dim=2)
+                if self.params.condition_type == "cat":
+                    x = torch.cat([x, s], dim=2)
+
                 x = run_rnn_on_padded_sequence(block, x, x_lens)
 
         y = self.proj(x)

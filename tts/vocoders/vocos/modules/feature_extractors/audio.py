@@ -390,7 +390,7 @@ class AudioFeatures(FeatureExtractor):
             if params.sf_encoder_use_condition:
                 enc_params.condition = tuple(condition)
                 enc_params.condition_dim = condition_dim
-                enc_params.condition_type = params.feat_condition_type
+                enc_params.condition_type = params.sf_condition_type
 
             self.sf_encoder = SFEncoderWithClassificationAdaptor(enc_params, in_dim)
         else:
