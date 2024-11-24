@@ -99,10 +99,10 @@ model:
         # vq_num_quantizers: 3
         # vq_codebook_size: 256
 
-        sf_encoder_type: RNNEncoder
-        sf_encoder_num_layers: 1
-        sf_encoder_inner_dim: 512
-        sf_encoder_use_condition: true
+        # sf_encoder_type: RNNEncoder
+        # sf_encoder_num_layers: 1
+        # sf_encoder_inner_dim: 512
+        # sf_encoder_use_condition: true
 
         style_encoder_type: StyleTTS2
         style_feat_type: mel_spectrogram
@@ -124,6 +124,8 @@ model:
         use_averages: true
         use_vq: false
         use_upsample: false
+        use_sf_encoder: false
+
         use_auxiliary_classification_loss: false
         use_auxiliary_linear_spec_loss: false
         use_auxiliary_mel_spec_loss: false
