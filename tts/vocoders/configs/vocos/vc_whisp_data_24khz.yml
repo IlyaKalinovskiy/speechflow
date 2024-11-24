@@ -59,7 +59,8 @@ preproc:
          ssl,
          # ground truth audio
          load_audio, denoiser, apply_fade_inside_pauses,
-         multiple, trim, mu_law]
+         multiple, trim, mu_law,
+         timedim_interpolation]
   pipe_cfg:
     load_audio:
       type: SignalProcessor
@@ -203,6 +204,10 @@ preproc:
     mu_law:
       type: SignalProcessor
       pipe: [mu_law_encode]
+    timedim_interpolation:
+      features: ssl_feat
+      shape_as: mel
+      ratio: 0.5
 
 singleton_handlers:
   handlers: [SpeakerIDSetter]

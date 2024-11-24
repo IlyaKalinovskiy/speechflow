@@ -479,6 +479,7 @@ def timedim_interpolation(
     features: tp.Union[str, tp.List[str]],
     shape_as: str,
     mode: str = "linear",
+    ratio: float = 1,
 ):
     if isinstance(features, str):
         features = [features]
@@ -501,9 +502,9 @@ def timedim_interpolation(
         else:
             t = torch.from_numpy(feat)
 
-        scale = attr.shape[0] / t.shape[0]
-        if math.floor(t.shape[0] * scale) < attr.shape[0]:
-            scale = (attr.shape[0] + 1) / t.shape[0]
+        scale = ratio * attr.shape[0] / t.shape[0]
+        if math.floor(t.shape[0] * scale / ratio) < attr.shape[0]:
+            scale = ratio * (attr.shape[0] + 1) / t.shape[0]
 
         t = interpolate(t, scale)
         assert t.shape[0] == attr.shape[0]
