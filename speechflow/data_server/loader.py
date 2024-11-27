@@ -5,7 +5,7 @@ import logging
 import argparse
 
 from collections import deque
-from threading import Event, Thread
+from threading import Event, RLock, Thread
 
 from speechflow.data_pipeline.core import Batch
 from speechflow.data_server.client import DataClient
@@ -42,8 +42,9 @@ class DataLoader:
         self._batch_client = DataClient(server_addr, sub_type=SubscriberTypes.LOADER)
         self._msg_client = DataClient(server_addr, uid=self._batch_client.uid)
         self._uid = self._batch_client.uid[:6]
-        self._queue_monitoring_task = Thread(target=self._queue_monitoring)
-        self._loading_batches_task = Thread(target=self._loading_batches)
+        self._queue_monitoring_task = Thread(target=self._queue_monitoring, daemon=True)
+        self._loading_batches_task = Thread(target=self._loading_batches, daemon=True)
+        self._lock = RLock()
 
         if subset_name not in self._batch_client.info["subsets"]:
             raise KeyError(f"subset {subset_name} not provided by data server!")
@@ -139,6 +140,8 @@ class DataLoader:
     def _queue_monitoring(self):
         while not self._stop_event.is_set():
             try:
+                self._lock.acquire()
+
                 free_slots = self.prefetch_factor - len(self._batch_queue)
                 if free_slots <= self.prefetch_factor // 4:
                     continue
@@ -179,12 +182,14 @@ class DataLoader:
             except Exception as e:
                 LOGGER.error(trace(self, e))
             finally:
+                self._lock.release()
                 self._log_to_file("[_queue_monitoring] thread went to sleep")
                 Profiler.sleep(2.0)
 
     def _loading_batches(self):
         while not self._stop_event.is_set():
             try:
+                self._lock.acquire()
                 self._batch_receive()
             except KeyboardInterrupt:
                 LOGGER.error(trace(self, "Interrupt received, stopping ..."))
@@ -192,6 +197,7 @@ class DataLoader:
             except Exception as e:
                 LOGGER.error(trace(self, e))
             finally:
+                self._lock.release()
                 self._log_to_file("[_loading_batches] thread went to sleep")
                 Profiler.sleep(0.25)
 

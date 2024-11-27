@@ -2,8 +2,6 @@ import uuid
 import typing as tp
 import logging
 
-from threading import Lock as ThreadLock
-
 from speechflow.data_server.patterns import ZMQPatterns
 from speechflow.data_server.server import SubscriberTypes
 from speechflow.logging import trace
@@ -21,7 +19,6 @@ class DataClient:
         self._uid = uid if uid else uuid.uuid4().hex
         self._server_addr = server_addr
         self._zmq_client = ZMQPatterns.async_client(server_addr)
-        self._lock = ThreadLock()
         self._info = None
 
         try:
@@ -83,29 +80,15 @@ class DataClient:
         timeout: tp.Optional[int] = None,  # in milliseconds
     ) -> tp.Optional[tp.Union[tp.List, tp.Any]]:
         message["client_uid"] = self._uid
-        with self._lock:
-            try:
-                return self._zmq_client.request(
-                    message, deserialize=deserialize, timeout=timeout
-                )
-            except Exception as e:
-                LOGGER.error(trace(self, e))
+        return self._zmq_client.request(message, deserialize=deserialize, timeout=timeout)
 
     def send(self, message):
         message["client_uid"] = self._uid
-        with self._lock:
-            try:
-                self._zmq_client.send(message)
-            except Exception as e:
-                LOGGER.error(trace(self, e))
+        self._zmq_client.send(message)
 
     def recv(
         self,
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
     ) -> tp.Optional[tp.Union[tp.List, tp.Any]]:
-        with self._lock:
-            try:
-                return self._zmq_client.recv(deserialize, timeout)
-            except Exception as e:
-                LOGGER.error(trace(self, e))
+        return self._zmq_client.recv(deserialize, timeout)
