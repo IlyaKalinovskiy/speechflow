@@ -25,6 +25,8 @@ class NSFHiFiGANHeadParams(BaseTorchModelParams):
     upsample_kernel_sizes: tp.Tuple[int, ...] = (20, 8, 8, 4)
     resblock_kernel_sizes: tp.Tuple[int, ...] = (3, 7, 11)
     resblock_dilation_sizes: tp.Tuple[int, ...] = ([1, 3, 5], [1, 3, 5], [1, 3, 5])
+    adain_upsample: bool = False
+    adain_p_dropout: float = 0
     output_sample_rate: int = 24000
 
 
@@ -35,30 +37,47 @@ class NSFHiFiGANHead(WaveformGenerator):
         super().__init__(params)
         res_dim = params.inner_dim // 16 - 2
 
-        self.energy_conv = weight_norm(nn.Conv1d(1, 1, kernel_size=3, padding=1))
-        self.pitch_conv = weight_norm(nn.Conv1d(1, 1, kernel_size=3, padding=1))
+        stride = 2 if params.adain_upsample else 1
+        self.energy_conv = weight_norm(
+            nn.Conv1d(1, 1, kernel_size=3, stride=stride, padding=1)
+        )
+        self.pitch_conv = weight_norm(
+            nn.Conv1d(1, 1, kernel_size=3, stride=stride, padding=1)
+        )
         self.res_proj = nn.Sequential(
             weight_norm(nn.Conv1d(params.input_dim, res_dim, kernel_size=1)),
         )
 
         self.encode = AdainResBlk1d(
-            params.input_dim + 2, params.inner_dim, params.condition_dim
+            params.input_dim + 2,
+            params.inner_dim,
+            params.condition_dim,
+            dropout_p=params.adain_p_dropout,
         )
 
         self.decode = nn.ModuleList()
         self.decode.append(
             AdainResBlk1d(
-                params.inner_dim + res_dim + 2, params.inner_dim, params.condition_dim
+                params.inner_dim + res_dim + 2,
+                params.inner_dim,
+                params.condition_dim,
+                dropout_p=params.adain_p_dropout,
             )
         )
         self.decode.append(
             AdainResBlk1d(
-                params.inner_dim + res_dim + 2, params.inner_dim, params.condition_dim
+                params.inner_dim + res_dim + 2,
+                params.inner_dim,
+                params.condition_dim,
+                dropout_p=params.adain_p_dropout,
             )
         )
         self.decode.append(
             AdainResBlk1d(
-                params.inner_dim + res_dim + 2, params.inner_dim, params.condition_dim
+                params.inner_dim + res_dim + 2,
+                params.inner_dim,
+                params.condition_dim,
+                dropout_p=params.adain_p_dropout,
             )
         )
         self.decode.append(
@@ -66,6 +85,8 @@ class NSFHiFiGANHead(WaveformGenerator):
                 params.inner_dim + res_dim + 2,
                 params.upsample_initial_channel,
                 params.condition_dim,
+                upsample=params.adain_upsample,
+                dropout_p=params.adain_p_dropout,
             )
         )
 
@@ -121,7 +142,7 @@ class NSFHiFiGANHead(WaveformGenerator):
             if res:
                 x = torch.cat([x, y_res, e, p], axis=1)
             x = block(x, s)
-            if block.upsample_type != "none":
+            if block.upsample_type:
                 res = False
 
         x = self.generator(x, s, pitch)
@@ -610,7 +631,7 @@ class AdainResBlk1d(nn.Module):
         dim_out,
         condition_dim=64,
         actv=nn.LeakyReLU(0.2),
-        upsample="none",
+        upsample=False,
         dropout_p=0.0,
     ):
         super().__init__()
@@ -621,9 +642,7 @@ class AdainResBlk1d(nn.Module):
         self._build_weights(dim_in, dim_out, condition_dim)
         self.dropout = nn.Dropout(dropout_p)
 
-        if upsample == "none":
-            self.pool = nn.Identity()
-        else:
+        if upsample:
             self.pool = weight_norm(
                 nn.ConvTranspose1d(
                     dim_in,
@@ -635,6 +654,8 @@ class AdainResBlk1d(nn.Module):
                     output_padding=1,
                 )
             )
+        else:
+            self.pool = nn.Identity()
 
     def _build_weights(self, dim_in, dim_out, condition_dim):
         self.conv1 = weight_norm(nn.Conv1d(dim_in, dim_out, 3, 1, 1))
@@ -672,7 +693,7 @@ class UpSample1d(nn.Module):
         self.layer_type = layer_type
 
     def forward(self, x):
-        if self.layer_type == "none":
-            return x
-        else:
+        if self.layer_type:
             return F.interpolate(x, scale_factor=2, mode="nearest")
+        else:
+            return x

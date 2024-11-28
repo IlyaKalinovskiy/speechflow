@@ -31,7 +31,7 @@ class AdainEncoderParams(CNNEncoderParams):
 
     # AdaIN
     adain_upsample: bool = False
-    adain_p_dropout: float = 0.1
+    adain_p_dropout: float = 0
 
     # projection
     use_projection: bool = True

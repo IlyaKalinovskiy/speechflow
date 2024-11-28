@@ -159,18 +159,16 @@ class DataServer(ProcessWorker):
 
     def send_info_message(self, message, text: str, subset: tp.Optional[str] = None):
         subscriber_uid = self._get_subscriber_uid(message)
-        client_uid = self._uid_map[subscriber_uid][:6]
+        client_uid = self._uid_map.get(subscriber_uid, uuid.uuid4().hex)[:6]
         info = f"[{client_uid}] info: {text}"
 
         response = []
-        for i in range(len(message)):
-            if message[i] == b"":
-                continue
-            elif len(message[i]) == 5:
-                response.append(message[i])
-            else:
+        for m in message:
+            if m and m[0] != 0:
                 response.append(info.encode())
                 break
+            else:
+                response.append(m)
 
         self._zmq_server.frontend_send_multipart(response)
 
@@ -186,7 +184,10 @@ class DataServer(ProcessWorker):
             self.send_info_message(message, DSM.OVERLOAD, queue_info.subset)
             return True
 
-        if not queue_info.is_last_batch and queue_info.num_batch_in_processing > 0:
+        if (
+            not queue_info.is_last_batch
+            and queue_info.num_batch_in_processing > self.num_workers
+        ):
             self.send_info_message(message, DSM.QUEUE_EXCEEDED, queue_info.subset)
             return True
 
@@ -208,12 +209,12 @@ class DataServer(ProcessWorker):
     def gen_response(self, message):
         request = Serialize.load(message[-1])
         subscriber_uid = self._get_subscriber_uid(message)
-        client_uid = request.get("client_uid", uuid.uuid4().hex)
+        client_uid = request.get("client_uid")
 
-        if subscriber_uid not in self._uid_map:
-            self._uid_map[subscriber_uid] = client_uid
+        if client_uid is not None:
+            self._uid_map.setdefault(subscriber_uid, client_uid)
         else:
-            client_uid = self._uid_map[subscriber_uid]
+            client_uid = uuid.uuid4().hex
 
         if request["message"] == DCM.INFO:
             response = {
@@ -261,8 +262,7 @@ class DataServer(ProcessWorker):
                 return
 
             if self._synchronize_loaders:
-                uid = request["client_uid"]
-                sampler = self._sync_samplers[uid][subset]
+                sampler = self._sync_samplers[client_uid][subset]
             else:
                 sampler = self._pipe[subset].sampler
 
@@ -322,7 +322,7 @@ class DataServer(ProcessWorker):
             if self._zmq_server.is_backend_ready():
                 message = self._zmq_server.backend_recv_multipart()
                 subscriber_uid = self._get_subscriber_uid(message)
-                client_uid = self._uid_map[subscriber_uid]
+                client_uid = self._uid_map.get(subscriber_uid, uuid.uuid4().hex)
 
                 self._total_batch_in_processing = max(
                     0, self._total_batch_in_processing - 1
@@ -363,13 +363,11 @@ class DataServer(ProcessWorker):
     @staticmethod
     def _get_subscriber_uid(message: tp.List[bytes]):
         client_uid = []
-        for i in range(len(message)):
-            if message[i] == b"":
-                continue
-            elif len(message[i]) == 5:
-                client_uid.append(message[i])
-            else:
+        for m in message:
+            if m and m[0] != 0:
                 break
+            if m:
+                client_uid.append(m)
 
         return client_uid[-1]
 

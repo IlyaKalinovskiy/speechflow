@@ -78,7 +78,7 @@ class BatchWorker(ProcessWorker):
             for i in range(len(message)):
                 if message[i] == b"":
                     continue
-                elif len(message[i]) == 5:
+                elif message[i][0] == 0:
                     client_uid.append(message[i])
                 else:
                     message = message[i:]

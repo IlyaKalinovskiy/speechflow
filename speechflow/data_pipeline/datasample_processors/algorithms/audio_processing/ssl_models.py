@@ -141,7 +141,10 @@ class Wav2Vec(BaseSSLModel):
             else:
                 self.embedding_dim = self.model.config.output_hidden_size
 
-        self._pad = self.model.config.conv_kernel[0] // 2
+        if hasattr(self.model, "config"):
+            self._pad = self.model.config.conv_kernel[0] // 2
+        else:
+            self._pad = 0
 
     def _init_model(
         self,
