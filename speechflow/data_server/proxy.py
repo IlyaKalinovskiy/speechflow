@@ -72,7 +72,7 @@ class Proxy(ProcessWorker):
     def do_preprocessing(self, response: tp.List[bytes]) -> tp.List[bytes]:
         new_response = []
         for _bytes in response:
-            if _bytes == b"" or len(_bytes) == 5 or b"info:" in _bytes[:100]:
+            if _bytes == b"" or _bytes[0] == 0 or b"info:" in _bytes[:100]:
                 new_response.append(_bytes)
             else:
                 batch = Serialize.load(_bytes)
