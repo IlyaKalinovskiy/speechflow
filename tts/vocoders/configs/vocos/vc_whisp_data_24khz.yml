@@ -2,6 +2,7 @@
 
 dirs:
   data_root: &data_root ../../../examples/simple_datasets/speech/SEGS
+  # data_root: &data_root /media/data1/DECODER_SEGS_v2
   dump_folder: &dump_folder dump_vc_whisp_24KHz
 
 file_search:

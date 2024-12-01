@@ -100,7 +100,7 @@ class EmbeddingCalculator(BaseTorchModel):
         else:
             self.ling_feat_proj = None
 
-        self.projections: tp.Dict[str, tp.Callable] = {}
+        self.projections = nn.ModuleDict()
         for feat_name in [
             "lm_feat",
             "plbert_feat",

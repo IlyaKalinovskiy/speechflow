@@ -235,10 +235,11 @@ class DataLoader:
                 self.drop_non_full and batch.size != self.batch_size
             ) or batch.size < self.min_batch_size:
                 message = (
+                    f"[{self._uid}][{self.subset_name}]: "
                     f"batch size mismatch "
                     f"(expected size {self.batch_size} but received {batch.size})"
                 )
-                self._log_to_file(message)
+                LOGGER.warning(message)
             else:
                 if self.pin_memory and batch.collated_samples is not None:
                     batch.collated_samples.pin_memory()
