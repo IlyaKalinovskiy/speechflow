@@ -1,0 +1,229 @@
+### Data Configuration ###
+
+dirs:
+  data_root: &data_root ../../../examples/simple_datasets/speech/SEGS
+  dump_folder: &dump_folder dump_vc_whisp_24KHz
+
+file_search:
+  ext: .TextGridStage3
+  with_subfolders: true
+
+data_server:
+  n_processes: { default: 8, debug: 1 }
+  n_gpus: { default: 1, debug: ~ }
+
+dataset:
+  subsets: [train, test]
+  split_type: auto  # auto, manual
+  split_ratio: { default: 0.999, debug: 0.5 }
+  max_num_samples: { default: 0, debug: 40 }
+  directory_filter:
+    include: { default: ~, justai: EN }
+    exclude: ["!"]
+
+parser:
+  type: TTSDSParser
+  dump:
+    default: !join [*data_root, *dump_folder]  # fast dataset load
+    debug: ~
+  pipe: [audio_strip, split_by_phrases, check_phoneme_length]
+  pipe_cfg:
+    audio_strip:
+      pad: 0.25
+      add_fade: true
+    split_by_phrases:
+      max_duration: 10  # 10, 12, 15
+    check_phoneme_length:
+      min_len: 0.05
+      max_len: 0.4
+
+preproc:
+  pipe: [# load data
+         load_audio, load_audio_segmentation,
+         # audio preprocessing
+         denoiser, add_pauses_from_timestamps, apply_fade_inside_pauses,
+         multiple,
+         # audio features
+         #  speech_quality,
+         spectrogram, melscale,
+         #  energy, pitch, energy_enhancement,  # pitch_enhancement,
+         #  energy_pitch_average_by_time, energy_pitch_normalize,
+         #  speaker features
+         #  voice_bio,
+         # tts features
+         #  text, int_durations, transcription_by_frames,
+         #  ssl, plbert,
+         # audio augmentation
+         #  load_audio, multiple, audio_augment,
+         # vc features
+         ssl,
+         # ground truth audio
+         #  load_audio, denoiser, apply_fade_inside_pauses,
+         #  multiple,
+         ac, timedim_interpolation]
+  pipe_cfg:
+    load_audio:
+      type: SignalProcessor
+      pipe: [load]
+      pipe_cfg:
+        load:
+          sample_rate: 24000
+    multiple:
+      type: SignalProcessor
+      pipe: [multiple]
+      pipe_cfg:
+        multiple:
+          value: 960
+          odd: true
+    denoiser:
+      type: DenoisingProcessor
+      model_type: facebook
+    spectrogram:
+      type: SpectralProcessor
+      pipe: [magnitude]
+      pipe_cfg:
+        magnitude:
+          n_fft: 1024
+          hop_len: 240
+          win_len: 1024
+    melscale:
+      type: MelProcessor
+      pipe: [linear_to_mel, amp_to_db, normalize]
+      pipe_cfg:
+        linear_to_mel:
+          n_mels: 80
+          f_min: 0
+          f_max: 8000
+    energy:
+      type: SpectralProcessor
+      pipe: [energy]
+    pitch:
+      type: PitchProcessor
+      method: torchcrepe  # pyworld, torchcrepe
+    energy_enhancement:
+      type: signal_enhancement
+      attributes: [energy]
+      smooth: true
+    pitch_enhancement:
+      type: signal_enhancement
+      attributes: [pitch]
+      smooth: true
+    energy_pitch_average_by_time:
+      type: average_by_time
+      attributes: [energy, pitch]
+      use_quantile: true
+      min_value: 1.e-2
+    energy_pitch_normalize:
+      type: normalize
+      attributes: [energy, pitch]
+      normalize_by: sample
+      method: quantile
+      filter_outliers: true
+      min_value: 0
+    add_pauses_from_timestamps:
+      step: 0.05
+    text:
+      type: TextProcessor
+      lang: MULTILANG
+    int_durations:
+      type: calc_durations
+      as_int: true
+    voice_bio:
+      type: VoiceBiometricProcessor
+      model_type: wespeaker
+      max_audio_duration: 5
+      random_crop: true
+    speech_quality:
+      type: SpeechQualityAssessment
+    ssl:
+      type: SSLProcessor
+      ssl_type: Hubert
+      ssl_params:
+        model_name: facebook/hubert-large-ls960-ft
+        pretrain_path:
+          immers: /media/i.kalinovskiy/GitLab2/speechflow/hubert_phoneme_en/epoch=0-step=4500.ckpt
+          justai: /src/EN_epoch=0-step=4500.ckpt
+          debug: C:/FluentaAI/hubert_phoneme_en/epoch=0-step=4500.ckpt
+        vocab_path:
+          immers: /media/i.kalinovskiy/GitLab2/speechflow/hubert_phoneme_en/vocab.json
+          justai: /src/EN_epoch=0-step=4500_vocab.json
+          debug: C:/FluentaAI/hubert_phoneme_en/vocab.json
+        # stream_mod:
+        #   chunk_size: 6400
+        #   context_size: [64000, 6550]
+    plbert:
+      type: MultilingualPLBert
+      from_ssl_tokens: True
+    audio_augment:
+      type: WaveAugProcessor
+      p: { train: 0.75, test: 0.0 }
+      pipe: [background_noise, colored_noise, room_impulse_response,
+             gain_curve, vtlp, monotonic_speech, whisper]
+      pipe_cfg:
+        background_noise:
+          background_paths:
+            immers:
+              - /media/i.kalinovskiy/GitLab2/speechflow/aug_data/noise/noise_24k
+            justai:
+              - /src/aug_data/noise/noise_24k
+            debug:
+              - C:/FluentaAI/aug_data/noise/noise_24k
+          p: 0.25
+        colored_noise:
+          p: 0.25
+        room_impulse_response:
+          ir_paths:
+            immers:
+              - /media/i.kalinovskiy/GitLab2/speechflow/aug_data/rirs/smallroom_24k
+              - /media/i.kalinovskiy/GitLab2/speechflow/aug_data/rirs/mediumroom_24k
+            justai:
+              - /src/aug_data/rirs/smallroom_24k
+              - /src/aug_data/rirs/mediumroom_24k
+            debug:
+              - C:/FluentaAI/aug_data/rirs/smallroom_24k
+              - C:/FluentaAI/aug_data/rirs/mediumroom_24k
+          p: 0.25
+        gain_curve:
+          p: 0.25
+        vtlp:
+          alpha_min: 0.95
+          alpha_max: 1.05
+          p: 0.2
+        monotonic_speech:
+          p: 0.2
+        whisper:
+          p: 0.2
+    ac:
+      type: ACProcessor
+      ac_type: DAC
+      ac_params:
+        feat_type: quantized
+    timedim_interpolation:
+      features: ssl_feat
+      shape_as: mel
+      ratio: 0.5
+
+singleton_handlers:
+  handlers: [SpeakerIDSetter]
+  SpeakerIDSetter: {}
+  # StatisticsRange:
+  #   statistics_file: !join [*data_root, *dump_folder, ranges.json]
+
+collate:
+  type: TTSCollate
+
+processor:
+  type: DataProcessor
+  output_collated_only: true
+
+sampler:
+  train:
+    type: WeightedSampler
+    comb_by_len: true
+    epoch_size: 100000
+    fields_to_compute_weight: [uid, speaker_name]
+    chunks_ratio: [0.5, 0.5]
+    # use_dynamic_batch: true
+    # max_batch_length: 50_000
+  test:
+    type: SimpleSampler

@@ -128,6 +128,7 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         batch_processor=batch_processor,
         optimizer=optimizer,
         saver=saver,
+        **cfg_model.get("engine", {}),
     )
 
     callbacks = [

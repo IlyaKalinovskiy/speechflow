@@ -41,8 +41,6 @@ class BaseAudioCodecModel(torch.nn.Module):
         self,
         device: str = "cpu",
         feat_type: ACFeatureType = ACFeatureType.continuous,
-        min_audio_duration: tp.Optional[float] = None,
-        max_audio_duration: tp.Optional[float] = None,
     ):
         super().__init__()
 
@@ -54,31 +52,17 @@ class BaseAudioCodecModel(torch.nn.Module):
             ACFeatureType[feat_type] if isinstance(feat_type, str) else feat_type
         )
 
-        self._min_audio_duration = min_audio_duration
-        self._max_audio_duration = max_audio_duration
-
-        if self._max_audio_duration is not None:
-            self._max_audio_duration = int(max_audio_duration * self.sample_rate)
-
     def preprocess(self, audio_chunk: AudioChunk) -> torch.Tensor:
         assert np.issubdtype(
             audio_chunk.dtype, np.floating
         ), "Audio data must be floating-point!"
 
         audio_chunk = audio_chunk.resample(sr=self.sample_rate, fast=True)
-
-        if self._max_audio_duration is not None:
-            data = torch.tensor(
-                audio_chunk.waveform[: self._max_audio_duration], device=self.device
-            )
-        else:
-            data = torch.tensor(audio_chunk.waveform, device=self.device)
-
+        data = torch.tensor(audio_chunk.waveform, device=self.device)
         return data.unsqueeze(0)
 
-    def postprocessing(self, feat: AudioCodecFeatures) -> AudioCodecFeatures:
-        if self._min_audio_duration is not None:
-            pass
+    @staticmethod
+    def postprocessing(feat: AudioCodecFeatures) -> AudioCodecFeatures:
         return feat
 
 
@@ -88,11 +72,9 @@ class DAC(BaseAudioCodecModel):
         self,
         device: str = "cpu",
         feat_type: ACFeatureType = ACFeatureType.continuous,
-        min_audio_duration: tp.Optional[float] = None,
-        max_audio_duration: tp.Optional[float] = None,
         pretrain_path: tp.Optional[tp_PATH] = None,
     ):
-        super().__init__(device, feat_type, min_audio_duration, max_audio_duration)
+        super().__init__(device, feat_type)
 
         self.sample_rate = 24000
 
@@ -152,12 +134,10 @@ class VocosAC(BaseAudioCodecModel):
         ckpt_path: Path,
         device: str = "cpu",
         feat_type: ACFeatureType = ACFeatureType.continuous,
-        min_audio_duration: tp.Optional[float] = None,
-        max_audio_duration: tp.Optional[float] = None,
     ):
         from tts.vocoders.eval_interface import VocoderEvaluationInterface
 
-        super().__init__(device, feat_type, min_audio_duration, max_audio_duration)
+        super().__init__(device, feat_type)
 
         self.sample_rate = 24000
 
@@ -191,7 +171,6 @@ class VocosAC(BaseAudioCodecModel):
             spectrogram=ds.mel.unsqueeze(0).to(self.device),
             spectrogram_lengths=lens,
             linear_spectrogram=ds.magnitude.unsqueeze(0).to(self.device),
-            linear_spectrogram_lengths=lens,
             ssl_feat=ds.ssl_feat.encoder_feat.unsqueeze(0).to(self.device),
             ssl_feat_lengths=lens,
             energy=ds.energy.unsqueeze(0).to(self.device),

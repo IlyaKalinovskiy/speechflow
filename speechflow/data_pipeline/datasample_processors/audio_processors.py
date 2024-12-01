@@ -418,7 +418,7 @@ class ACProcessor(BaseAudioProcessor):
 
         if self._resynt:
             if ds.ac_feat.waveform is None:
-                feat = ds.ac_feat.encode_feat.t().unsqueeze(0)
+                feat = ds.ac_feat.encoder_feat.t().unsqueeze(0)
                 waveform = self._ac_model.decode(feat.to(self._ac_model.device))
                 waveform = waveform.squeeze().cpu().numpy()
             else:

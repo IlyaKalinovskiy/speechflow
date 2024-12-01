@@ -4,6 +4,8 @@ import logging
 import torch
 import pytorch_lightning as pl
 
+from clearml import Task
+
 from speechflow.data_pipeline.core import BaseBatchProcessor
 from speechflow.data_pipeline.core.batch import Batch
 from speechflow.logging import log_to_file, trace
@@ -30,6 +32,7 @@ class LightningEngine(pl.LightningModule):
         optimizer: Optimizer,
         saver: ExperimentSaver,
         detect_grad_nan: bool = False,
+        use_clearml_logger: bool = False,
     ):
         super().__init__()
 
@@ -48,6 +51,15 @@ class LightningEngine(pl.LightningModule):
         self.saver.to_save["params_after_init"] = self.model.get_params(after_init=True)
 
         self.validation_losses = []
+
+        if use_clearml_logger:
+            LOGGER.info(trace(self, message="Init ClearML task"))
+            self.clearml_task = Task.init(
+                task_name=saver.expr_path.name, project_name=saver.expr_path.parent.name
+            )
+            LOGGER.info(trace(self, message="ClearML task has been initialized"))
+        else:
+            self.clearml_task = None
 
     def on_fit_start(self):
         self.batch_processor.set_device(self.device)

@@ -10,7 +10,7 @@ __all__ = ["DummyEncoder", "DummyEncoderParams"]
 
 class DummyEncoderParams(EncoderParams):
     # projection
-    use_projection: bool = True
+    use_projection: bool = False
     projection_p_dropout: float = 0.1
     projection_activation_fn: str = "Identity"
 
@@ -21,25 +21,23 @@ class DummyEncoder(Component):
     def __init__(self, params, input_dim):
         super().__init__(params, input_dim)
 
-        if (
-            params.use_projection
-            and params.encoder_inner_dim != params.encoder_output_dim
-        ):
+        if params.use_projection and input_dim != params.encoder_output_dim:
             self.proj = Regression(
-                params.encoder_inner_dim,
+                input_dim,
                 params.encoder_output_dim,
                 p_dropout=params.projection_p_dropout,
                 activation_fn=params.projection_activation_fn,
             )
         else:
+            if input_dim != self.params.encoder_output_dim:
+                raise RuntimeError(
+                    "Dimension of output shape must match dimension of input shape"
+                )
             self.proj = nn.Identity()
 
     @property
     def output_dim(self):
-        if self.params.use_projection:
-            return self.params.encoder_output_dim
-        else:
-            return self.params.encoder_inner_dim
+        return self.params.encoder_output_dim
 
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
         out = EncoderOutput.copy_from(inputs)

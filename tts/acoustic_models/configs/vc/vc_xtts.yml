@@ -1,0 +1,71 @@
+### Model configuration ###
+
+experiment_name: tts_xtts
+
+dirs:
+  logging: tts_experiments
+
+seed: 1234
+
+batch:
+  type: TTSBatchProcessor
+
+data_loaders:
+  batch_size: { default: 32, debug: 4 }
+  min_batch_size: 4
+  min_prefetch_factor: { default: 50, debug: 1 }
+  max_prefetch_factor: { default: 150, debug: 1 }
+
+engine:
+  use_clearml_logger: { default: false, immers: true }
+
+trainer:
+  accelerator: { default: gpu, debug: cpu }
+  devices: { default: [auto], debug: 1 }
+  max_epochs: 150
+  gradient_clip_val: 5.0
+  accumulate_grad_batches: 1
+  # resume_from_checkpoint: /path/to/checkpoint
+
+checkpoint:
+  monitor: Epoch
+  mode: max
+  save_top_k: 30
+  every_n_epochs: 5
+  save_last: False
+
+callbacks:
+  TTSTrainingVisualizer: {}
+
+optimizer:
+  method:
+    type: Adam
+    weight_decay: 1.e-6
+  lr_scheduler:
+    type: ConstLR
+    lr_max: 1.e-4
+
+loss:
+  type: TTSLoss
+
+model:
+  type: ParallelTTSModel
+  params:
+    input: ssl_feat
+    ssl_feat_dim: 1024
+    ssl_feat_proj_dim: 256
+
+    encoder_type: DummyEncoder
+    encoder_params:
+      encoder_output_dim: 256
+
+    va_type: DummyVarianceAdaptor
+
+    decoder_type: XTTSDecoder
+    decoder_inner_dim: 384
+    decoder_params:
+      n_heads: 2
+      n_layers: 6
+      use_prenet: True
+
+    postnet_type: ~

@@ -119,6 +119,7 @@ class EmbeddingParams(BaseTorchModelParams):
         if "input" in cfg:
             if cfg["input"] == "mel_spectrogram":
                 cfg["input"] = "spectrogram"
+        if "target" in cfg:
             if cfg["target"] == "mel_spectrogram":
                 cfg["target"] = "spectrogram"
 
