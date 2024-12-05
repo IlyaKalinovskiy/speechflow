@@ -141,7 +141,6 @@ class DataLoader:
         while not self._stop_event.is_set():
             try:
                 self._lock.acquire()
-                self._log_to_file(f"batch queue size: {len(self._batch_queue)}")
 
                 free_slots = self.prefetch_factor - len(self._batch_queue)
                 if free_slots <= self.prefetch_factor // 4:
@@ -162,10 +161,14 @@ class DataLoader:
                     self._log_to_file(_bytes)
                     if DSM.READY.encode() in _bytes[:100]:
                         num_batch_send = int(_bytes.decode().split(":")[-1])
-                        if abs(num_batch_send - self._num_batch_recv) < 10:
-                            is_ready = True
-                        else:
-                            is_ready = False
+                        free_slots -= max(num_batch_send - self._num_batch_recv, 0)
+                        is_ready = free_slots > 0
+                        self._log_to_file(f"count of batch send: {num_batch_send}")
+                        self._log_to_file(
+                            f"count of batch receive: {self._num_batch_recv}"
+                        )
+                        self._log_to_file(f"batch queue size: {len(self._batch_queue)}")
+                        self._log_to_file(f"free slots: {free_slots}")
                     elif DSM.EPOCH_COMPLETE.encode() in _bytes[:100]:
                         is_epoch_complete = True
                         break
@@ -232,10 +235,9 @@ class DataLoader:
             batch_list = Serialize.loads(batch_list, inplace=True)
 
         for batch in batch_list:
+            self._num_batch_recv += 1
             if not isinstance(batch, Batch):
                 continue
-            else:
-                self._num_batch_recv += 1
 
             if (
                 self.drop_non_full and batch.size != self.batch_size
