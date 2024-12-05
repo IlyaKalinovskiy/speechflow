@@ -70,7 +70,7 @@ class DataLoader:
 
         self._stop_event = Event()
         self._batch_queue: tp.Deque = deque()
-        self._async_supported = self.client.find_info("async_supported", False)
+        self._num_batch_recv = 0
 
     def __len__(self) -> int:
         return int(self.epoch_len)
@@ -141,6 +141,7 @@ class DataLoader:
         while not self._stop_event.is_set():
             try:
                 self._lock.acquire()
+                self._log_to_file(f"batch queue size: {len(self._batch_queue)}")
 
                 free_slots = self.prefetch_factor - len(self._batch_queue)
                 if free_slots <= self.prefetch_factor // 4:
@@ -160,7 +161,11 @@ class DataLoader:
                 for _bytes in response:
                     self._log_to_file(_bytes)
                     if DSM.READY.encode() in _bytes[:100]:
-                        is_ready = True
+                        num_batch_send = int(_bytes.decode().split(":")[-1])
+                        if abs(num_batch_send - self._num_batch_recv) < 10:
+                            is_ready = True
+                        else:
+                            is_ready = False
                     elif DSM.EPOCH_COMPLETE.encode() in _bytes[:100]:
                         is_epoch_complete = True
                         break
@@ -183,7 +188,7 @@ class DataLoader:
                 LOGGER.error(trace(self, e))
             finally:
                 self._lock.release()
-                self._log_to_file("[_queue_monitoring] thread went to sleep")
+                self._log_to_file("thread went to sleep")
                 Profiler.sleep(2.0)
 
     def _loading_batches(self):
@@ -198,7 +203,6 @@ class DataLoader:
                 LOGGER.error(trace(self, e))
             finally:
                 self._lock.release()
-                self._log_to_file("[_loading_batches] thread went to sleep")
                 Profiler.sleep(0.25)
 
     def _batch_request(self, batch_num: int):
@@ -219,7 +223,7 @@ class DataLoader:
         batch_list = []
         for _bytes in response:
             self._log_to_file(_bytes)
-            if _bytes == b"" or len(_bytes) == 5 or b"info:" in _bytes[:100]:
+            if _bytes == b"" or _bytes[0] == 0 or b"info:" in _bytes[:100]:
                 continue
             else:
                 batch_list.append(_bytes)
@@ -230,6 +234,8 @@ class DataLoader:
         for batch in batch_list:
             if not isinstance(batch, Batch):
                 continue
+            else:
+                self._num_batch_recv += 1
 
             if (
                 self.drop_non_full and batch.size != self.batch_size
@@ -308,9 +314,11 @@ class DataLoader:
         return batch
 
     def abort_processing(self):
+        self._num_batch_recv = 0
         self._send_info_message(DCM.ABORT)
 
     def reset(self):
+        self._num_batch_recv = 0
         self._batch_queue.clear()
         self._send_info_message(DCM.RESET)
         self.prefetch_factor = self.min_prefetch_factor
