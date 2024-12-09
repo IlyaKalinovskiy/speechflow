@@ -8,7 +8,7 @@ dirs:
 seed: 1234
 
 batch:
-  type: TTSBatchProcessor
+  type: TTSBatchProcessorWithPrompt
 
 data_loaders:
   batch_size: { default: 24, debug: 4 }

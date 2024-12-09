@@ -77,8 +77,10 @@ class XTTSDecoder(Component):
         _prompt_audio = getattr(_prompt, self.params.prompt_audio_feat)
         _prompt_audio_lens = getattr(_prompt, f"{self.params.prompt_audio_feat}_lengths")
 
-        _response = getattr(_prompt, self.params.target_audio_feat)
-        _response_lens = getattr(_prompt, f"{self.params.target_audio_feat}_lengths")
+        _response = getattr(inputs.model_inputs, self.params.target_audio_feat)
+        _response_lens = getattr(
+            inputs.model_inputs, f"{self.params.target_audio_feat}_lengths"
+        )
 
         if self.params.target_audio_feat == "codes":
             _response = _response[:, :, :1]

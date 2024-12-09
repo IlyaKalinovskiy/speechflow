@@ -155,7 +155,6 @@ class GPTA(nn.Module):
         self.proj = nn.Linear(self._dim_hidden, self._dim_hidden, bias=True)
 
         self.eos_value = 10
-        self.eos_token = torch.zeros(1, 1, self._dim_response) + self.eos_value
 
     def get_emb_proj(
         self,
@@ -184,6 +183,9 @@ class GPTA(nn.Module):
 
         return nn.ParameterDict(
             {
+                "eos": nn.Parameter(
+                    torch.zeros(1, 1, self._dim_response), requires_grad=False
+                ),
                 "bot": nn.Parameter(torch.randn(1, 1, self._dim_hidden)),
                 "boa": nn.Parameter(torch.randn(1, 1, self._dim_hidden)),
                 "bor": nn.Parameter(torch.randn(1, 1, self._dim_hidden)),
@@ -253,8 +255,9 @@ class GPTA(nn.Module):
 
         resp_mask = make_pad_mask(resp_lens).unsqueeze(-1)
         if self.is_use_continuous_resp:
+            eos_token = self.eos_value + self.service_tokens["eos"]
             resp = resp.masked_fill(resp_mask, value=self.eos_value)
-            eos = torch.repeat_interleave(self.eos_token, batch_size, 0)
+            eos = torch.repeat_interleave(eos_token, batch_size, 0)
             resp = torch.cat([resp, eos], dim=1)
         else:
             resp = resp.masked_fill(resp_mask, value=self._num_tokens_response)
@@ -279,7 +282,6 @@ class GPTA(nn.Module):
     def cat_on_edge(
         list_tensors: tp.List[torch.Tensor], list_lens: tp.List[torch.Tensor]
     ):
-
         assert len(list_tensors) == len(list_lens)
 
         iter_tensors = zip(*list_tensors)
@@ -302,7 +304,6 @@ class GPTA(nn.Module):
         return masks
 
     def attn_mask(self, device, len_cross: int = 0, len_causal: int = 0):
-
         assert bool(len_cross > 0) or bool(len_causal > 0)
 
         mask_cross = torch.zeros(len_cross, len_cross, dtype=torch.bool, device=device)
@@ -316,7 +317,6 @@ class GPTA(nn.Module):
         mask_causal = F.pad(mask_causal, (len_cross, 0), value=False)
 
         mask = torch.cat([mask_cross, mask_causal], dim=0)
-
         return mask
 
     def forward(
@@ -328,7 +328,6 @@ class GPTA(nn.Module):
         response: tp.Optional[torch.Tensor] = None,
         response_lens: tp.Optional[torch.Tensor] = None,
         lang_id: tp.Optional[torch.Tensor] = None,
-        reduction: str = "sum",
     ) -> GPTAOutput:
         """"""
         _device = prompt_text.device
@@ -390,5 +389,4 @@ class GPTA(nn.Module):
             target=target,
             target_lens=response_lens,
         )
-
         return output
