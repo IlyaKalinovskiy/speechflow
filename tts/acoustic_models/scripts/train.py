@@ -18,7 +18,7 @@ from speechflow.data_server.loader import DataLoader
 from speechflow.io import Config, tp_PATH, tp_PATH_LIST
 from speechflow.logging import trace
 from speechflow.logging.server import LoggingServer
-from speechflow.training.lightning_trainer import LightningEngine
+from speechflow.training.lightning_engine import LightningEngine
 from speechflow.training.optimizer import Optimizer
 from speechflow.training.saver import ExperimentSaver
 from speechflow.training.utils.config_prepare import model_config_prepare, train_arguments

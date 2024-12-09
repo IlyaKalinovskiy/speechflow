@@ -17,7 +17,7 @@ data_loaders:
   max_prefetch_factor: { default: 150, debug: 1 }
 
 engine:
-  use_clearml_logger: { default: false, immers: false }
+  use_clearml_logger: { default: false, immers: true }
 
 trainer:
   accelerator: { default: gpu, debug: cpu }

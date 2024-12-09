@@ -39,9 +39,9 @@ class GPTA(nn.Module):
         n_layers: int,
         dim_prompt_text: tp.Optional[int] = None,
         dim_prompt_audio: tp.Optional[int] = None,
+        dim_response: tp.Optional[int] = None,
         num_tokens_text: tp.Optional[int] = None,
         num_tokens_audio: tp.Optional[int] = None,
-        num_tokens_response: tp.Optional[int] = None,
         num_levels_text: int = 1,
         num_levels_audio: int = 1,
         num_langs: tp.Optional[int] = None,
@@ -75,6 +75,7 @@ class GPTA(nn.Module):
         self._dim_hidden = dim_hidden
         self._dim_prompt_text = dim_prompt_text
         self._dim_prompt_audio = dim_prompt_audio
+        self._dim_response = dim_response
         self._n_heads = n_heads
         self._n_layers = n_layers
         self._is_norm_first = is_norm_first
@@ -83,12 +84,12 @@ class GPTA(nn.Module):
 
         self._num_tokens_text = num_tokens_text
         self._num_tokens_audio = num_tokens_audio
-        self._num_tokens_response = num_tokens_response
 
         self._decoder_name = decoder_name
 
         self.positional_encoding = self._get_pos_embs()
         self.service_tokens = self._get_service_tokens()
+        self.is_use_continuous_resp = dim_response is not None
 
         if num_langs:
             self.emb_lang = torch.nn.Embedding(num_langs, self._dim_hidden)
@@ -100,16 +101,20 @@ class GPTA(nn.Module):
         )
         self.emb_audio = self.get_emb_proj(
             dim_emb=dim_prompt_audio,
-            num_tokens=num_tokens_audio,
+            num_tokens=None,
             num_levels=num_levels_audio,
         )
 
-        self.emb_response = None
-        is_use_resp = num_tokens_response is not None
-        if is_use_resp:
+        if self.is_use_continuous_resp:
+            self.emb_response = self.get_emb_proj(
+                dim_emb=dim_response,
+                num_tokens=None,
+                num_levels=num_levels_audio,
+            )
+        else:
             self.emb_response = self.get_emb_proj(
                 dim_emb=None,
-                num_tokens=num_tokens_response + 1,  # plus stop token
+                num_tokens=num_tokens_audio + 1,  # plus stop token
                 num_levels=1,
             )
 
@@ -122,13 +127,19 @@ class GPTA(nn.Module):
         self.prenet_text = modules.PrenetText(
             dim_model=self._dim_hidden, is_enable=self._use_prenet
         )
-        self.prenet_response = modules.PrenetText(
-            dim_model=self._dim_hidden, is_enable=self._use_prenet and is_use_resp
-        )
+        if self.is_use_continuous_resp:
+            self.prenet_response = modules.PrenetAudio(
+                dim_model=self._dim_hidden,
+                dim_internal=self._dim_hidden,
+                is_enable=self._use_prenet,
+                is_channel_first=False,
+            )
+        else:
+            self.prenet_response = modules.PrenetText(
+                dim_model=self._dim_hidden, is_enable=self._use_prenet
+            )
 
-        if self._decoder_name == "mamba":
-            decoder = MambaDecoder
-        elif self._decoder_name == "gpt":
+        if self._decoder_name == "gpt":
             decoder = GPTDecoder
         else:
             raise NotImplementedError
@@ -143,7 +154,8 @@ class GPTA(nn.Module):
         )
         self.proj = nn.Linear(self._dim_hidden, self._dim_hidden, bias=True)
 
-        self.rng = random.Random(0)
+        self.eos_value = 10
+        self.eos_token = torch.zeros(1, 1, self._dim_response) + self.eos_value
 
     def get_emb_proj(
         self,
@@ -190,9 +202,7 @@ class GPTA(nn.Module):
             }
         )
 
-    def prepare_prompt_text(
-        self, text, text_lens, lang_emb=None
-    ) -> tp.List[torch.Tensor]:
+    def prepare_prompt_text(self, text, text_lens, lang_emb=None):
         """
         text: [n_batch, length, dim]
         """
@@ -241,9 +251,14 @@ class GPTA(nn.Module):
 
         batch_size = resp.shape[0]
 
-        resp_mask = make_pad_mask(resp_lens).unsqueeze(1)
-        resp = resp.masked_fill_(resp_mask, value=self._num_tokens_response)
-        resp = F.pad(resp, (0, 1), value=self._num_tokens_response)
+        resp_mask = make_pad_mask(resp_lens).unsqueeze(-1)
+        if self.is_use_continuous_resp:
+            resp = resp.masked_fill(resp_mask, value=self.eos_value)
+            eos = torch.repeat_interleave(self.eos_token, batch_size, 0)
+            resp = torch.cat([resp, eos], dim=1)
+        else:
+            resp = resp.masked_fill(resp_mask, value=self._num_tokens_response)
+            resp = F.pad(resp, (0, 0, 0, 1), value=self._num_tokens_response)
 
         resp_emb = self.emb_response(resp)
         resp_emb = self.prenet_response(resp_emb)
@@ -278,15 +293,12 @@ class GPTA(nn.Module):
         return concated, lens
 
     def padding_mask(self, lens: tp.List[torch.Tensor], device):
-        batch_size = lens[0].shape[0]
-
         masks = list()
         for _len in lens:
             masks.append(make_pad_mask(_len).to(device))
 
         masks = torch.concat(masks, dim=1)
         masks = torch.repeat_interleave(masks, self._n_heads, dim=0).unsqueeze(1)
-
         return masks
 
     def attn_mask(self, device, len_cross: int = 0, len_causal: int = 0):
@@ -364,7 +376,7 @@ class GPTA(nn.Module):
 
         mask = mask_pad.logical_or(mask_attn.unsqueeze(0))
         mask_float = torch.zeros_like(mask, dtype=prompt.dtype)
-        mask_float.masked_fill_(mask, float("-inf"))
+        mask_float = mask_float.masked_fill(mask, float("-inf"))
 
         emb, _ = self.decoder((x, None), mask=mask_float)
         emb = self.proj(emb)

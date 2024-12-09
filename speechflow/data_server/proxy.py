@@ -103,7 +103,9 @@ class Proxy(ProcessWorker):
                             try:
                                 while True:
                                     b.send_multipart(message, serialize=False)
-                                    info = b.recv(timeout=1000, deserialize=False)
+                                    info = b.recv_multipart(
+                                        timeout=1000, deserialize=False
+                                    )
                                     if info is not None:
                                         break
                             except Exception as e:
@@ -120,7 +122,7 @@ class Proxy(ProcessWorker):
                         self._zmq_proxy.backend_send_multipart(message)
 
             for b in self._zmq_proxy.backends:
-                response = b.recv(timeout=1, deserialize=False)
+                response = b.recv_multipart(timeout=1, deserialize=False)
                 if response is not None:
                     response = self.do_preprocessing(response)
                     self._zmq_proxy.frontend_send_multipart(response)

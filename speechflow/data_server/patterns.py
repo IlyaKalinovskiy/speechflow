@@ -80,18 +80,41 @@ class ZMQClient:
         try:
             self.socket.send(data, flags=self.flags)
         except zmq.ZMQError as e:
-            log_to_file(trace(self, e))
-
-    def send_multipart(self, data: tp.List, serialize: bool = True):
-        try:
-            if serialize:
-                data = Serialize.dumps(data)
-
-            self.socket.send_multipart(data, flags=self.flags)
-        except zmq.ZMQError as e:
-            log_to_file(trace(self, e))
+            if not self.flags:
+                raise e
 
     def recv(
+        self,
+        deserialize: bool = True,
+        timeout: tp.Optional[int] = None,  # in milliseconds
+    ):
+        msg = None
+
+        if timeout and self.socket.poll(timeout=timeout) == 0:
+            return msg
+
+        try:
+            msg = self.socket.recv(flags=self.flags)
+        except zmq.ZMQError as e:
+            if not self.flags:
+                raise e
+
+        if msg is not None and deserialize:
+            msg = Serialize.load(msg)
+
+        return msg
+
+    def send_multipart(self, data: tp.List, serialize: bool = True):
+        if serialize:
+            data = Serialize.dumps(data)
+
+        try:
+            self.socket.send_multipart(data, flags=self.flags)
+        except zmq.ZMQError as e:
+            if not self.flags:
+                raise e
+
+    def recv_multipart(
         self,
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
@@ -114,17 +137,11 @@ class ZMQClient:
                     break
 
             list_bytes = [item for item in list_bytes if item != b""]
-            if deserialize:
-                list_obj = [pickle.loads(item) for item in list_bytes]
-            else:
-                list_obj = list_bytes
 
-            if len(list_obj) == 0:
-                return None
-            elif len(list_obj) == 1 and deserialize:
-                return list_obj[0]
+            if deserialize:
+                return [pickle.loads(item) for item in list_bytes]
             else:
-                return list_obj
+                return list_bytes
 
     def request(
         self,
@@ -134,13 +151,22 @@ class ZMQClient:
         timeout: tp.Optional[int] = None,  # in milliseconds
     ):
         self.send(data, serialize)
-        return self.recv(deserialize, timeout)
+
+        if timeout is None or timeout == -1:
+            msg = None
+            while msg is None:
+                msg = self.recv(deserialize, timeout=1000)
+
+            return msg
+        else:
+            return self.recv(deserialize, timeout)
 
     def send_string(self, data: str):
         try:
             self.socket.send_string(data, flags=self.flags)
         except zmq.ZMQError as e:
-            log_to_file(trace(self, e))
+            if not self.flags:
+                raise e
 
     def recv_string(self, timeout: tp.Optional[int] = None):  # in milliseconds
         if timeout is not None and self.socket.poll(timeout=timeout) == 0:  # wait
@@ -173,7 +199,8 @@ class ZMQWorker:
 
             self.socket.send(data, flags=self.flags)
         except zmq.ZMQError as e:
-            log_to_file(trace(self, e))
+            if not self.flags:
+                raise e
 
     def send_multipart(self, data: tp.List, serialize: bool = True):
         try:
@@ -182,7 +209,8 @@ class ZMQWorker:
 
             self.socket.send_multipart(data, flags=self.flags)
         except zmq.ZMQError as e:
-            log_to_file(trace(self, e))
+            if not self.flags:
+                raise e
 
     def recv_multipart(
         self,

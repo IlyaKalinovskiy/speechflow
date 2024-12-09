@@ -146,12 +146,11 @@ class DataLoader:
                 if free_slots <= self.prefetch_factor // 4:
                     continue
 
-                response = self._msg_client.request(
-                    message={"message": DCM.IS_READY},
+                self._send_info_message(DCM.IS_READY)
+                response = self._msg_client.recv_multipart(
                     deserialize=False,
                     timeout=1,
                 )
-                self._log_to_file(DCM.IS_READY)
                 if response is None:
                     continue
 
@@ -219,7 +218,7 @@ class DataLoader:
         self._log_to_file(str(message))
 
     def _batch_receive(self):
-        response = self._batch_client.recv(deserialize=False, timeout=1)
+        response = self._batch_client.recv_multipart(deserialize=False, timeout=1)
         if not response:
             return
 

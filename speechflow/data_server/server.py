@@ -186,7 +186,10 @@ class DataServer(ProcessWorker):
             self.send_info_message(message, DSM.QUEUE_EXCEEDED, queue_info.subset)
             return True
 
-        if queue_info.is_last_batch and queue_info.num_batch_in_processing > 0:
+        if (
+            queue_info.is_last_batch
+            and queue_info.num_batch_in_processing > self.num_workers
+        ):
             self.send_info_message(
                 message,
                 f"{DSM.EPOCH_ENDING}"

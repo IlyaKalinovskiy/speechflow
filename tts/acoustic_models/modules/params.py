@@ -112,6 +112,12 @@ class EmbeddingParams(BaseTorchModelParams):
                     dim += params["emb_dim"]
                 self.average_emb_dim = dim
 
+    def get_feat_dim(self, feat_name: str) -> int:
+        if hasattr(self, f"{feat_name}_dim"):
+            return getattr(self, f"{feat_name}_dim")
+        else:
+            raise RuntimeError(f"Dim for {feat_name} not found")
+
     @staticmethod
     def check_deprecated_params(cfg: dict) -> dict:
         if "n_symbols" in cfg:
