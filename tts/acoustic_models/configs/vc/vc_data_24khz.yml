@@ -62,7 +62,8 @@ preproc:
          # ground truth audio
          #  load_audio, denoiser, apply_fade_inside_pauses,
          #  multiple,
-         ac, timedim_interpolation]
+         # ac, timedim_interpolation
+         ]
   pipe_cfg:
     load_audio:
       type: SignalProcessor
