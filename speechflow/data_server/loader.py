@@ -137,6 +137,12 @@ class DataLoader:
 
         self._log_to_file(text)
 
+    def _recv_message(
+        self, client: DataClient, deserialize: bool = False, timeout: int = 1
+    ):
+        with self._lock:
+            return client.recv_multipart(deserialize=deserialize, timeout=timeout)
+
     def _is_stop_iteration(self):
         if self._stop_event.is_set():
             self._log_to_file("stop iteration")
@@ -145,18 +151,13 @@ class DataLoader:
     def _queue_monitoring(self):
         while not self._stop_event.is_set():
             try:
-                free_slots = self.prefetch_factor - len(self._batch_queue)
-                if free_slots <= self.prefetch_factor // 4:
+                free_slots = max(self.prefetch_factor - len(self._batch_queue), 0)
+                if free_slots == 0:
                     continue
 
                 self._send_info_message(DCM.IS_READY)
 
-                with self._lock:
-                    response = self._msg_client.recv_multipart(
-                        deserialize=False,
-                        timeout=1,
-                    )
-
+                response = self._recv_message(self._msg_client)
                 if response is None:
                     continue
 
@@ -166,14 +167,14 @@ class DataLoader:
                     self._log_to_file(_bytes)
                     if DSM.READY.encode() in _bytes[:100]:
                         num_batch_send = int(_bytes.decode().split(":")[-1])
-                        free_slots -= max(num_batch_send - self._num_batch_recv, 0)
-                        is_ready = free_slots > 0
-                        self._log_to_file(f"count of batch send: {num_batch_send}")
+                        num_batch_delivery = max(num_batch_send - self._num_batch_recv, 0)
+                        is_ready = free_slots - num_batch_delivery > 0
                         self._log_to_file(
-                            f"count of batch receive: {self._num_batch_recv}"
+                            f"num of batch send: {num_batch_send}\n"
+                            f"num of batch delivery: {num_batch_delivery}\n"
+                            f"num of batch receive: {self._num_batch_recv}\n"
+                            f"free slots: {free_slots}"
                         )
-                        self._log_to_file(f"batch queue size: {len(self._batch_queue)}")
-                        self._log_to_file(f"free slots: {free_slots}")
                     elif DSM.EPOCH_COMPLETE.encode() in _bytes[:100]:
                         is_epoch_complete = True
                         break
@@ -224,9 +225,7 @@ class DataLoader:
         self._log_to_file(str(message))
 
     def _batch_receive(self):
-        with self._lock:
-            response = self._batch_client.recv_multipart(deserialize=False, timeout=1)
-
+        response = self._recv_message(self._batch_client)
         if not response:
             return
 
@@ -286,11 +285,11 @@ class DataLoader:
                 self._queue_monitoring_task.is_alive()
             ), "DataLoader has not been started!"
 
-            if sleep > 0:
+            if sleep >= step:
                 LOGGER.warning(
                     f"[{self._uid}][{self.subset_name}]: Batches receive too slowly!"
                 )
-            else:
+            elif sleep == 0:
                 self.prefetch_factor = int(
                     min(self.prefetch_factor * 1.2, self.max_prefetch_factor)
                 )
@@ -304,8 +303,10 @@ class DataLoader:
                     f"DataServer stopped responding for {self.subset_name} DataLoader!"
                 )
 
-            Profiler.sleep(sleep + step)
-            return self.next_batch(sleep + step)
+            sleep += 0.5 if sleep < step else step
+
+            Profiler.sleep(sleep)
+            return self.next_batch(sleep)
 
         try:
             batch = self._batch_queue.popleft()
