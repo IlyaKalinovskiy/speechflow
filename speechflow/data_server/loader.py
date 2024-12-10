@@ -124,12 +124,17 @@ class DataLoader:
                     text = text[:100]
                 fn_name = f"{self.__class__.__name__}.{inspect.stack()[1][3]}"
                 message = f"[{self._uid}][{self.subset_name}]: {text}"
-                log_to_file(trace(fn_name, message=message))
+
+                with self._lock:
+                    log_to_file(trace(fn_name, message=message))
+
             except Exception as e:
                 LOGGER.error(trace(self, e))
 
     def _send_info_message(self, text: str):
-        self._msg_client.send({"message": text, "subset_name": self.subset_name})
+        with self._lock:
+            self._msg_client.send({"message": text, "subset_name": self.subset_name})
+
         self._log_to_file(text)
 
     def _is_stop_iteration(self):
@@ -140,17 +145,18 @@ class DataLoader:
     def _queue_monitoring(self):
         while not self._stop_event.is_set():
             try:
-                self._lock.acquire()
-
                 free_slots = self.prefetch_factor - len(self._batch_queue)
                 if free_slots <= self.prefetch_factor // 4:
                     continue
 
                 self._send_info_message(DCM.IS_READY)
-                response = self._msg_client.recv_multipart(
-                    deserialize=False,
-                    timeout=1,
-                )
+
+                with self._lock:
+                    response = self._msg_client.recv_multipart(
+                        deserialize=False,
+                        timeout=1,
+                    )
+
                 if response is None:
                     continue
 
@@ -189,14 +195,12 @@ class DataLoader:
             except Exception as e:
                 LOGGER.error(trace(self, e))
             finally:
-                self._lock.release()
                 self._log_to_file("thread went to sleep")
                 Profiler.sleep(2.0)
 
     def _loading_batches(self):
         while not self._stop_event.is_set():
             try:
-                self._lock.acquire()
                 self._batch_receive()
             except KeyboardInterrupt:
                 LOGGER.error(trace(self, "Interrupt received, stopping ..."))
@@ -204,8 +208,7 @@ class DataLoader:
             except Exception as e:
                 LOGGER.error(trace(self, e))
             finally:
-                self._lock.release()
-                Profiler.sleep(0.25)
+                Profiler.sleep(0.1)
 
     def _batch_request(self, batch_num: int):
         message = {
@@ -214,11 +217,16 @@ class DataLoader:
             "batch_size": self.batch_size,
             "batch_num": batch_num,
         }
-        self._batch_client.send(message)
+
+        with self._lock:
+            self._batch_client.send(message)
+
         self._log_to_file(str(message))
 
     def _batch_receive(self):
-        response = self._batch_client.recv_multipart(deserialize=False, timeout=1)
+        with self._lock:
+            response = self._batch_client.recv_multipart(deserialize=False, timeout=1)
+
         if not response:
             return
 
@@ -270,12 +278,12 @@ class DataLoader:
         except Exception as e:
             LOGGER.error(trace(self, e))
 
-    def next_batch(self, sleep: float = 0) -> Batch:
+    def next_batch(self, sleep: float = 0, step: int = 3) -> Batch:
         if len(self._batch_queue) == 0:
             self._is_stop_iteration()
 
             assert (
-                self._loading_batches_task.is_alive()
+                self._queue_monitoring_task.is_alive()
             ), "DataLoader has not been started!"
 
             if sleep > 0:
@@ -296,8 +304,8 @@ class DataLoader:
                     f"DataServer stopped responding for {self.subset_name} DataLoader!"
                 )
 
-            Profiler.sleep(sleep + 3)
-            return self.next_batch(sleep + 3)
+            Profiler.sleep(sleep + step)
+            return self.next_batch(sleep + step)
 
         try:
             batch = self._batch_queue.popleft()

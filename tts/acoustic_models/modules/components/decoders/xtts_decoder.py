@@ -116,7 +116,7 @@ class XTTSDecoder(Component):
 
         inputs.additional_losses.update({"loss_gpt": loss})
 
-        return DecoderOutput.copy_from(inputs).set_content(pred, _response_lens + 1)
+        return DecoderOutput.copy_from(inputs).set_content(logits, _response_lens + 1)
 
     def generate_step(self, inputs: VarianceAdaptorOutput) -> DecoderOutput:  # type: ignore
         content = self.get_content(inputs)[0]
