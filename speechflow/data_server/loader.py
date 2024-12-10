@@ -138,10 +138,14 @@ class DataLoader:
         self._log_to_file(text)
 
     def _recv_message(
-        self, client: DataClient, deserialize: bool = False, timeout: int = 1
+        self,
+        client: DataClient,
+        max_num_message: int = 25,
+        deserialize: bool = False,
+        timeout: int = 1,
     ):
         with self._lock:
-            return client.recv_multipart(deserialize=deserialize, timeout=timeout)
+            return client.recv_multipart(max_num_message, deserialize, timeout)
 
     def _is_stop_iteration(self):
         if self._stop_event.is_set():

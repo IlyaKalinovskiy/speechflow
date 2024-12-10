@@ -10,7 +10,7 @@ file_search:
   with_subfolders: true
 
 data_server:
-  n_processes: { default: 8, debug: 1 }
+  n_processes: { default: 9, debug: 1 }
   n_gpus: { default: 1, debug: ~ }
 
 dataset:

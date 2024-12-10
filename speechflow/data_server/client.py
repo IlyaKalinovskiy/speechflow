@@ -77,7 +77,8 @@ class DataClient:
 
     def recv_multipart(
         self,
+        max_num_message: int = 25,
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
     ) -> tp.Optional[tp.Union[tp.List, tp.Any]]:
-        return self._zmq_client.recv_multipart(deserialize, timeout)
+        return self._zmq_client.recv_multipart(max_num_message, deserialize, timeout)

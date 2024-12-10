@@ -116,6 +116,7 @@ class ZMQClient:
 
     def recv_multipart(
         self,
+        max_num_message: int = 25,
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
     ):
@@ -123,7 +124,7 @@ class ZMQClient:
             return None
         else:
             list_bytes = []
-            while True or len(list_bytes) < 25:
+            while True or len(list_bytes) < max(max_num_message, 1):
                 try:
                     flags = self.flags if timeout else 0
                     msg = self.socket.recv_multipart(flags=flags)

@@ -11,7 +11,7 @@ batch:
   type: TTSBatchProcessorWithPrompt
 
 data_loaders:
-  batch_size: { default: 16, debug: 4 }
+  batch_size: { default: 6, debug: 4 }
   epoch_len: { train: 10000, test: ~ }
   min_batch_size: 4
   min_prefetch_factor: { default: 50, debug: 1 }
@@ -63,10 +63,10 @@ model:
     va_type: DummyVarianceAdaptor
 
     decoder_type: XTTSDecoder
-    decoder_inner_dim: 384
+    decoder_inner_dim: 512
     decoder_params:
-      n_heads: 2
-      n_layers: 6
+      n_heads: 4
+      n_layers: 12
       use_prenet: true
 
     postnet_type: ~
