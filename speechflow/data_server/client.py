@@ -64,21 +64,21 @@ class DataClient:
 
     def request(
         self,
-        message,
+        message: tp.Any,
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
-    ) -> tp.Optional[tp.Union[tp.List, tp.Any]]:
+    ) -> tp.Optional[tp.Any]:
         message["client_uid"] = self._uid
         return self._zmq_client.request(message, deserialize=deserialize, timeout=timeout)
 
-    def send(self, message):
+    def send(self, message: tp.Any):
         message["client_uid"] = self._uid
         self._zmq_client.send(message)
 
     def recv_multipart(
         self,
-        max_num_message: int = 25,
+        max_num_message: tp.Optional[int] = None,
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
-    ) -> tp.Optional[tp.Union[tp.List, tp.Any]]:
+    ) -> tp.List[tp.Any]:
         return self._zmq_client.recv_multipart(max_num_message, deserialize, timeout)

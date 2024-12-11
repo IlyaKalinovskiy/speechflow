@@ -72,6 +72,8 @@ class DataLoader:
         self._batch_queue: tp.Deque = deque()
         self._num_batch_recv = 0
 
+        self._is_verbose_logging = is_verbose_logging()
+
     def __len__(self) -> int:
         return int(self.epoch_len)
 
@@ -118,7 +120,7 @@ class DataLoader:
         return init_class_from_config(DataLoader, cfg)()
 
     def _log_to_file(self, text: tp.Union[str, bytes]):
-        if is_verbose_logging():
+        if self._is_verbose_logging:
             try:
                 if isinstance(text, bytes):
                     text = text[:100]
@@ -143,7 +145,7 @@ class DataLoader:
         max_num_message: int = 25,
         deserialize: bool = False,
         timeout: int = 1,
-    ):
+    ) -> tp.List[tp.Any]:
         with self._lock:
             return client.recv_multipart(max_num_message, deserialize, timeout)
 
@@ -160,10 +162,7 @@ class DataLoader:
                     continue
 
                 self._send_info_message(DCM.IS_READY)
-
                 response = self._recv_message(self._msg_client)
-                if response is None:
-                    continue
 
                 is_ready = False
                 is_epoch_complete = False
@@ -230,8 +229,6 @@ class DataLoader:
 
     def _batch_receive(self):
         response = self._recv_message(self._batch_client)
-        if not response:
-            return
 
         batch_list = []
         for _bytes in response:
@@ -243,9 +240,9 @@ class DataLoader:
 
         if batch_list:
             batch_list = Serialize.loads(batch_list, inplace=True)
+            self._num_batch_recv += len(batch_list)
 
         for batch in batch_list:
-            self._num_batch_recv += 1
             if not isinstance(batch, Batch):
                 continue
 

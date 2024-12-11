@@ -111,7 +111,9 @@ class Proxy(ProcessWorker):
                         self._zmq_proxy.backend_send_multipart(message)
 
             for b in self._zmq_proxy.backends:
-                response = b.recv_multipart(deserialize=False, timeout=1)
+                response = b.recv_multipart(
+                    max_num_message=5, deserialize=False, timeout=1
+                )
                 if response is not None:
                     response = self.do_preprocessing(response)
                     self._zmq_proxy.frontend_send_multipart(response)
