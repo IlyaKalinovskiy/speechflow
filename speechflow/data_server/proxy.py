@@ -21,7 +21,7 @@ class Proxy(ProcessWorker):
         self,
         server_addrs: tp.List[str],
     ):
-        ProcessWorker.__init__(self)
+        ProcessWorker.__init__(self, daemon=True)
         self._server_addrs = server_addrs
         self._proxy_addr = f"127.0.0.1:{find_free_port()}"
         self._zmq_proxy: ZMQProxy = None  # type: ignore
