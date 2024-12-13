@@ -173,9 +173,9 @@ class DataLoader:
                         num_batch_delivery = max(num_batch_send - self._num_batch_recv, 0)
                         is_ready = free_slots - num_batch_delivery > 0
                         self._log_to_file(
-                            f"num of batch send: {num_batch_send}\n"
-                            f"num of batch delivery: {num_batch_delivery}\n"
-                            f"num of batch receive: {self._num_batch_recv}\n"
+                            f"num of batch send: {num_batch_send}; "
+                            f"num of batch delivery: {num_batch_delivery}; "
+                            f"num of batch receive: {self._num_batch_recv}; "
                             f"free slots: {free_slots}"
                         )
                     elif DSM.EPOCH_COMPLETE.encode() in _bytes[:100]:
@@ -265,6 +265,7 @@ class DataLoader:
         self._stop_event.clear()
         self._queue_monitoring_task.start()
         self._loading_batches_task.start()
+        self.reset()
 
     def finish(self):
         self._stop_event.set()
@@ -309,10 +310,7 @@ class DataLoader:
             Profiler.sleep(sleep)
             return self.next_batch(sleep)
 
-        try:
-            batch = self._batch_queue.popleft()
-        except IndexError:
-            return self.next_batch()
+        batch = self._batch_queue.popleft()
 
         if self.prefetch_on_gpu and len(self._batch_queue) > 0:
             try:

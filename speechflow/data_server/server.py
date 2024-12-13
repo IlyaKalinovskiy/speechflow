@@ -290,7 +290,6 @@ class DataServer(ProcessWorker):
             status = self._work_queues[client_uid]
             status.is_last_batch = False
             status.num_batch_in_processing = 0
-            status.num_batch_send = 0
 
         elif request["message"] in [DCM.ABORT, DCM.RESET]:
             status = self._work_queues[client_uid]
