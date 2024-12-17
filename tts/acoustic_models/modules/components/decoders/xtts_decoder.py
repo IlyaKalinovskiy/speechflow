@@ -5,7 +5,6 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from speechflow.utils.tensor_utils import get_mask_from_lengths
 from tts.acoustic_models.modules.common.blocks import ConvPrenet
 from tts.acoustic_models.modules.common.gpts.gpt_acoustic import GPTA
 from tts.acoustic_models.modules.common.gpts.layers.modules import make_pad_mask
@@ -20,11 +19,12 @@ __all__ = [
 
 
 class XTTSDecoderParams(DecoderParams):
-    target_audio_feat: tp.Literal["mel_spectrogram", "codes"] = "mel_spectrogram"
-    prompt_audio_feat: tp.Literal["mel_spectrogram"] = "mel_spectrogram"
+    target_audio_feat: tp.Literal["spectrogram", "ac_feat"] = "spectrogram"
+    prompt_audio_feat: tp.Literal["spectrogram"] = "spectrogram"
     n_heads: int = 8
     n_layers: int = 12
     n_tokens: tp.Optional[int] = None
+    n_levels: tp.Optional[int] = None
     p_dropout: float = 0.1
     use_prenet: bool = True
     decoder_name: tp.Literal["gpt"] = "gpt"
@@ -36,8 +36,12 @@ class XTTSDecoder(Component):
     def __init__(self, params: XTTSDecoderParams, input_dim):
         super().__init__(params, input_dim)
 
-        target_audio_feat_dim = params.get_feat_dim(params.target_audio_feat)
         prompt_audio_feat_dim = params.get_feat_dim(params.prompt_audio_feat)
+
+        if params.target_audio_feat == "ac_feat":
+            target_audio_feat_dim = None
+        else:
+            target_audio_feat_dim = params.get_feat_dim(params.target_audio_feat)
 
         self.prenet_layer = ConvPrenet(
             in_channels=input_dim,
@@ -55,7 +59,7 @@ class XTTSDecoder(Component):
             decoder_name=params.decoder_name,
         )
 
-        if params.target_audio_feat == "codes":
+        if params.target_audio_feat == "ac_feat":
             self.linear = nn.Linear(params.decoder_inner_dim, params.n_tokens + 1)
         else:
             self.linear = nn.Linear(params.decoder_inner_dim, target_audio_feat_dim)
@@ -65,6 +69,22 @@ class XTTSDecoder(Component):
     @property
     def output_dim(self):
         return self.params.decoder_output_dim
+
+    def _get_response(self, inputs):
+        _response = getattr(inputs.model_inputs, self.params.target_audio_feat)
+        _response_lens = getattr(
+            inputs.model_inputs, f"{self.params.target_audio_feat}_lengths"
+        )
+
+        if self.params.target_audio_feat == "ac_feat":
+            if self.params.n_levels:
+                _response = _response[:, :, : self.params.n_levels]
+
+            _shape = _response.shape
+            _response = _response.reshape(_shape[0], -1).unsqueeze(-1)
+            _response_lens = _response_lens * _shape[-1]
+
+        return _response, _response_lens
 
     def forward_step(self, inputs: VarianceAdaptorOutput) -> DecoderOutput:  # type: ignore
         x, x_lens, x_mask = self.get_content_and_mask(inputs)
@@ -77,13 +97,7 @@ class XTTSDecoder(Component):
         _prompt_audio = getattr(_prompt, self.params.prompt_audio_feat)
         _prompt_audio_lens = getattr(_prompt, f"{self.params.prompt_audio_feat}_lengths")
 
-        _response = getattr(inputs.model_inputs, self.params.target_audio_feat)
-        _response_lens = getattr(
-            inputs.model_inputs, f"{self.params.target_audio_feat}_lengths"
-        )
-
-        if self.params.target_audio_feat == "codes":
-            _response = _response[:, :, :1]
+        _response, _response_lens = self._get_response(inputs)
 
         output = self.gpt(
             prompt_text=x,
@@ -99,17 +113,17 @@ class XTTSDecoder(Component):
         logits = self.linear(pred)
 
         targets = output.target.squeeze(1)
-        targets_mask = make_pad_mask(output.target_lens - 1)
+        targets_mask = make_pad_mask(output.target_lens - 1).unsqueeze(-1)
 
         if self.gpt.is_use_continuous_resp:
-            logits = logits.masked_fill(targets_mask.unsqueeze(-1), 0)
-            targets = targets.masked_fill(targets_mask.unsqueeze(-1), 0)
+            logits = logits.masked_fill(targets_mask, 0)
+            targets = targets.masked_fill(targets_mask, 0)
             loss = F.l1_loss(logits, targets)
         else:
             targets = targets.masked_fill(targets_mask, self._ignore_index)
             loss = F.cross_entropy(
                 logits.transpose(1, 2),
-                targets,
+                targets.squeeze(-1),
                 ignore_index=self._ignore_index,  # internal cuda error, it's pytorch bug
                 reduction="sum",
             ) / torch.sum(_response_lens)
@@ -118,48 +132,50 @@ class XTTSDecoder(Component):
 
         return DecoderOutput.copy_from(inputs).set_content(logits, _response_lens + 1)
 
-    def generate_step(self, inputs: VarianceAdaptorOutput) -> DecoderOutput:  # type: ignore
-        content = self.get_content(inputs)[0]
-        content_lengths = self.get_content_lengths(inputs)[0]
-        content_mask = get_mask_from_lengths(content_lengths)
+    def inference_step(self, inputs: VarianceAdaptorOutput, **kwargs) -> DecoderOutput:  # type: ignore
+        x, x_lens, x_mask = self.get_content_and_mask(inputs)
+        x = self.prenet_layer(x.transpose(1, -1)).transpose(1, -1)
 
-        if self.params.prior_decoder_name:
-            prior = self.prior_decoder.encode(content, content_lengths, inputs)
-            prior = self.prior_decoder.proj(prior)
-        else:
-            prior = self.prior_decoder(content)
-
-        pad = 16 - prior.shape[1] % 16
-        if pad != 16:
-            prior = F.pad(prior.transpose(2, 1), (0, pad), value=-4).transpose(1, 2)
-            content_mask = F.pad(content_mask | True, (0, pad), value=True)
-
-        if self.params.condition:
-            cond = self.get_condition(inputs, self.params.condition)
-            cond = cond.squeeze(1)
-        else:
-            cond = None
-
-        if self.params.speaker_emb_dim > 0:
-            spks = inputs.embeddings["speaker"]
-        else:
-            spks = None
-
-        n_timesteps = self.params.n_timesteps
-        temperature = self.params.temperature
-
-        decoder_outputs = self.decoder(
-            prior.transpose(2, 1),
-            content_mask,
-            n_timesteps,
-            temperature,
-            spks=spks,
-            cond=cond,
+        _prompt_audio = getattr(inputs.model_inputs, self.params.prompt_audio_feat)
+        _prompt_audio_lens = getattr(
+            inputs.model_inputs, f"{self.params.prompt_audio_feat}_lengths"
         )
 
-        content = decoder_outputs.transpose(2, 1)
-        if pad != 16:
-            content = content[:, :-pad, :]
+        _response = -4 * torch.ones((1, 1, _prompt_audio.shape[-1])).to("cuda:0")
+        _response_lens = torch.LongTensor([1]).to("cuda:0")
+
+        _response = getattr(inputs.model_inputs, self.params.target_audio_feat)
+        _response_lens = getattr(
+            inputs.model_inputs, f"{self.params.target_audio_feat}_lengths"
+        )
+
+        _response = _response[:, :150, :]
+        _response_lens = 0 * _response_lens + 150
+
+        if self.params.target_audio_feat == "ac_feat":
+            _response = _response[:, :, :1]
+
+        _result = [_response]
+        for i in range(200):
+            output = self.gpt(
+                prompt_text=x * 0,
+                prompt_text_lens=x_lens,
+                prompt_audio=0 * _prompt_audio,
+                prompt_audio_lens=_prompt_audio_lens,
+                response=_response,
+                response_lens=_response_lens,
+            )
+
+            start_resp = output.prompt_lens.max()
+            pred = output.emb[:, start_resp:-1]
+            logits = self.linear(pred)
+
+            _result.append(logits[:, -1, :].unsqueeze(1))
+            _response = torch.cat([_response, _result[-1]], dim=1)
+            _response_lens += 1
+
+        content = torch.cat(_result, dim=1)
+        content_lengths = _response_lens
 
         outputs = DecoderOutput.copy_from(inputs).set_content(content, content_lengths)
         return outputs

@@ -102,7 +102,7 @@ if __name__ == "__main__":
     tts = TTSEvaluationInterface(
         tts_ckpt_path=tts_model_path,
         prosody_ckpt_path=prosody_model_path,
-        device=device,
+        device_model=device,
     )
     voc = VocoderEvaluationInterface(
         ckpt_path=voc_model_path,

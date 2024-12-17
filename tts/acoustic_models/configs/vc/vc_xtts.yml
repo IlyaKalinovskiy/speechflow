@@ -65,6 +65,9 @@ model:
     decoder_type: XTTSDecoder
     decoder_inner_dim: 512
     decoder_params:
+      target_audio_feat: ac_feat
+      n_tokens: 1024
+      n_levels: 4
       n_heads: 4
       n_layers: 12
       use_prenet: true

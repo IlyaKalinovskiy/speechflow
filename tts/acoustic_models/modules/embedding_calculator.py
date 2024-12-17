@@ -179,9 +179,11 @@ class EmbeddingCalculator(BaseTorchModel):
         return biometric_embedding
 
     def get_ling_feat(self, inputs: TTSForwardInput) -> tp.Optional[torch.Tensor]:
+        if inputs.ling_feat is None:
+            return None
+
         proj_idx = 0
         assembled_ling_emb = []
-        assert inputs.ling_feat
         for feat in inputs.ling_feat.to_dict().values():
             if feat is not None:
                 if (

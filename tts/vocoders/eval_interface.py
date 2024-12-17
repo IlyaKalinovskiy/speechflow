@@ -222,9 +222,10 @@ class VocoderEvaluationInterface(VocoderLoader):
             collated.speech_quality_emb = ref_collated.speech_quality_emb
             collated.additional_fields = ref_collated.additional_fields
 
-        if self.model.__class__.__name__ == "Vocos":
+        if collated.speech_quality_emb is not None:
             collated.speech_quality_emb = collated.speech_quality_emb * 0 + 5
 
+        if self.model.__class__.__name__ == "Vocos":
             _input = VocoderForwardInput(
                 spectrogram=collated.spectrogram,
                 spectrogram_lengths=collated.spectrogram_lengths,

@@ -113,6 +113,8 @@ class EmbeddingParams(BaseTorchModelParams):
                 self.average_emb_dim = dim
 
     def get_feat_dim(self, feat_name: str) -> int:
+        if feat_name == "spectrogram":
+            feat_name = "mel_spectrogram"
         if hasattr(self, f"{feat_name}_dim"):
             return getattr(self, f"{feat_name}_dim")
         else:

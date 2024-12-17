@@ -60,11 +60,11 @@ class GPTA(nn.Module):
                 f"dim_prompt_text: {dim_prompt_text}; num_tokens_text: {num_tokens_text}",
             ]
         )
-        assert bool(dim_prompt_audio) != bool(num_tokens_audio), "\n".join(
+        assert bool(dim_response) != bool(num_tokens_audio), "\n".join(
             [
-                "one and only one of variable 'dim_prompt_audio' or 'num_tokens_audio'"
+                "one and only one of variable 'dim_response' or 'num_tokens_audio'"
                 "should be defined, but received",
-                f"dim_prompt_audio: {dim_prompt_audio}; \
+                f"dim_response: {dim_response}; \
                     num_tokens_audio: {num_tokens_audio}",
             ]
         )
@@ -181,16 +181,17 @@ class GPTA(nn.Module):
     def _get_service_tokens(self):
         """begin of text begin of audio begin of response."""
 
-        return nn.ParameterDict(
-            {
-                "eos": nn.Parameter(
-                    torch.zeros(1, 1, self._dim_response), requires_grad=False
-                ),
-                "bot": nn.Parameter(torch.randn(1, 1, self._dim_hidden)),
-                "boa": nn.Parameter(torch.randn(1, 1, self._dim_hidden)),
-                "bor": nn.Parameter(torch.randn(1, 1, self._dim_hidden)),
-            }
-        )
+        tokens = nn.ParameterDict()
+        tokens["bot"] = nn.Parameter(torch.randn(1, 1, self._dim_hidden))
+        tokens["boa"] = nn.Parameter(torch.randn(1, 1, self._dim_hidden))
+        tokens["bor"] = nn.Parameter(torch.randn(1, 1, self._dim_hidden))
+
+        if self._dim_response is not None:
+            tokens["eos"] = nn.Parameter(
+                torch.zeros(1, 1, self._dim_response), requires_grad=False
+            )
+
+        return tokens
 
     def _get_pos_embs(self):
         return nn.ModuleDict(
@@ -260,8 +261,8 @@ class GPTA(nn.Module):
             eos = torch.repeat_interleave(eos_token, batch_size, 0)
             resp = torch.cat([resp, eos], dim=1)
         else:
-            resp = resp.masked_fill(resp_mask, value=self._num_tokens_response)
-            resp = F.pad(resp, (0, 0, 0, 1), value=self._num_tokens_response)
+            resp = resp.masked_fill(resp_mask, value=self._num_tokens_audio)
+            resp = F.pad(resp, (0, 0, 0, 1), value=self._num_tokens_audio)
 
         resp_emb = self.emb_response(resp)
         resp_emb = self.prenet_response(resp_emb)

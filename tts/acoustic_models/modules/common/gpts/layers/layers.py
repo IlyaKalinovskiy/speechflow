@@ -36,9 +36,8 @@ class MultiEmbedding(nn.Module):
         self.weight = nn.Parameter(torch.randn(max_n_levels, n_tokens, token_dim))
 
     def forward(self, x: Tensor) -> Tensor:
-        x = F.one_hot(x, num_classes=self.n_tokens).to(self.weight)
+        x = F.one_hot(x.transpose(1, -1), num_classes=self.n_tokens).to(self.weight)
         x = torch.einsum("l k d, n l s k -> n s d", self.weight, x)
-
         return x
 
 
