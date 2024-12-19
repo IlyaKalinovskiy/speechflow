@@ -26,7 +26,7 @@ class XTTSDecoderParams(DecoderParams):
     n_tokens: tp.Optional[int] = None
     n_levels: tp.Optional[int] = None
     p_dropout: float = 0.1
-    use_prenet: bool = True
+    use_prenet: bool = False
     decoder_name: tp.Literal["gpt"] = "gpt"
 
 
@@ -113,7 +113,7 @@ class XTTSDecoder(Component):
         logits = self.linear(pred)
 
         targets = output.target.squeeze(1)
-        targets_mask = make_pad_mask(output.target_lens - 1).unsqueeze(-1)
+        targets_mask = make_pad_mask(output.target_lens).unsqueeze(-1)
 
         if self.gpt.is_use_continuous_resp:
             logits = logits.masked_fill(targets_mask, 0)
@@ -141,26 +141,29 @@ class XTTSDecoder(Component):
             inputs.model_inputs, f"{self.params.prompt_audio_feat}_lengths"
         )
 
-        _response = -4 * torch.ones((1, 1, _prompt_audio.shape[-1])).to("cuda:0")
-        _response_lens = torch.LongTensor([1]).to("cuda:0")
+        # _response = -4 * torch.ones((1, 1, _prompt_audio.shape[-1])).to(self.linear.weight.device)
+        # _response_lens = torch.LongTensor([1]).to(self.linear.weight.device)
+        #
+        # _response = getattr(inputs.model_inputs, self.params.target_audio_feat)
+        # _response_lens = getattr(
+        #     inputs.model_inputs, f"{self.params.target_audio_feat}_lengths"
+        # )
+        #
+        # _response = _response[:, :150, :]
+        # _response_lens = 0 * _response_lens + 150
 
-        _response = getattr(inputs.model_inputs, self.params.target_audio_feat)
-        _response_lens = getattr(
-            inputs.model_inputs, f"{self.params.target_audio_feat}_lengths"
-        )
+        # if self.params.target_audio_feat == "ac_feat":
+        #     _response = _response[:, :, :1]
 
-        _response = _response[:, :150, :]
-        _response_lens = 0 * _response_lens + 150
-
-        if self.params.target_audio_feat == "ac_feat":
-            _response = _response[:, :, :1]
+        _response = torch.zeros((1, 4, 1)).long().to(self.linear.weight.device)
+        _response_lens = torch.LongTensor([4]).to(self.linear.weight.device)
 
         _result = [_response]
-        for i in range(200):
+        for i in range(150):
             output = self.gpt(
-                prompt_text=x * 0,
+                prompt_text=x,
                 prompt_text_lens=x_lens,
-                prompt_audio=0 * _prompt_audio,
+                prompt_audio=_prompt_audio,
                 prompt_audio_lens=_prompt_audio_lens,
                 response=_response,
                 response_lens=_response_lens,
@@ -170,9 +173,15 @@ class XTTSDecoder(Component):
             pred = output.emb[:, start_resp:-1]
             logits = self.linear(pred)
 
-            _result.append(logits[:, -1, :].unsqueeze(1))
+            if self.gpt.is_use_continuous_resp:
+                _result.append(logits[:, -1, :].unsqueeze(1))
+            else:
+                ids = F.log_softmax(logits, dim=-1).argmax(dim=-1)
+                _result.append(ids[:, -1].unsqueeze(-1).unsqueeze(-1))
+
             _response = torch.cat([_response, _result[-1]], dim=1)
             _response_lens += 1
+            print(_response)
 
         content = torch.cat(_result, dim=1)
         content_lengths = _response_lens

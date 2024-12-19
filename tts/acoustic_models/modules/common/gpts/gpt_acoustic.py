@@ -296,7 +296,7 @@ class GPTA(nn.Module):
         return concated, lens
 
     def padding_mask(self, lens: tp.List[torch.Tensor], device):
-        masks = list()
+        masks = []
         for _len in lens:
             masks.append(make_pad_mask(_len).to(device))
 
@@ -388,6 +388,6 @@ class GPTA(nn.Module):
             response=response,
             response_lens=response_lens,
             target=target,
-            target_lens=response_lens,
+            target_lens=response_lens - 1,
         )
         return output
