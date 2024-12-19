@@ -135,9 +135,7 @@ class GPTA(nn.Module):
                 is_channel_first=False,
             )
         else:
-            self.prenet_response = modules.PrenetText(
-                dim_model=self._dim_hidden, is_enable=self._use_prenet
-            )
+            self.prenet_response = nn.Identity()
 
         if self._decoder_name == "gpt":
             decoder = GPTDecoder

@@ -11,7 +11,7 @@ batch:
   type: TTSBatchProcessorWithPrompt
 
 data_loaders:
-  batch_size: { default: 32, debug: 4 }
+  batch_size: { default: 16, debug: 4 }
   epoch_len: { train: 10000, test: ~ }
   min_batch_size: 4
   min_prefetch_factor: { default: 50, debug: 1 }
@@ -67,7 +67,7 @@ model:
     decoder_params:
       target_audio_feat: ac_feat
       n_tokens: 1024
-      n_levels: 1
+      n_levels: 4
       n_heads: 4
       n_layers: 12
       use_prenet: true
