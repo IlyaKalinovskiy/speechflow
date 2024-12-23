@@ -132,7 +132,7 @@ class SignalProcessor(BaseAudioProcessor):
                 ds.additional_fields["spec_chunk"] = np.asarray(
                     (int(_begin * _s), round(_end * _s))
                 )
-                assert _len == np.diff(ds.additional_fields["spec_chunk"])
+                assert _len == int(np.diff(ds.additional_fields["spec_chunk"]))
 
         dura = ds.audio_chunk.duration
 

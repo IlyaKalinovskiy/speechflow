@@ -51,7 +51,7 @@ class DataProcessingError(RuntimeError):
 
 
 class DumpProcessor:
-    @check_path(assert_file_exists=True)
+    @check_path
     def __init__(
         self,
         data_root: tp_PATH,
@@ -59,6 +59,7 @@ class DumpProcessor:
         mode: str = "file_path",
         fields: tp.Optional[tp.Union[str, tp.List[str]]] = None,
         functions: tp.Optional[tp.Union[str, tp.List[str]]] = None,
+        full_dump: bool = False,
         track_broken_samples: bool = False,
         skip_samples_without_dump: bool = False,
         update_functions: tp.Optional[tp.Union[str, tp.List[str]]] = None,
@@ -72,6 +73,7 @@ class DumpProcessor:
         self.data_root = data_root
         self.folder_path = folder_path
         self.mode = mode
+        self.full_dump = full_dump
         self.track_broken_samples = track_broken_samples
         self.skip_samples_without_dump = skip_samples_without_dump
 
@@ -156,13 +158,16 @@ class DumpProcessor:
         hash_params: str,
     ):
         file_path = self._get_filename(sample)
+        if self.full_dump and file_path.exists():
+            return True
+
         preloaded_data = self.preproc_functions_storage.get(file_path)
         preloaded_data_key = f"{func_name}|{hash_params}"
         if (
             isinstance(preloaded_data, tp.Mapping)
             and preloaded_data.get(preloaded_data_key) is not None
         ):
-            saved_fields = preloaded_data.get(preloaded_data_key, {})
+            saved_fields = preloaded_data[preloaded_data_key]
             if all(field in saved_fields for field in func_fields):
                 sample.update(saved_fields)
                 return True
@@ -176,9 +181,9 @@ class DumpProcessor:
     ) -> bool:
         func_name, func_fields, hash_params = self.get_name_and_fields(fn)
 
-        if func_name in self.preproc_functions and self._load_preproc_data(
-            sample, func_name, func_fields, hash_params
-        ):
+        if (
+            self.full_dump or func_name in self.preproc_functions
+        ) and self._load_preproc_data(sample, func_name, func_fields, hash_params):
             return False
 
         if func_fields and all(
@@ -226,13 +231,17 @@ class DumpProcessor:
                 continue
 
             dumped_fields = dump_data["fields"]
+
+            sample.update(dumped_fields)
+
+            if self.full_dump:
+                continue
+
             if len(dumped_fields) != len(self.fields):
                 message = (
                     f"Not all fields are calculated for {sample.file_path.as_posix()}!"
                 )
                 LOGGER.debug(trace(self, message=message))
-
-            sample.update(dumped_fields)
 
             dumped_functions = dump_data.get("functions", None)
             if dumped_functions:
@@ -258,16 +267,17 @@ class DumpProcessor:
             if file_path.exists() and not self.update_functions:
                 continue
 
-            dump_data = {
-                k: v
-                for k, v in sample.to_dict().items()
-                if k in self.fields and v is not None
-            }
-            if len(dump_data) != len(self.fields):
-                message = (
-                    f"Not all fields are calculated for {sample.file_path.as_posix()}!"
-                )
-                LOGGER.debug(trace(self, message=message))
+            if self.full_dump:
+                dump_data = sample.to_dict()
+            else:
+                dump_data = {
+                    k: v
+                    for k, v in sample.to_dict().items()
+                    if k in self.fields and v is not None
+                }
+                if len(dump_data) != len(self.fields):
+                    message = f"Not all fields are calculated for {sample.file_path.as_posix()}!"
+                    LOGGER.debug(trace(self, message=message))
 
             all_dump_data = {"fields": dump_data}
             if self.preproc_functions_storage:

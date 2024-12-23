@@ -114,19 +114,9 @@ class StyleEncoder(Component):
             x = self.get_condition(
                 model_inputs, self.params.source, average_by_time=False
             )
-
-        if (
-            model_inputs.spectrogram is not None
-            and x.shape[1] == model_inputs.spectrogram.shape[1]
-        ):
-            x_lengths = model_inputs.spectrogram_lengths
-        elif (
-            model_inputs.ssl_feat is not None
-            and x.shape[1] == model_inputs.ssl_feat.shape[1]
-        ):
-            x_lengths = model_inputs.ssl_feat_lengths
-        else:
-            x_lengths = torch.LongTensor([x.shape[1]] * x.shape[0]).to(x.device)
+            x_lengths = model_inputs.get_feat_lengths(self.params.source)
+            if x_lengths is None:
+                x_lengths = torch.LongTensor([x.shape[1]] * x.shape[0]).to(x.device)
 
         if self.params.base_encoder_type == "SimpleStyle":
             assert x.shape[1] == 1, ValueError(
@@ -138,11 +128,6 @@ class StyleEncoder(Component):
             )
 
         if self.params.random_chunk and x.shape[1] > 1:
-            name = f"{self.params.source.replace('linear_', '')}_lengths"
-            name = name.replace("prompt.", "")
-            if hasattr(model_inputs, name):
-                x_lengths = getattr(model_inputs, name)
-
             chunk, chunk_lengths = self.get_random_chunk(
                 x, x_lengths, self.params.min_spec_len, self.params.max_spec_len
             )

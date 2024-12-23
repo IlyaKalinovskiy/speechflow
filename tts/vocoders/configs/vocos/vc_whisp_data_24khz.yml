@@ -131,9 +131,9 @@ preproc:
       as_int: true
     voice_bio:
       type: VoiceBiometricProcessor
-      model_type: wespeaker
-      max_audio_duration: 5
-      random_crop: true
+      model_type: speechbrain
+      # max_audio_duration: 5
+      # random_crop: true
     speech_quality:
       type: SpeechQualityAssessment
     ssl:
@@ -222,6 +222,13 @@ collate:
 processor:
   type: DataProcessor
   output_collated_only: true
+  dump:
+    default: ~
+    debug:
+      data_root: *data_root
+      folder_path: !join [*data_root, *dump_folder]
+      mode: file_path
+      full_dump: true
 
 sampler:
   train:

@@ -127,6 +127,11 @@ class DAC(BaseAudioCodecModel):
     def decode(self, z: torch.Tensor):
         return self.model.decode(z)
 
+    @torch.no_grad()
+    def decode_from_codes(self, codes: torch.Tensor):
+        z, _, _ = self.model.quantizer.from_codes(codes)
+        return self.decode(z).squeeze(1)
+
 
 class VocosAC(BaseAudioCodecModel):
     def __init__(

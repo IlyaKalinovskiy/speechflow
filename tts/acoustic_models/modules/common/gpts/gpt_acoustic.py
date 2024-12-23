@@ -246,30 +246,35 @@ class GPTA(nn.Module):
         self,
         resp: tp.Optional[torch.Tensor] = None,
         resp_lens: tp.Optional[torch.Tensor] = None,
+        **kwargs,
     ):
         if resp is None:
-            return None, None, None
+            batch_size = kwargs.get("batch_size")
+            resp_emb = torch.repeat_interleave(self.service_tokens["bor"], batch_size, 0)
+            resp_lens = torch.ones((batch_size,)).long().to(resp_emb.device)
+            return resp_emb, resp_lens, None
 
         batch_size = resp.shape[0]
 
-        resp_mask = make_pad_mask(resp_lens).unsqueeze(-1)
-        if self.is_use_continuous_resp:
-            eos_token = self.eos_value + self.service_tokens["eos"]
-            resp = resp.masked_fill(resp_mask, value=self.eos_value)
-            eos = torch.repeat_interleave(eos_token, batch_size, 0)
-            resp = torch.cat([resp, eos], dim=1)
-        else:
-            resp = resp.masked_fill(resp_mask, value=self._num_tokens_audio)
-            resp = F.pad(resp, (0, 0, 0, 1), value=self._num_tokens_audio)
+        if self.training:
+            resp_mask = make_pad_mask(resp_lens).unsqueeze(-1)
+            resp_lens = resp_lens + 1  # plus end of response
+
+            if self.is_use_continuous_resp:
+                eos_token = self.eos_value + self.service_tokens["eos"]
+                resp = resp.masked_fill(resp_mask, value=self.eos_value)
+                eos = torch.repeat_interleave(eos_token, batch_size, 0)
+                resp = torch.cat([resp, eos], dim=1)
+            else:
+                resp = resp.masked_fill(resp_mask, value=self._num_tokens_audio)
+                resp = F.pad(resp, (0, 0, 0, 1), value=self._num_tokens_audio)
 
         resp_emb = self.emb_response(resp)
         resp_emb = self.prenet_response(resp_emb)
 
         bor = torch.repeat_interleave(self.service_tokens["bor"], batch_size, 0)
         resp_emb = torch.cat([bor, resp_emb], dim=1)
-
         resp_lens = resp_lens + 1  # plus stop token
-        resp_lens = resp_lens + 1  # plus end of response
 
         return resp_emb, resp_lens, resp
 
@@ -350,7 +355,7 @@ class GPTA(nn.Module):
         prompt, _ = self.positional_encoding["prompt"](prompt)
 
         response, response_lens, target = self.prepare_response(
-            resp=response, resp_lens=response_lens
+            resp=response, resp_lens=response_lens, batch_size=prompt.shape[0]
         )
 
         padding_lens = [prompt_lens]

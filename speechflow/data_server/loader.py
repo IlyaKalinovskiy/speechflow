@@ -280,7 +280,12 @@ class DataLoader:
             LOGGER.error(trace(self, e))
 
     def next_batch(self, sleep: float = 0, step: int = 3) -> Batch:
-        if len(self._batch_queue) == 0:
+        if sleep > 60:
+            raise RuntimeError(
+                f"DataServer stopped responding for {self.subset_name} DataLoader!"
+            )
+
+        if not self._batch_queue:
             self._is_stop_iteration()
 
             assert (
@@ -300,17 +305,15 @@ class DataLoader:
             if sleep > 0 and sleep % 12 == 0 and self.non_stop:
                 self.abort_processing()
 
-            elif sleep > 60:
-                raise RuntimeError(
-                    f"DataServer stopped responding for {self.subset_name} DataLoader!"
-                )
-
             sleep += 0.5 if sleep < step else step
 
             Profiler.sleep(sleep)
             return self.next_batch(sleep)
 
-        batch = self._batch_queue.popleft()
+        try:
+            batch = self._batch_queue.popleft()
+        except IndexError:
+            batch = self.next_batch(sleep + 0.5)
 
         if self.prefetch_on_gpu and len(self._batch_queue) > 0:
             try:

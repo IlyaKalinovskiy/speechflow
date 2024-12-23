@@ -4,6 +4,7 @@ import torch
 
 from torch import nn
 from torch.nn import functional as F
+from tqdm import tqdm
 
 from tts.acoustic_models.modules.common.blocks import ConvPrenet
 from tts.acoustic_models.modules.common.gpts.gpt_acoustic import GPTA
@@ -132,7 +133,7 @@ class XTTSDecoder(Component):
 
         return DecoderOutput.copy_from(inputs).set_content(logits, _response_lens + 1)
 
-    def inference_step(self, inputs: VarianceAdaptorOutput, **kwargs) -> DecoderOutput:  # type: ignore
+    def inference_step(self, inputs: VarianceAdaptorOutput, max_steps: int = 1000, **kwargs) -> DecoderOutput:  # type: ignore
         x, x_lens, x_mask = self.get_content_and_mask(inputs)
         x = self.prenet_layer(x.transpose(1, -1)).transpose(1, -1)
 
@@ -155,11 +156,10 @@ class XTTSDecoder(Component):
         # if self.params.target_audio_feat == "ac_feat":
         #     _response = _response[:, :, :1]
 
-        _response = torch.zeros((1, 4, 1)).long().to(self.linear.weight.device)
-        _response_lens = torch.LongTensor([4]).to(self.linear.weight.device)
-
-        _result = [_response]
-        for i in range(150):
+        _response = None
+        _response_lens = None
+        _result = []
+        for _ in tqdm(range(max_steps * self.params.n_levels), desc="GPT generation"):
             output = self.gpt(
                 prompt_text=x,
                 prompt_text_lens=x_lens,
@@ -169,20 +169,27 @@ class XTTSDecoder(Component):
                 response_lens=_response_lens,
             )
 
-            start_resp = output.prompt_lens.max()
-            pred = output.emb[:, start_resp:-1]
-            logits = self.linear(pred)
+            _start_resp = output.prompt_lens.max()
+            _pred = output.emb[:, _start_resp:]
+            _logits = self.linear(_pred)
 
             if self.gpt.is_use_continuous_resp:
-                _result.append(logits[:, -1, :].unsqueeze(1))
+                _result.append(_logits[:, -1, :].unsqueeze(1))
             else:
-                ids = F.log_softmax(logits, dim=-1).argmax(dim=-1)
+                ids = _logits.argmax(dim=-1)
                 _result.append(ids[:, -1].unsqueeze(-1).unsqueeze(-1))
 
-            _response = torch.cat([_response, _result[-1]], dim=1)
-            _response_lens += 1
-            print(_response)
+            if int(_result[-1]) == 1024:
+                break
 
+            if _response is None:
+                _response = _result[-1]
+                _response_lens = torch.ones((_logits.shape[0],)).long().to(_logits.device)
+            else:
+                _response = torch.cat([_response, _result[-1]], dim=1)
+                _response_lens += 1
+
+        _result = _result[: self.params.n_levels * (len(_result) // self.params.n_levels)]
         content = torch.cat(_result, dim=1)
         content_lengths = _response_lens
 

@@ -11,7 +11,7 @@ batch:
   type: VocoderBatchProcessor
 
 data_loaders:
-  batch_size: { default: 8, debug: 2 }
+  batch_size: { default: 6, debug: 2 }
   epoch_len: { train: 10000, test: ~ }
   min_batch_size: 2
   min_prefetch_factor: { default: 50, debug: 1 }
@@ -78,8 +78,8 @@ model:
 
         ssl_feat_dim: 1024
 
-        speaker_emb_dim: 256
-        speaker_emb_proj_dim: 128
+        speaker_emb_dim: 192
+        speaker_emb_proj_dim: 192
 
         feat_encoder_type: RNNEncoder
         feat_encoder_num_layers: 2
@@ -137,13 +137,13 @@ model:
       inner_dim: 512
       # num_layers: 4
       # intermediate_dim: 1536
-      # condition_dim: 256
+      # condition_dim: 320
 
   head:
     class_name: NSFiSTFTHiFiGANHead
     init_args:
       input_dim: 512
-      condition_dim: 256
+      condition_dim: 320
       upsample_rates: [10, 6]  # hop=240
       upsample_kernel_sizes: [20, 12]
       istft_n_fft: 20
