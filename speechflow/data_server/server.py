@@ -54,7 +54,7 @@ class DataServer(ProcessWorker):
         server_addr: tp.Optional[str] = None,
         synchronize_loaders: bool = False,
     ):
-        ProcessWorker.__init__(self, daemon=True)
+        ProcessWorker.__init__(self)
         self._addr_for_clients = (
             server_addr if server_addr else f"127.0.0.1:{find_free_port()}"
         )

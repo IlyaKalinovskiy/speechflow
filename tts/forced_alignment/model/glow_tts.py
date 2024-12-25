@@ -27,7 +27,7 @@ class GlowTTSParams(EmbeddingParams):
 
     flow_type: str = "GlowTTS"  # GlowTTS
 
-    audio_feat: str = "mel"  # mel, ssl
+    audio_feat: tp.Literal["spectrogram", "ssl_feat"] = "spectrogram"
     audio_feat_size: int = 80
 
     encoder_embedding_dim: int = 128
@@ -215,30 +215,35 @@ class GlowTTS(EmbeddingCalculator):
         l_length = torch.sum((logw - logw_) ** 2) / torch.sum(x_lengths)
         return l_mle, l_length
 
+    def _get_audio_feat(self, inputs):
+        if self.params.audio_feat == "spectrogram":
+            y = inputs.spectrogram
+            y_lens = inputs.spectrogram_lengths
+        elif self.params.audio_feat == "ssl_feat":
+            y = inputs.ssl_feat
+            y_lens = inputs.ssl_feat_lengths
+        else:
+            raise ValueError(f"{self.params.audio_feat} is not implemented.")
+
+        return y.transpose(1, 2), y_lens
+
     def forward(self, inputs: AlignerForwardInput, mas_correction: bool = False) -> AlignerForwardOutput:  # type: ignore
         x = inputs.transcription
         lang_id = inputs.lang_id
         text_lengths = inputs.input_lengths
 
-        if self.params.audio_feat == "mel":
-            y = inputs.spectrogram
-        elif self.params.audio_feat == "ssl":
-            y = inputs.ssl_feat
-        else:
-            raise ValueError(f"{self.params.audio_feat} is not implemented.")
-
-        y = y.transpose(1, 2)
-        output_lengths = inputs.output_lengths
+        y, y_lens = self._get_audio_feat(inputs)
 
         lang_emb = self.lang_emb(lang_id)
         speaker_emb = self.get_speaker_embedding(inputs)  # type: ignore
         ling_feat_emb = self.get_ling_feat(inputs)  # type: ignore
+        plbert_feat_emb = self.get_plbert_feat(inputs)  # type: ignore
 
-        x_lengths, y_lengths = text_lengths.data, output_lengths.data
+        x_lengths, y_lengths = text_lengths.data, y_lens.data
         x, x_m, x_logs, logw, x_mask = self.encoder(
             x,
             lang_emb,
-            ling_feat_emb,
+            ling_feat_emb + plbert_feat_emb,
             x_lengths,
             g=speaker_emb,
             sil_mask=inputs.ling_feat.sil_mask,
@@ -272,11 +277,9 @@ class GlowTTS(EmbeddingCalculator):
             )
 
             try:
-                attn_hard = binarize_attention(
-                    attn_soft, inputs.input_lengths, inputs.output_lengths
-                )
+                attn_hard = binarize_attention(attn_soft, inputs.input_lengths, y_lens)
                 aligning_path = attn_hard.squeeze(1)
-            except Exception as e:
+            except Exception:  # type: ignore
                 aligning_path = attn.squeeze(1).transpose(1, 2)
 
             additional_content = {
@@ -292,6 +295,7 @@ class GlowTTS(EmbeddingCalculator):
             mle_loss=l_mle,
             duration_loss=l_length,
             additional_content=additional_content,
+            output_lengths=y_lens,
         )
         return output
 
@@ -301,20 +305,12 @@ class GlowTTS(EmbeddingCalculator):
         x = inputs.transcription
         text_lengths = inputs.input_lengths
 
-        if self.params.audio_feat == "mel":
-            y = inputs.spectrogram
-        elif self.params.audio_feat == "ssl":
-            y = inputs.ssl_feat
-        else:
-            raise ValueError(f"{self.params.audio_feat} is not implemented.")
-
-        y = y.transpose(1, 2)
-        output_lengths = inputs.output_lengths
+        y, y_lens = self._get_audio_feat(inputs)
 
         speaker_emb = self.get_speaker_embedding(inputs)  # type: ignore
         ling_feat_emb = self.get_ling_feat(inputs)  # type: ignore
 
-        x_lengths, y_lengths = text_lengths.data, output_lengths.data
+        x_lengths, y_lengths = text_lengths.data, y_lens.data
         x_m, x_logs, logw, x_mask = self.encoder(
             x, ling_feat_emb, x_lengths, g=speaker_emb
         )

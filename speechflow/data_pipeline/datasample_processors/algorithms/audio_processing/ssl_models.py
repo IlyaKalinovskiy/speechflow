@@ -156,34 +156,8 @@ class Wav2Vec(BaseSSLModel):
         vocab_path: tp.Optional[tp_PATH],
         kmeans_path: tp.Optional[tp_PATH],
     ):
-        self.model = transformers.Wav2Vec2Model.from_pretrained(
-            model_name,
-            attention_dropout=0.01,
-            hidden_dropout=0.01,
-            feat_proj_dropout=0.0,
-            mask_time_prob=0.05,
-            layerdrop=0.01,
-        )
-        self.feature_extractor = transformers.Wav2Vec2FeatureExtractor(
-            feature_size=1,
-            sampling_rate=self.sample_rate,
-            padding_value=0.0,
-            do_normalize=True,
-            return_attention_mask=True,
-        )
-        self.processor = transformers.Wav2Vec2Processor(
-            feature_extractor=self.feature_extractor,
-            tokenizer=transformers.PreTrainedTokenizerBase(),
-        )
-
-        if pretrain_path is not None:
-            checkpoint = torch.load(pretrain_path, map_location="cpu")
-            state_dict = {
-                k.replace("model.model.", ""): v
-                for k, v in checkpoint["state_dict"].items()
-                if "lm_head" not in k and "phoneme_proj" not in k
-            }
-            self.model.load_state_dict(state_dict, strict=True)
+        self.model = transformers.Wav2Vec2ForCTC.from_pretrained(model_name)
+        self.processor = transformers.Wav2Vec2Processor.from_pretrained(model_name)
 
         self.model.eval()
         self.model.to(self.device)
@@ -201,23 +175,24 @@ class Wav2Vec(BaseSSLModel):
         input_values: torch.Tensor,
         level: int,
     ) -> torch.Tensor:
-        extract_features = self.model.feature_extractor(input_values)
+        model = self.model.wav2vec2
+        extract_features = model.feature_extractor(input_values)
         extract_features = extract_features.transpose(1, 2)
 
-        hidden_states, extract_features = self.model.feature_projection(extract_features)
+        hidden_states, extract_features = model.feature_projection(extract_features)
 
-        position_embeddings = self.model.encoder.pos_conv_embed(hidden_states)
+        position_embeddings = model.encoder.pos_conv_embed(hidden_states)
         hidden_states = hidden_states + position_embeddings
-        hidden_states = self.model.encoder.dropout(hidden_states)
+        hidden_states = model.encoder.dropout(hidden_states)
 
-        for layer in self.model.encoder.layers[:level]:
+        for layer in model.encoder.layers[:level]:
             layer_outputs = layer(hidden_states)
             hidden_states = layer_outputs[0]
 
         return hidden_states
 
     def get_tokens(self, ssl_feat: SSLFeatures) -> SSLFeatures:
-        if self._vocab_path is None or ssl_feat.logits is None:
+        if ssl_feat.logits is None:
             return ssl_feat
 
         logits = ssl_feat.logits
@@ -265,8 +240,7 @@ class Wav2Vec(BaseSSLModel):
         if self._feature_type == "logits":
             outputs = self.model(**processed)
             ssl_feat.encoder_feat = outputs.logits
-            if hasattr(outputs, "logits"):
-                ssl_feat.logits = outputs.logits
+            ssl_feat.logits = outputs.logits
         elif self._feature_type in ["centroids", "last_hidden_state"]:
             outputs = self.model(**processed, output_hidden_states=True)
             ssl_feat.encoder_feat = outputs.hidden_states[-1]
@@ -615,9 +589,19 @@ class KMeans:
 
 
 if __name__ == "__main__":
-    if 0:
-        from speechflow.utils.profiler import Profiler
+    from speechflow.utils.profiler import Profiler
 
+    _wav_path = get_root_dir() / "tests/data/test_audio.wav"
+    _audio_chunk = AudioChunk(_wav_path, end=3.9).load()
+
+    if 1:
+        _ssl_model = Wav2Vec(
+            model_name="facebook/wav2vec2-lv-60-espeak-cv-ft", feature_type="logits"
+        )
+        with Profiler(_ssl_model.__class__.__name__) as prof:
+            _ssl_feat = _ssl_model(_audio_chunk)
+
+    elif 0:
         _wav_path = get_root_dir() / "tests/data/test_audio.wav"
         _audio_chunk = AudioChunk(_wav_path, end=3.9).load()
 

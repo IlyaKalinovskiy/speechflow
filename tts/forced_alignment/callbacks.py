@@ -62,7 +62,7 @@ class AligningVisualisationCallback(Callback):
 
             spec_lens = inputs.output_lengths.detach().cpu().numpy().tolist()
             phonemes = list(
-                batch.collated_samples.additional_fields["symbols"][random_idx]
+                batch.collated_samples.additional_fields["transcription_text"][random_idx]
             )
             spectrogram = (
                 inputs.spectrogram[random_idx, : spec_lens[random_idx]]
@@ -79,7 +79,10 @@ class AligningVisualisationCallback(Callback):
                 .numpy()
             )
 
-            self._log_target(pl_module, trainer, spectrogram, alignment, phonemes)
+            scale = float(spec_lens[random_idx] / outputs.output_lengths[random_idx])
+            self._log_target(
+                pl_module, trainer, spectrogram, alignment, phonemes, scale=scale
+            )
             self._log_aligning(pl_module, trainer, np.transpose(alignment))
 
     @staticmethod
@@ -90,8 +93,10 @@ class AligningVisualisationCallback(Callback):
         alignment: npt.NDArray,
         phonemes: tp.List[str],
         name: str = "TargetSpectrogramWithAlignment",
+        scale: float = 1.0,
     ):
         frame_ticks = phonemes_to_frame_ticks(alignment, phonemes)
+        frame_ticks = [t * scale for t in frame_ticks]
         fig_to_plot = plot_spectrogram(spectrogram, phonemes, frame_ticks)
         data_to_log = figure_to_ndarray(fig_to_plot)
 

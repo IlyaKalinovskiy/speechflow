@@ -856,7 +856,10 @@ class MultilingualPLBert(BaseDSProcessor):
         phonemes = [
             x
             for x in phonemes
-            if x not in [TTSTextProcessor.bos, TTSTextProcessor.eos, TTSTextProcessor.sil]
+            if (
+                x not in [TTSTextProcessor.bos, TTSTextProcessor.eos]
+                and TTSTextProcessor.sil not in x
+            )
         ]
 
         num_phonemes = sum(
@@ -899,7 +902,10 @@ class MultilingualPLBert(BaseDSProcessor):
         zeros = torch.zeros((1, feat.shape[-1]))
         ds.plbert_feat = []
         for x in ds.transcription_text:
-            if x in [TTSTextProcessor.bos, TTSTextProcessor.eos, TTSTextProcessor.sil]:
+            if (
+                x in [TTSTextProcessor.bos, TTSTextProcessor.eos]
+                or TTSTextProcessor.sil in x
+            ):
                 ds.plbert_feat.append(zeros)
             else:
                 ds.plbert_feat.append(feat[phonemes_indexes[i]].sum(0, keepdims=True))

@@ -8,7 +8,7 @@ dirs:
 seed: 1234
 
 data_loaders:
-  batch_size: 32
+  batch_size: { default: 32, debug: 4 }
 
 batch:
   type: AlignerBatchProcessor
@@ -41,9 +41,10 @@ loss:
 model:
   type: GlowTTS
   params:
-    audio_feat: mel
-    audio_feat_size: 100
+    audio_feat: ssl_feat
+    audio_feat_size: 1024
     token_emb_dim: 128
+    plbert_feat_proj_dim: 128
     speaker_emb_dim: 128
     encoder_embedding_dim: 128
     inner_channels_enc: 256

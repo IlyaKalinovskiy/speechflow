@@ -93,7 +93,7 @@ class NemoAlignerLoss(BaseCriterion):
         total_loss = {"ForwardSumLoss": forward_sum_loss}
 
         if attn_hard is not None:
-            bin_scale = self._scale_scheduler_step(current_iter)
+            bin_scale = self._scale_scheduler_step(global_step)
             bin_loss = bin_scale * self.bin_loss(
                 hard_attention=attn_hard, soft_attention=attn_soft
             )

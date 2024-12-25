@@ -188,8 +188,8 @@ def main(
 if __name__ == "__main__":
     """
     example:
-        train.py -c=../configs/2stage/model_stage1.yml -cd=../configs/2stage/data_stage1.yml
-        train.py -c=../configs/2stage/model_stage2.yml -cd=../configs/2stage/data_stage2.yml
+        train.py -c=../configs/2stage/model_stage1.yml -cd=../configs/2stage/data_stage1.yml -vs debug
+        train.py -c=../configs/2stage/model_stage2.yml -cd=../configs/2stage/data_stage2.yml -vs debug
 
     """
     args = train_arguments().parse_args()

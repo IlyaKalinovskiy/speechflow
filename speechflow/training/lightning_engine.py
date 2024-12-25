@@ -36,10 +36,6 @@ class LightningEngine(pl.LightningModule):
     ):
         super().__init__()
 
-        assert int(pl.__version__[0]) >= 2, RuntimeError(
-            "pytorch_lightning==2.0.7 or higher required"
-        )
-
         self.model = model
         self.criterion = criterion
         self.batch_processor = batch_processor

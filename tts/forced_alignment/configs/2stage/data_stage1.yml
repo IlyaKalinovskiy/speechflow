@@ -13,8 +13,10 @@ data_server:
 dataset:
   subsets: [train, test]
   split_type: auto  # auto, manual
-  split_ratio: { train: [0, 1], test: [0.99, 1]}
-  max_num_samples: 0
+  split_ratio:
+    default: { train: [0, 1], test: [0.99, 1] }
+    debug: 0.5
+  max_num_samples: { default: ~, debug: 40 }
   directory_filter:
     exclude: ["!"]
 
@@ -31,7 +33,8 @@ parser:
 preproc:
   pipe: [load_audio, load_audio_segmentation,
          voice_bio, speech_quality, noise,
-         spectrogram, melscale, add_pauses_from_text, text]
+         spectrogram, melscale, add_pauses_from_text, text, plbert,
+         ssl]
   pipe_cfg:
     load_audio:
       type: SignalProcessor
@@ -71,6 +74,14 @@ preproc:
       lang: MULTILANG
       add_service_tokens: true
       ignore_ling_feat: [breath_mask]
+    plbert:
+      type: MultilingualPLBert
+    ssl:
+      type: SSLProcessor
+      ssl_type: Wav2Vec
+      ssl_params:
+        model_name: facebook/wav2vec2-lv-60-espeak-cv-ft
+        feature_type: partial
     augment_wave:
       type: WaveAugProcessor
       p: {train: 0.5, test: 0.0}
@@ -92,7 +103,7 @@ preproc:
 
 collate:
   type: TTSCollate
-  additional_fields: [symbols]
+  additional_fields: [transcription_text]
 
 singleton_handlers:
   handlers: [SpeakerIDSetter]
