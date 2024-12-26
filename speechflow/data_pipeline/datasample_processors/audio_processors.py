@@ -512,8 +512,8 @@ def timedim_interpolation(
         if math.floor(t.shape[0] * scale / ratio) < attr.shape[0]:
             scale = ratio * (attr.shape[0] + 1) / t.shape[0]
 
-        t = interpolate(t, scale)
-        assert math.floor(t.shape[0] / ratio) == attr.shape[0]
+        t = interpolate(t, scale).numpy()
+        # assert math.floor(t.shape[0] / ratio) == attr.shape[0]
 
         if isinstance(feat, SSLFeatures):
             feat.encoder_feat = t

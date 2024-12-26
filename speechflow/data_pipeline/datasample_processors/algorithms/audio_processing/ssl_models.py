@@ -197,6 +197,11 @@ class Wav2Vec(BaseSSLModel):
 
         logits = ssl_feat.logits
         text = self.processor.batch_decode(logits.argmax(dim=-1))[0]
+        ssl_feat.text = text
+
+        if self.processor.tokenizer.backend.name() == "espeak":
+            return ssl_feat
+
         tokens_id = self.processor.tokenizer(text).input_ids
 
         dictionary = self.processor.tokenizer.get_vocab()
@@ -206,7 +211,6 @@ class Wav2Vec(BaseSSLModel):
 
         ssl_feat.tokens_id = tokens_id
         ssl_feat.tokens_text = tokens_text
-        ssl_feat.text = text
         return ssl_feat
 
     def get_discrete_units(self, ssl_feat: SSLFeatures) -> SSLFeatures:

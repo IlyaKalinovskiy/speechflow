@@ -3,7 +3,7 @@ import math
 import torch
 
 from torch import nn
-from torch.nn import functional as torch_func
+from torch.nn import functional as F
 
 from tts.forced_alignment.model.utils import (
     convert_pad_shape,
@@ -113,7 +113,7 @@ class MultiHeadAttention(nn.Module):
                     .tril(self.block_length)
                 )
                 scores = scores * block_mask + -1e4 * (1 - block_mask)
-        p_attn = torch_func.softmax(scores, dim=-1)  # [b, n_h, t_t, t_s]
+        p_attn = F.softmax(scores, dim=-1)  # [b, n_h, t_t, t_s]
         p_attn = self.drop(p_attn)
         output = torch.matmul(p_attn, value)
         if self.window_size is not None:
@@ -133,7 +133,7 @@ class MultiHeadAttention(nn.Module):
         slice_start_position = max((self.window_size + 1) - length, 0)
         slice_end_position = slice_start_position + 2 * length - 1
         if pad_length > 0:
-            padded_relative_embeddings = torch_func.pad(
+            padded_relative_embeddings = F.pad(
                 relative_embeddings,
                 convert_pad_shape([[0, 0], [pad_length, pad_length], [0, 0]]),
             )
@@ -172,13 +172,11 @@ class MultiHeadAttention(nn.Module):
         """
         batch, heads, length, _ = x.size()
         # Concat columns of pad to shift from relative to absolute indexing.
-        x = torch_func.pad(x, convert_pad_shape([[0, 0], [0, 0], [0, 0], [0, 1]]))
+        x = F.pad(x, convert_pad_shape([[0, 0], [0, 0], [0, 0], [0, 1]]))
 
         # Concat extra elements so to add up to shape (len+1, 2*len-1).
         x_flat = x.view([batch, heads, length * 2 * length])
-        x_flat = torch_func.pad(
-            x_flat, convert_pad_shape([[0, 0], [0, 0], [0, length - 1]])
-        )
+        x_flat = F.pad(x_flat, convert_pad_shape([[0, 0], [0, 0], [0, length - 1]]))
 
         # Reshape and slice out the padded elements.
         x_final = x_flat.view([batch, heads, length + 1, 2 * length - 1])[
@@ -194,12 +192,10 @@ class MultiHeadAttention(nn.Module):
         """
         batch, heads, length, _ = x.size()
         # padd along column
-        x = torch_func.pad(
-            x, convert_pad_shape([[0, 0], [0, 0], [0, 0], [0, length - 1]])
-        )
+        x = F.pad(x, convert_pad_shape([[0, 0], [0, 0], [0, 0], [0, length - 1]]))
         x_flat = x.view([batch, heads, length**2 + length * (length - 1)])
         # add 0's in the beginning that will skew the elements after reshape
-        x_flat = torch_func.pad(x_flat, convert_pad_shape([[0, 0], [0, 0], [length, 0]]))
+        x_flat = F.pad(x_flat, convert_pad_shape([[0, 0], [0, 0], [length, 0]]))
         x_final = x_flat.view([batch, heads, length, 2 * length])[:, :, :, 1:]
         return x_final
 
@@ -335,7 +331,9 @@ class WN(torch.nn.Module):
         dilation_rate,
         n_layers,
         p_dropout=0,
+        lang_emb_dim=None,
         speaker_emb_dim=None,
+        ssl_feat_dim=None,
     ):
         super().__init__()
         assert kernel_size % 2 == 1
@@ -346,17 +344,31 @@ class WN(torch.nn.Module):
         self.dilation_rate = dilation_rate
         self.n_layers = n_layers
         self.p_dropout = p_dropout
+        self.lang_emb_dim = lang_emb_dim
         self.speaker_emb_dim = speaker_emb_dim
+        self.ssl_feat_dim = ssl_feat_dim
 
         self.in_layers = torch.nn.ModuleList()
         self.res_skip_layers = torch.nn.ModuleList()
         self.drop = nn.Dropout(p_dropout)
 
+        if self.lang_emb_dim is not None:
+            cond_layer = torch.nn.Conv1d(
+                self.lang_emb_dim, 2 * hidden_channels * n_layers, 1
+            )
+            self.lang_cond_layer = torch.nn.utils.weight_norm(cond_layer)
+
         if self.speaker_emb_dim is not None:
             cond_layer = torch.nn.Conv1d(
                 self.speaker_emb_dim, 2 * hidden_channels * n_layers, 1
             )
-            self.cond_layer = torch.nn.utils.weight_norm(cond_layer)
+            self.sp_cond_layer = torch.nn.utils.weight_norm(cond_layer)
+
+        if self.ssl_feat_dim is not None:
+            cond_layer = torch.nn.Conv1d(
+                self.ssl_feat_dim, 2 * hidden_channels * n_layers, 1
+            )
+            self.ssl_cond_layer = torch.nn.utils.weight_norm(cond_layer)
 
         for i in range(n_layers):
             dilation = dilation_rate**i
@@ -381,24 +393,62 @@ class WN(torch.nn.Module):
             res_skip_layer = torch.nn.utils.weight_norm(res_skip_layer)
             self.res_skip_layers.append(res_skip_layer)
 
-    def forward(self, x, x_mask=None, g=None):
+    def forward(self, x, x_mask=None, lang_emb=None, speaker_emb=None, ssl_feat=None):
         output = torch.zeros_like(x)
         n_channels_tensor = torch.IntTensor([self.hidden_channels])
 
-        if g is not None:
-            g = g.expand(-1, -1, x.size(2))
-            g = self.cond_layer(g)
+        if lang_emb is not None:
+            g_lang = lang_emb.expand(-1, -1, x.size(2))
+            g_lang = self.lang_cond_layer(g_lang)
+        else:
+            g_lang = torch.zeros(
+                (x.size(0), 2 * self.hidden_channels, x.size(2)), device=x.device
+            )
+
+        if speaker_emb is not None:
+            g_sp = speaker_emb.expand(-1, -1, x.size(2))
+            g_sp = self.sp_cond_layer(g_sp)
+        else:
+            g_sp = torch.zeros(
+                (x.size(0), 2 * self.hidden_channels, x.size(2)), device=x.device
+            )
+
+        if ssl_feat is not None:
+            g_ssl = self.ssl_cond_layer(ssl_feat.transpose(1, -1))
+        else:
+            g_ssl = torch.zeros(
+                (x.size(0), 2 * self.hidden_channels, x.size(2)), device=x.device
+            )
 
         for i in range(self.n_layers):
             x_in = self.in_layers[i](x)
             x_in = self.drop(x_in)
-            if g is not None:
-                cond_offset = i * 2 * self.hidden_channels
-                g_l = g[:, cond_offset : cond_offset + 2 * self.hidden_channels, :]
-            else:
-                g_l = torch.zeros_like(x_in)
 
-            acts = fused_add_tanh_sigmoid_multiply(x_in, g_l, n_channels_tensor)
+            cond_offset = i * 2 * self.hidden_channels
+
+            if g_lang is not None:
+                g_lang_l = g_lang[
+                    :, cond_offset : cond_offset + 2 * self.hidden_channels, :
+                ]
+            else:
+                g_lang_l = g_lang
+
+            if g_sp is not None:
+                g_sp_l = g_sp[:, cond_offset : cond_offset + 2 * self.hidden_channels, :]
+            else:
+                g_sp_l = g_sp
+
+            if g_ssl is not None:
+                g_ssl_l = g_ssl[
+                    :, cond_offset : cond_offset + 2 * self.hidden_channels, :
+                ]
+                g_ssl_l = g_ssl_l[:, :, : x_in.shape[2]]
+            else:
+                g_ssl_l = g_ssl
+
+            acts = fused_add_tanh_sigmoid_multiply(
+                x_in, g_lang_l + g_sp_l + g_ssl_l, n_channels_tensor
+            )
 
             res_skip_acts = self.res_skip_layers[i](acts)
             if i < self.n_layers - 1:
@@ -517,7 +567,7 @@ class InvConvNear(nn.Module):
                 logdet = torch.logdet(self.weight) * (c / self.n_split) * x_len  # [b]
 
         weight = weight.view(self.n_split, self.n_split, 1, 1).to(self.weight.device)
-        z = torch_func.conv2d(x, weight)
+        z = F.conv2d(x, weight)
 
         z = z.view(b, 2, self.n_split // 2, c // self.n_split, t)
         z = z.permute(0, 1, 3, 2, 4).contiguous().view(b, c, t) * x_mask

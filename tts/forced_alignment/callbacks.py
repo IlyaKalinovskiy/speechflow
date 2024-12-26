@@ -79,11 +79,12 @@ class AligningVisualisationCallback(Callback):
                 .numpy()
             )
 
-            scale = float(spec_lens[random_idx] / outputs.output_lengths[random_idx])
-            self._log_target(
-                pl_module, trainer, spectrogram, alignment, phonemes, scale=scale
-            )
+            self._log_target(pl_module, trainer, spectrogram, alignment, phonemes)
             self._log_aligning(pl_module, trainer, np.transpose(alignment))
+
+            if inputs.ssl_feat is not None:
+                ssl_feat = inputs.ssl_feat[random_idx].cpu().numpy()
+                self._log_spectrogram(pl_module, trainer, ssl_feat, "TargetSSL")
 
     @staticmethod
     def _log_target(
@@ -93,10 +94,9 @@ class AligningVisualisationCallback(Callback):
         alignment: npt.NDArray,
         phonemes: tp.List[str],
         name: str = "TargetSpectrogramWithAlignment",
-        scale: float = 1.0,
     ):
         frame_ticks = phonemes_to_frame_ticks(alignment, phonemes)
-        frame_ticks = [t * scale for t in frame_ticks]
+        frame_ticks = [t for t in frame_ticks]
         fig_to_plot = plot_spectrogram(spectrogram, phonemes, frame_ticks)
         data_to_log = figure_to_ndarray(fig_to_plot)
 
@@ -119,4 +119,22 @@ class AligningVisualisationCallback(Callback):
             _plot_alignment_to_numpy(aligning),
             trainer.global_step,
             dataformats="HWC",
+        )
+
+    @staticmethod
+    def _log_spectrogram(
+        module: pl.LightningModule,
+        trainer: pl.Trainer,
+        spectrogram: npt.NDArray,
+        tag: str,
+        durations=None,
+    ):
+        fig_to_plot = plot_spectrogram(spectrogram, phonemes_ticks=durations)
+        data_to_log = figure_to_ndarray(fig_to_plot)
+
+        module.logger.experiment.add_image(
+            tag,
+            data_to_log,
+            trainer.global_step,
+            dataformats="CHW",
         )

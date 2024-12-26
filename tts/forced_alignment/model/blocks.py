@@ -210,15 +210,13 @@ class TextEncoder(nn.Module):
             p_dropout,
         )
 
-    def forward(self, text, lang_emb, ling_feat_emb, x_lengths, g=None, sil_mask=None):
-        speaker_emb = g
-
+    def forward(self, x, x_lengths, ling_feat_emb, lang_emb, speaker_emb, sil_mask=None):
         if self.n_symbols_per_phoneme == 1:
-            x = self.symb_emb(text)
+            x = self.symb_emb(x)
         else:
             temp = []
             for i in range(self.n_symbols_per_phoneme):
-                temp.append(self.symb_emb(text[:, :, i]))
+                temp.append(self.symb_emb(x[:, :, i]))
             x = torch.cat(temp, dim=-1)
 
         x = self.text_proj(x)
@@ -265,7 +263,9 @@ class ResidualCouplingLayer(nn.Module):
         dilation_rate,
         n_layers,
         p_dropout=0.0,
+        lang_emb_dim=None,
         speaker_emb_dim=None,
+        ssl_feat_dim=None,
     ):
         channels = in_channels
         assert channels % 2 == 0, "channels should be divisible by 2"
@@ -286,7 +286,9 @@ class ResidualCouplingLayer(nn.Module):
             dilation_rate,
             n_layers,
             p_dropout,
+            lang_emb_dim,
             speaker_emb_dim,
+            ssl_feat_dim,
         )
         self.post = nn.Conv1d(
             hidden_channels, self.half_channels * (2 - self.mean_only), 1
@@ -294,10 +296,18 @@ class ResidualCouplingLayer(nn.Module):
         self.post.weight.data.zero_()
         self.post.bias.data.zero_()
 
-    def forward(self, x, x_mask=None, reverse=False, g=None):
+    def forward(
+        self,
+        x,
+        x_mask=None,
+        reverse=False,
+        lang_emb=None,
+        speaker_emb=None,
+        ssl_feat=None,
+    ):
         x0, x1 = torch.split(x, [self.half_channels] * 2, 1)
         h = self.pre(x0) * x_mask
-        h = self.enc(h, x_mask, g=g)
+        h = self.enc(h, x_mask, lang_emb, speaker_emb, ssl_feat)
         stats = self.post(h) * x_mask
         if not self.mean_only:
             m, logs = torch.split(stats, [self.half_channels] * 2, 1)
@@ -331,7 +341,9 @@ class FlowSpecDecoder(nn.Module):
         p_dropout=0.0,
         n_split=4,
         n_sqz=2,
+        lang_emb_dim=None,
         speaker_emb_dim=None,
+        ssl_feat_dim=None,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -343,7 +355,6 @@ class FlowSpecDecoder(nn.Module):
         self.p_dropout = p_dropout
         self.n_split = n_split
         self.n_sqz = n_sqz
-        self.speaker_emb_dim = speaker_emb_dim
         self.is_inverse = False
 
         self.flows = nn.ModuleList()
@@ -360,11 +371,15 @@ class FlowSpecDecoder(nn.Module):
                     dilation_rate=self.dilation_rate,
                     n_layers=self.n_layers,
                     p_dropout=self.p_dropout,
-                    speaker_emb_dim=self.speaker_emb_dim,
+                    lang_emb_dim=lang_emb_dim,
+                    speaker_emb_dim=speaker_emb_dim,
+                    ssl_feat_dim=ssl_feat_dim,
                 )
             )
 
-    def forward(self, x, x_mask, g=None, reverse=False):
+    def forward(
+        self, x, x_mask, reverse=False, lang_emb=None, speaker_emb=None, ssl_feat=None
+    ):
         if not reverse:
             flows = self.flows
             logdet_tot = 0
@@ -377,10 +392,24 @@ class FlowSpecDecoder(nn.Module):
 
         for f in flows:
             if not reverse:
-                x, logdet = f(x, x_mask, g=g, reverse=reverse)
+                x, logdet = f(
+                    x,
+                    x_mask,
+                    reverse,
+                    lang_emb=lang_emb,
+                    speaker_emb=speaker_emb,
+                    ssl_feat=ssl_feat,
+                )
                 logdet_tot += logdet
             else:
-                x, logdet = f(x, x_mask, g=g, reverse=reverse)
+                x, logdet = f(
+                    x,
+                    x_mask,
+                    reverse,
+                    lang_emb=lang_emb,
+                    speaker_emb=speaker_emb,
+                    ssl_feat=ssl_feat,
+                )
 
         if self.n_sqz > 1:
             x, x_mask = unsqueeze(x, x_mask, self.n_sqz)

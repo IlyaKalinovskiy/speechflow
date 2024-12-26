@@ -27,7 +27,7 @@ class GlowTTSParams(EmbeddingParams):
 
     flow_type: str = "GlowTTS"  # GlowTTS
 
-    audio_feat: tp.Literal["spectrogram", "ssl_feat"] = "spectrogram"
+    audio_feat: tp.Literal["spectrogram"] = "spectrogram"
     audio_feat_size: int = 80
 
     encoder_embedding_dim: int = 128
@@ -72,9 +72,7 @@ class GlowTTS(EmbeddingCalculator):
         super().__init__(GlowTTSParams.create(params, strict_init))
         params = self.params
 
-        self.n_split = params.n_split
         self.n_sqz = params.n_sqz
-        self.out_channels = params.audio_feat_size
 
         self.use_speaker_emb = (
             params.use_onehot_speaker_emb
@@ -91,7 +89,7 @@ class GlowTTS(EmbeddingCalculator):
             params.n_langs,
             params.n_symbols_per_token,
             params.encoder_embedding_dim,
-            self.out_channels,
+            params.audio_feat_size,
             params.inner_channels_enc,
             params.filter_channels,
             params.filter_channels_dp,
@@ -106,34 +104,35 @@ class GlowTTS(EmbeddingCalculator):
 
         if params.flow_type == "GlowTTS":
             self.decoder = FlowSpecDecoder(
-                self.out_channels,
+                params.audio_feat_size,
                 params.inner_channels_dec,
                 params.kernel_size_dec,
                 params.dilation_rate,
                 params.n_blocks_dec,
                 params.n_layers_dec,
                 p_dropout=params.p_dropout,
-                n_split=self.n_split,
+                n_split=params.n_split,
                 n_sqz=self.n_sqz,
-                speaker_emb_dim=256,
+                lang_emb_dim=self.speaker_emb_dim,
+                speaker_emb_dim=self.speaker_emb_dim,
+                ssl_feat_dim=params.ssl_feat_dim,
             )
         else:
             raise NotImplementedError(f"'{params.flow_type}' not implemented.")
 
         self.lang_emb = torch.nn.Embedding(params.n_langs, self.speaker_emb_dim)
-        self.cond_proj = torch.nn.Linear(self.speaker_emb_dim * 2 + 4, 256)
 
-        proj_dim = self.out_channels
+        proj_dim = params.audio_feat_size
         self.length_regulator = SoftLengthRegulator()
         self.mel_proj = torch.nn.Sequential(
             torch.nn.Linear(proj_dim, proj_dim * 2),
             torch.nn.ReLU(),
-            torch.nn.Linear(proj_dim * 2, self.out_channels),
+            torch.nn.Linear(proj_dim * 2, params.audio_feat_size),
         )
 
         if params.use_alignment_encoder:
             self.alignment_encoder = AlignmentEncoder(
-                n_mel_channels=self.out_channels,
+                n_mel_channels=params.audio_feat_size,
                 n_text_channels=params.encoder_embedding_dim * 4,
                 n_att_channels=params.alignment_encoder_n_att_channels,
                 temperature=params.alignment_encoder_temperature,
@@ -210,7 +209,7 @@ class GlowTTS(EmbeddingCalculator):
         ) / (
             torch.sum(torch.div(y_lengths, self.n_sqz, rounding_mode="trunc"))
             * self.n_sqz
-            * self.out_channels
+            * self.params.audio_feat_size
         )
         l_length = torch.sum((logw - logw_) ** 2) / torch.sum(x_lengths)
         return l_mle, l_length
@@ -219,9 +218,6 @@ class GlowTTS(EmbeddingCalculator):
         if self.params.audio_feat == "spectrogram":
             y = inputs.spectrogram
             y_lens = inputs.spectrogram_lengths
-        elif self.params.audio_feat == "ssl_feat":
-            y = inputs.ssl_feat
-            y_lens = inputs.ssl_feat_lengths
         else:
             raise ValueError(f"{self.params.audio_feat} is not implemented.")
 
@@ -242,10 +238,10 @@ class GlowTTS(EmbeddingCalculator):
         x_lengths, y_lengths = text_lengths.data, y_lens.data
         x, x_m, x_logs, logw, x_mask = self.encoder(
             x,
-            lang_emb,
-            ling_feat_emb + plbert_feat_emb,
             x_lengths,
-            g=speaker_emb,
+            ling_feat_emb + plbert_feat_emb,
+            lang_emb,
+            speaker_emb,
             sil_mask=inputs.ling_feat.sil_mask,
         )
 
@@ -257,10 +253,13 @@ class GlowTTS(EmbeddingCalculator):
         )
         attn_mask = torch.unsqueeze(x_mask, -1) * torch.unsqueeze(y_mask, 2)
 
-        g = self.cond_proj(
-            torch.cat([speaker_emb, lang_emb, inputs.speech_quality_emb], dim=1)
+        z, logdet = self.decoder(
+            y,
+            y_mask,
+            lang_emb=lang_emb.unsqueeze(-1),
+            speaker_emb=speaker_emb.unsqueeze(-1),
+            ssl_feat=inputs.ssl_feat,
         )
-        z, logdet = self.decoder(y, y_mask, g=g.unsqueeze(-1))
 
         attn = self.mas(x_m, x_logs, z, attn_mask, inputs, mas_correction)
 

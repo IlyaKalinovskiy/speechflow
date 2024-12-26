@@ -57,7 +57,7 @@ class LoggingServer(ProcessWorker):
         from speechflow.logging.logger import _create_log_file
         from speechflow.utils.profiler import Profiler
 
-        super().__init__(init_logger=False, daemon=True)
+        super().__init__(init_logger=False)
         port = find_free_port()
         self._log_file = log_file
         self._log_name = log_name
