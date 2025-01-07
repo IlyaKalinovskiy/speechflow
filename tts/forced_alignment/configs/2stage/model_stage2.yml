@@ -3,7 +3,7 @@
 experiment_name: forced_alignment_stage2
 
 dirs:
-  logging: glowtts_2stage
+  logging: experiments_glowtts_2stage
 
 seed: 1234
 

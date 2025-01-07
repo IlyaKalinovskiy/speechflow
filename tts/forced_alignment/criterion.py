@@ -29,11 +29,13 @@ class GlowTTSLoss(BaseCriterion):
         batch_idx: int = 0,
         global_step: int = 0,
     ) -> tp.Dict[str, torch.Tensor]:
-        mle_loss = output.mle_loss
-        duration_loss = output.duration_loss
-        total_loss = {"MLELoss": mle_loss, "DurationLoss": duration_loss}
+        total_loss = {
+            "MLELoss": output.mle_loss,
+            "DurationLoss": output.duration_loss,
+            "SSLReconstructionLoss": output.ssl_rec_loss,
+        }
 
-        if output.additional_content is not None:
+        if "attn_soft" in output.additional_content:
             total_loss.update(self.lor_loss(global_step, output, target))
 
         return total_loss

@@ -5,6 +5,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from speechflow.utils.tensor_utils import apply_mask
 from tts.forced_alignment.model.utils import (
     convert_pad_shape,
     fused_add_tanh_sigmoid_multiply,
@@ -262,14 +263,14 @@ class FFN(nn.Module):
         self.drop = nn.Dropout(p_dropout)
 
     def forward(self, x, x_mask):
-        x = self.conv_1(x * x_mask)
+        x = self.conv_1(apply_mask(x, x_mask))
         if self.activation == "gelu":
             x *= torch.sigmoid(1.702 * x)
         else:
             x = torch.relu(x)
         x = self.drop(x)
-        x = self.conv_2(x * x_mask)
-        return x * x_mask
+        x = self.conv_2(apply_mask(x, x_mask))
+        return x
 
 
 class ConvReluNorm(nn.Module):
@@ -325,7 +326,6 @@ class ConvReluNorm(nn.Module):
 class WN(torch.nn.Module):
     def __init__(
         self,
-        in_channels,
         hidden_channels,
         kernel_size,
         dilation_rate,
@@ -333,12 +333,11 @@ class WN(torch.nn.Module):
         p_dropout=0,
         lang_emb_dim=None,
         speaker_emb_dim=None,
-        ssl_feat_dim=None,
+        speech_quality_emb_dim=None,
     ):
         super().__init__()
         assert kernel_size % 2 == 1
         assert hidden_channels % 2 == 0
-        self.in_channels = in_channels
         self.hidden_channels = hidden_channels
         self.kernel_size = (kernel_size,)
         self.dilation_rate = dilation_rate
@@ -346,29 +345,26 @@ class WN(torch.nn.Module):
         self.p_dropout = p_dropout
         self.lang_emb_dim = lang_emb_dim
         self.speaker_emb_dim = speaker_emb_dim
-        self.ssl_feat_dim = ssl_feat_dim
+        self.speech_quality_emb_dim = speech_quality_emb_dim
 
         self.in_layers = torch.nn.ModuleList()
         self.res_skip_layers = torch.nn.ModuleList()
         self.drop = nn.Dropout(p_dropout)
 
-        if self.lang_emb_dim is not None:
-            cond_layer = torch.nn.Conv1d(
-                self.lang_emb_dim, 2 * hidden_channels * n_layers, 1
-            )
-            self.lang_cond_layer = torch.nn.utils.weight_norm(cond_layer)
+        self.cond_dim = 0
+        for dim in [
+            self.lang_emb_dim,
+            self.speaker_emb_dim,
+            self.speech_quality_emb_dim,
+        ]:
+            if dim is not None:
+                self.cond_dim += dim
 
-        if self.speaker_emb_dim is not None:
-            cond_layer = torch.nn.Conv1d(
-                self.speaker_emb_dim, 2 * hidden_channels * n_layers, 1
-            )
-            self.sp_cond_layer = torch.nn.utils.weight_norm(cond_layer)
-
-        if self.ssl_feat_dim is not None:
-            cond_layer = torch.nn.Conv1d(
-                self.ssl_feat_dim, 2 * hidden_channels * n_layers, 1
-            )
-            self.ssl_cond_layer = torch.nn.utils.weight_norm(cond_layer)
+        if self.cond_dim > 0:
+            cond_proj = torch.nn.Conv1d(self.cond_dim, 2 * hidden_channels * n_layers, 1)
+            self.cond_proj = torch.nn.utils.weight_norm(cond_proj)
+        else:
+            self.cond_proj = None
 
         for i in range(n_layers):
             dilation = dilation_rate**i
@@ -393,31 +389,40 @@ class WN(torch.nn.Module):
             res_skip_layer = torch.nn.utils.weight_norm(res_skip_layer)
             self.res_skip_layers.append(res_skip_layer)
 
-    def forward(self, x, x_mask=None, lang_emb=None, speaker_emb=None, ssl_feat=None):
+    def forward(
+        self,
+        x,
+        x_mask=None,
+        lang_emb=None,
+        speaker_emb=None,
+        speech_quality_emb=None,
+        ssl_feat=None,
+    ):
         output = torch.zeros_like(x)
         n_channels_tensor = torch.IntTensor([self.hidden_channels])
 
-        if lang_emb is not None:
-            g_lang = lang_emb.expand(-1, -1, x.size(2))
-            g_lang = self.lang_cond_layer(g_lang)
-        else:
-            g_lang = torch.zeros(
-                (x.size(0), 2 * self.hidden_channels, x.size(2)), device=x.device
-            )
+        cond_embs = []
 
-        if speaker_emb is not None:
-            g_sp = speaker_emb.expand(-1, -1, x.size(2))
-            g_sp = self.sp_cond_layer(g_sp)
-        else:
-            g_sp = torch.zeros(
-                (x.size(0), 2 * self.hidden_channels, x.size(2)), device=x.device
-            )
+        if self.lang_emb_dim is not None:
+            lang_emb = lang_emb.unsqueeze(1).expand(-1, x.shape[2], -1)
+            cond_embs.append(lang_emb)
 
-        if ssl_feat is not None:
-            g_ssl = self.ssl_cond_layer(ssl_feat.transpose(1, -1))
+        if self.speaker_emb_dim is not None:
+            speaker_emb = speaker_emb.unsqueeze(1).expand(-1, x.shape[2], -1)
+            cond_embs.append(speaker_emb)
+
+        if self.speech_quality_emb_dim is not None:
+            speech_quality_emb = speech_quality_emb.unsqueeze(1).expand(
+                -1, x.shape[2], -1
+            )
+            cond_embs.append(speech_quality_emb)
+
+        if self.cond_proj is not None:
+            g = self.cond_proj(torch.cat(cond_embs, dim=2).transpose(1, -1))
         else:
-            g_ssl = torch.zeros(
-                (x.size(0), 2 * self.hidden_channels, x.size(2)), device=x.device
+            g = torch.zeros(
+                (x.shape[0], 2 * self.hidden_channels * self.n_layers, x.shape[2]),
+                device=x.device,
             )
 
         for i in range(self.n_layers):
@@ -425,30 +430,9 @@ class WN(torch.nn.Module):
             x_in = self.drop(x_in)
 
             cond_offset = i * 2 * self.hidden_channels
+            g_l = g[:, cond_offset : cond_offset + 2 * self.hidden_channels, :]
 
-            if g_lang is not None:
-                g_lang_l = g_lang[
-                    :, cond_offset : cond_offset + 2 * self.hidden_channels, :
-                ]
-            else:
-                g_lang_l = g_lang
-
-            if g_sp is not None:
-                g_sp_l = g_sp[:, cond_offset : cond_offset + 2 * self.hidden_channels, :]
-            else:
-                g_sp_l = g_sp
-
-            if g_ssl is not None:
-                g_ssl_l = g_ssl[
-                    :, cond_offset : cond_offset + 2 * self.hidden_channels, :
-                ]
-                g_ssl_l = g_ssl_l[:, :, : x_in.shape[2]]
-            else:
-                g_ssl_l = g_ssl
-
-            acts = fused_add_tanh_sigmoid_multiply(
-                x_in, g_lang_l + g_sp_l + g_ssl_l, n_channels_tensor
-            )
+            acts = fused_add_tanh_sigmoid_multiply(x_in, g_l, n_channels_tensor)
 
             res_skip_acts = self.res_skip_layers[i](acts)
             if i < self.n_layers - 1:
@@ -457,11 +441,11 @@ class WN(torch.nn.Module):
             else:
                 output = output + res_skip_acts
 
-        return output * x_mask
+        return apply_mask(output, x_mask)
 
     def remove_weight_norm(self):
         if self.speaker_emb_dim is not None:
-            torch.nn.utils.remove_weight_norm(self.cond_layer)
+            torch.nn.utils.remove_weight_norm(self.cond_proj)
         for layer in self.in_layers:
             torch.nn.utils.remove_weight_norm(layer)
         for layer in self.res_skip_layers:

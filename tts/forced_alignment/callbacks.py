@@ -84,7 +84,12 @@ class AligningVisualisationCallback(Callback):
 
             if inputs.ssl_feat is not None:
                 ssl_feat = inputs.ssl_feat[random_idx].cpu().numpy()
-                self._log_spectrogram(pl_module, trainer, ssl_feat, "TargetSSL")
+                self._log_spectrogram(pl_module, trainer, ssl_feat, "SSLTarget")
+
+            if "ssl_prediction" in outputs.additional_content:
+                ssl_prediction = outputs.additional_content["ssl_prediction"]
+                ssl_prediction = ssl_prediction[random_idx].cpu().numpy()
+                self._log_spectrogram(pl_module, trainer, ssl_prediction, "SSLPrediction")
 
     @staticmethod
     def _log_target(

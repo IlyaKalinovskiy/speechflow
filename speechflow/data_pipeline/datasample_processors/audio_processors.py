@@ -509,10 +509,12 @@ def timedim_interpolation(
             t = torch.from_numpy(t)
 
         scale = ratio * attr.shape[0] / t.shape[0]
-        if math.floor(t.shape[0] * scale / ratio) < attr.shape[0]:
+        shape = math.floor(t.shape[0] * scale / ratio)
+        if shape < attr.shape[0]:
             scale = ratio * (attr.shape[0] + 1) / t.shape[0]
 
         t = interpolate(t, scale).numpy()
+        t = t[: math.floor(ratio * attr.shape[0])]
         # assert math.floor(t.shape[0] / ratio) == attr.shape[0]
 
         if isinstance(feat, SSLFeatures):

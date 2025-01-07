@@ -19,7 +19,6 @@ class AlignerForwardInput(TrainData):
     transcription: Tensor = None
     transcription_lengths: Tensor = None
     ling_feat: tp.Optional[LinguisticFeatures] = None
-    plbert_feat: Tensor = None
     spectrogram: Tensor = None
     spectrogram_lengths: Tensor = None
     spectral_flatness: Tensor = None
@@ -34,6 +33,7 @@ class AlignerForwardInput(TrainData):
 class AlignerForwardOutput(TrainData):
     aligning_path: Tensor = None
     mle_loss: Tensor = None
+    ssl_rec_loss: Tensor = None
     duration_loss: Tensor = None
     spectrogram: Tensor = None
     output_lengths: Tensor = None
