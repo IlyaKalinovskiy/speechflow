@@ -24,7 +24,6 @@ from .layers import (
     Transpose,
 )
 from .modules import SinePositionalEmbedding, TokenEmbedding, make_pad_mask
-from .retentive import RetNetDecoder, RetNetDecoderLayer
 
 
 # NOTE: There are two ways to implement the model

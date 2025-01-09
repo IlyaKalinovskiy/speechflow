@@ -56,7 +56,7 @@ model:
     use_ling_feat_emb: true
     use_lang_emb: true
     use_speaker_emb: true
-    use_xpbert: true
+    use_xpbert: false
     use_speech_quality_emb: true
     use_ssl: true
 

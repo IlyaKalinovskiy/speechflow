@@ -78,7 +78,6 @@ preproc:
       lang: MULTILANG
       add_service_tokens: true
       ignore_ling_feat: [breath_mask]
-      use_xpbert_tokenizer: true
     ssl:
       type: SSLProcessor
       ssl_type: Wav2Vec

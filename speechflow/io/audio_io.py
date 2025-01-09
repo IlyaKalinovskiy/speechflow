@@ -149,7 +149,7 @@ class AudioChunk:
 
         if isinstance(file_path, Path):
             audio_format = file_path.suffix[1:]
-            if audio_format not in ["wav", "flac"]:
+            if audio_format not in ["wav", "flac", "mp3"]:
                 raise ValueError(f"'{audio_format}' audio format is not supported.")
 
             if not overwrite:

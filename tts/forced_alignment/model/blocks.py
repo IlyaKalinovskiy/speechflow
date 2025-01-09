@@ -1,4 +1,5 @@
 import math
+import typing as tp
 
 import torch
 
@@ -6,11 +7,7 @@ from einops import rearrange
 from torch import nn
 from transformers import AutoModel
 
-from speechflow.utils.tensor_utils import (
-    apply_mask,
-    get_lengths_from_mask,
-    get_mask_from_lengths,
-)
+from speechflow.utils.tensor_utils import apply_mask, get_attention_mask
 from tts.forced_alignment.model.layers import (
     FFN,
     WN,
@@ -24,7 +21,6 @@ from tts.forced_alignment.model.layers import (
 )
 from tts.forced_alignment.model.utils import (
     binarize_attention_parallel,
-    sequence_mask,
     squeeze,
     unsqueeze,
 )
@@ -32,7 +28,6 @@ from tts.forced_alignment.model.utils import (
 __all__ = [
     "Encoder",
     "TextEncoder",
-    "XPBertEncoder",
     "FlowSpecDecoder",
     "AlignmentEncoder",
 ]
@@ -41,24 +36,17 @@ __all__ = [
 class Encoder(nn.Module):
     def __init__(
         self,
-        hidden_dim,
-        filter_channels,
-        n_heads,
-        n_layers,
-        kernel_size=1,
-        p_dropout=0.0,
-        window_size=None,
-        block_length=None,
+        hidden_dim: int,
+        filter_channels: int,
+        n_heads: int,
+        n_layers: int,
+        kernel_size: int = 1,
+        p_dropout: float = 0,
+        window_size: tp.Optional[int] = None,
+        block_length: tp.Optional[int] = None,
     ):
         super().__init__()
-        self.hidden_dim = hidden_dim
-        self.filter_channels = filter_channels
-        self.n_heads = n_heads
         self.n_layers = n_layers
-        self.kernel_size = kernel_size
-        self.p_dropout = p_dropout
-        self.window_size = window_size
-        self.block_length = block_length
 
         self.drop = nn.Dropout(p_dropout)
         self.attn_layers = nn.ModuleList()
@@ -66,7 +54,7 @@ class Encoder(nn.Module):
         self.ffn_layers = nn.ModuleList()
         self.norm_layers_2 = nn.ModuleList()
 
-        for i in range(self.n_layers):
+        for i in range(n_layers):
             self.attn_layers.append(
                 MultiHeadAttention(
                     hidden_dim,
@@ -91,10 +79,9 @@ class Encoder(nn.Module):
 
     def forward(self, x, x_mask, attention_mask=None):
         if attention_mask is None:
-            x_lengths = get_lengths_from_mask(x_mask)
-            attention_mask = x_mask.unsqueeze(1).expand(-1, x_lengths.max(), -1)
-
-        attention_mask = attention_mask.unsqueeze(1)
+            attention_mask = get_attention_mask(x_mask, x_mask)
+        elif attention_mask.ndim == 3:
+            attention_mask = attention_mask.unsqueeze(1)
 
         for i in range(self.n_layers):
             y = self.attn_layers[i](x, x, attention_mask)
@@ -109,13 +96,10 @@ class Encoder(nn.Module):
 
 
 class DurationPredictor(nn.Module):
-    def __init__(self, in_channels, filter_channels, kernel_size, p_dropout):
+    def __init__(
+        self, in_channels: int, filter_channels: int, kernel_size: int, p_dropout: float
+    ):
         super().__init__()
-        self.in_channels = in_channels
-        self.filter_channels = filter_channels
-        self.kernel_size = kernel_size
-        self.p_dropout = p_dropout
-
         self.drop = nn.Dropout(p_dropout)
         self.conv_1 = nn.Conv1d(
             in_channels, filter_channels, kernel_size, padding=kernel_size // 2
@@ -143,43 +127,47 @@ class DurationPredictor(nn.Module):
 class TextEncoder(nn.Module):
     def __init__(
         self,
-        n_vocab,
-        n_symbols_per_phoneme,
-        embedding_dim,
-        outputs_dim,
-        hidden_dim,
-        filter_channels,
-        filter_channels_dp,
-        n_heads,
-        n_layers,
-        kernel_size,
-        p_dropout,
-        ling_feat_dim=None,
-        lang_emb_dim=None,
-        speaker_emb_dim=None,
-        window_size=None,
-        block_length=None,
-        mean_only=False,
-        prenet=False,
+        embedding_dim: int,
+        outputs_dim: int,
+        hidden_dim: int,
+        filter_channels: int,
+        filter_channels_dp: int,
+        n_heads: int,
+        n_layers: int,
+        kernel_size: int,
+        p_dropout: float,
+        ling_feat_dim: tp.Optional[int] = None,
+        lang_emb_dim: tp.Optional[int] = None,
+        speaker_emb_dim: tp.Optional[int] = None,
+        window_size: tp.Optional[int] = None,
+        block_length: tp.Optional[int] = None,
+        mean_only: bool = False,
+        use_prenet: bool = False,
+        use_xpbert: bool = False,
+        xpbert_model: str = "vinai/xphonebert-base",
     ):
         super().__init__()
-        self.n_symbols_per_phoneme = n_symbols_per_phoneme
-        self.outputs_dim = outputs_dim
-        self.hidden_dim = hidden_dim
-        self.filter_channels = filter_channels
-        self.filter_channels_dp = filter_channels_dp
-        self.n_heads = n_heads
-        self.n_layers = n_layers
-        self.kernel_size = kernel_size
-        self.p_dropout = p_dropout
-        self.window_size = window_size
-        self.block_length = block_length
         self.mean_only = mean_only
+        self.use_xpbert = use_xpbert
 
-        self.symb_emb = nn.Embedding(n_vocab, embedding_dim)
-        nn.init.normal_(self.symb_emb.weight, 0.0, embedding_dim**-0.5)
+        if use_xpbert:
+            self.encoder = AutoModel.from_pretrained(xpbert_model)
+            self.pe = self.encoder.embeddings
+            self.hidden_dim = self.encoder.config.hidden_size
+        else:
+            self.encoder = Encoder(
+                hidden_dim,
+                filter_channels,
+                n_heads,
+                n_layers,
+                kernel_size,
+                p_dropout,
+                window_size=window_size,
+                block_length=block_length,
+            )
+            self.hidden_dim = hidden_dim
 
-        self.text_proj = nn.Linear(embedding_dim * n_symbols_per_phoneme, self.hidden_dim)
+        self.embedding_proj = nn.Linear(embedding_dim, self.hidden_dim)
 
         cond_dim = 0
         if ling_feat_dim is not None:
@@ -211,7 +199,7 @@ class TextEncoder(nn.Module):
         else:
             self.cond_proj = None
 
-        if prenet:
+        if use_prenet:
             self.prenet = ConvReluNorm(
                 self.hidden_dim,
                 self.hidden_dim,
@@ -222,17 +210,6 @@ class TextEncoder(nn.Module):
             )
         else:
             self.prenet = None
-
-        self.encoder = Encoder(
-            self.hidden_dim,
-            filter_channels,
-            n_heads,
-            n_layers,
-            kernel_size,
-            p_dropout,
-            window_size=window_size,
-            block_length=block_length,
-        )
 
         self.proj_m = nn.Conv1d(self.hidden_dim, outputs_dim, 1)
         if not mean_only:
@@ -245,22 +222,11 @@ class TextEncoder(nn.Module):
             p_dropout,
         )
 
-    def forward(self, x, x_lengths, ling_feat_emb, lang_emb, speaker_emb):
-        if self.n_symbols_per_phoneme == 1:
-            x = self.symb_emb(x)
-        else:
-            temp = []
-            for i in range(self.n_symbols_per_phoneme):
-                temp.append(self.symb_emb(x[:, :, i]))
-            x = torch.cat(temp, dim=-1)
-
-        x = self.text_proj(x)
-
-        x = torch.transpose(x, 1, -1)  # [b, h, t]
-        x_mask = torch.unsqueeze(sequence_mask(x_lengths, x.size(2)), 1)
+    def forward(self, x, x_mask, ling_feat_emb, lang_emb, speaker_emb):
+        x = self.embedding_proj(x)
 
         if self.prenet is not None:
-            x = self.prenet(x, x_mask).transpose(1, -1)
+            x = self.prenet(x.transpose(1, -1), x_mask).transpose(1, -1)
 
         cond_embs = []
 
@@ -278,151 +244,45 @@ class TextEncoder(nn.Module):
         if self.cond_proj is not None:
             x = x + self.cond_proj(torch.cat(cond_embs, dim=2))
 
-        x = x * math.sqrt(self.hidden_dim)  # [b, t, h]
-        x = self.encoder(x.transpose(1, -1), x_mask.squeeze(1))
+        x = x * math.sqrt(self.hidden_dim)
 
-        x_m = self.proj_m(x) * x_mask
-        if not self.mean_only:
-            x_logs = self.proj_s(x) * x_mask
+        if self.use_xpbert:
+            attn_mask = get_attention_mask(x_mask, x_mask)
+            position_ids = self.pe.create_position_ids_from_inputs_embeds(x)
+            x += self.pe.position_embeddings(position_ids)
+
+            x = self.encoder.encoder(x, attention_mask=attn_mask)[0]
+            x = apply_mask(x, x_mask).transpose(1, -1)
         else:
-            x_logs = torch.zeros_like(x_m)
-
-        logw = self.proj_w(x.detach(), x_mask)
-        return x, x_m, x_logs, logw, x_mask
-
-
-class XPBertEncoder(nn.Module):
-    def __init__(
-        self,
-        output_dim,
-        filter_channels,
-        filter_channels_dp,
-        n_heads,
-        n_layers,
-        kernel_size,
-        p_dropout,
-        ling_feat_dim: int = None,
-        lang_emb_dim: int = None,
-        speaker_emb_dim: int = None,
-        mean_only: bool = False,
-        prenet: bool = False,
-        xpbert_model: str = "vinai/xphonebert-base",
-    ):
-        super().__init__()
-        self.mean_only = mean_only
-
-        self.xpl_bert = AutoModel.from_pretrained(xpbert_model)
-        self.hidden_dim = self.xpl_bert.config.hidden_size
-
-        if prenet:
-            self.prenet = ConvReluNorm(
-                self.hidden_dim,
-                self.hidden_dim,
-                self.hidden_dim,
-                kernel_size=5,
-                n_layers=3,
-                p_dropout=0.1,
-            )
-        else:
-            self.prenet = None
-
-        self.ling_feat_dim = ling_feat_dim
-        self.lang_emb_dim = lang_emb_dim
-        self.speaker_emb_dim = speaker_emb_dim
-
-        self.cond_dim = 0
-        for emb_dim in [self.ling_feat_dim, self.lang_emb_dim, self.speaker_emb_dim]:
-            if emb_dim is not None:
-                self.cond_dim += emb_dim
-
-        if self.cond_dim > 0:
-            self.cond_proj = nn.Sequential(
-                nn.Linear(self.cond_dim, self.hidden_dim), nn.Tanh()
-            )
-            self.postnet = Encoder(
-                hidden_dim=self.hidden_dim,
-                filter_channels=filter_channels,
-                n_heads=n_heads,
-                n_layers=n_layers,
-                p_dropout=p_dropout,
-            )
-        else:
-            self.cond_proj = self.postnet = None
-
-        self.proj_m = nn.Conv1d(self.hidden_dim, output_dim, 1)
-        if not self.mean_only:
-            self.proj_s = nn.Conv1d(self.hidden_dim, output_dim, 1)
-
-        self.proj_w = DurationPredictor(
-            self.hidden_dim,
-            filter_channels_dp,
-            kernel_size,
-            p_dropout,
-        )
-
-    def forward(self, x, x_lengths, ling_feat_emb, lang_emb, speaker_emb):
-        x_mask = get_mask_from_lengths(x_lengths)
-        attention_mask = x_mask.unsqueeze(1).expand(-1, x_lengths.max(), -1)
-
-        with torch.no_grad():
-            x = self.xpl_bert(x, attention_mask=attention_mask).last_hidden_state
-            x = apply_mask(x, x_mask)
-
-        if self.prenet is not None:
-            x = self.prenet(x.transpose(1, -1), x_mask.unsqueeze(1))
-            x = x.transpose(1, -1)
-
-        cond_embs = []
-
-        if self.ling_feat_dim is not None:
-            cond_embs.append(ling_feat_emb)
-
-        if self.lang_emb_dim is not None:
-            lang_emb = lang_emb.unsqueeze(1).expand(-1, x.shape[1], -1)
-            cond_embs.append(lang_emb)
-
-        if self.speaker_emb_dim is not None:
-            speaker_emb = speaker_emb.unsqueeze(1).expand(-1, x.shape[1], -1)
-            cond_embs.append(speaker_emb)
-
-        if self.postnet is not None:
-            cond_embs = self.cond_proj(torch.cat(cond_embs, dim=2))
-            x = x * math.sqrt(self.hidden_dim)
-            x = self.postnet((x + cond_embs).transpose(1, -1), x_mask, attention_mask)
-        else:
-            x = x.transpose(1, -1)
+            x = self.encoder(x.transpose(1, -1), x_mask.squeeze(1))
 
         x_m = apply_mask(self.proj_m(x), x_mask)
+
         if not self.mean_only:
             x_logs = apply_mask(self.proj_s(x), x_mask)
         else:
             x_logs = torch.zeros_like(x_m)
 
         logw = self.proj_w(x.detach(), x_mask)
-        return x, x_m, x_logs, logw, x_mask.unsqueeze(1)
+        return x, x_m, x_logs, logw
 
 
 class ResidualCouplingLayer(nn.Module):
     def __init__(
         self,
-        in_channels,
-        hidden_dim,
-        kernel_size,
-        dilation_rate,
-        n_layers,
-        p_dropout=0.0,
-        lang_emb_dim=None,
-        speaker_emb_dim=None,
-        speech_quality_emb_dim=None,
+        in_channels: int,
+        hidden_dim: int,
+        kernel_size: int,
+        dilation_rate: int,
+        n_layers: int,
+        p_dropout: float,
+        lang_emb_dim: tp.Optional[int] = None,
+        speaker_emb_dim: tp.Optional[int] = None,
+        speech_quality_emb_dim: tp.Optional[int] = None,
     ):
         channels = in_channels
         assert channels % 2 == 0, "channels should be divisible by 2"
         super().__init__()
-        self.channels = channels
-        self.hidden_dim = hidden_dim
-        self.kernel_size = kernel_size
-        self.dilation_rate = dilation_rate
-        self.n_layers = n_layers
         self.half_channels = channels // 2
         self.mean_only = False
 
@@ -449,12 +309,11 @@ class ResidualCouplingLayer(nn.Module):
         lang_emb=None,
         speaker_emb=None,
         speech_quality_emb=None,
-        ssl_feat=None,
     ):
         x0, x1 = torch.split(x, [self.half_channels] * 2, 1)
-        h = self.pre(x0) * x_mask
-        h = self.enc(h, x_mask, lang_emb, speaker_emb, speech_quality_emb, ssl_feat)
-        stats = self.post(h) * x_mask
+        h = apply_mask(self.pre(x0), x_mask)
+        h = self.enc(h, x_mask, lang_emb, speaker_emb, speech_quality_emb)
+        stats = apply_mask(self.post(h), x_mask)
         if not self.mean_only:
             m, logs = torch.split(stats, [self.half_channels] * 2, 1)
         else:
@@ -462,12 +321,12 @@ class ResidualCouplingLayer(nn.Module):
             logs = torch.zeros_like(m)
 
         if not reverse:
-            x1 = m + x1 * torch.exp(logs) * x_mask
+            x1 = m + apply_mask(x1 * torch.exp(logs), x_mask)
             x = torch.cat([x0, x1], 1)
             logdet = torch.sum(logs, [1, 2])
             return x, logdet
         else:
-            x1 = (x1 - m) * torch.exp(-logs) * x_mask
+            x1 = apply_mask((x1 - m) * torch.exp(-logs), x_mask)
             x = torch.cat([x0, x1], 1)
             return x, None
 
@@ -478,45 +337,37 @@ class ResidualCouplingLayer(nn.Module):
 class FlowSpecDecoder(nn.Module):
     def __init__(
         self,
-        in_channels,
-        hidden_dim,
-        kernel_size,
-        dilation_rate,
-        n_blocks,
-        n_layers,
-        p_dropout=0.0,
-        n_split=4,
-        n_sqz=2,
-        lang_emb_dim=None,
-        speaker_emb_dim=None,
-        speech_quality_emb_dim=None,
+        in_channels: int,
+        hidden_dim: int,
+        kernel_size: int,
+        dilation_rate: int,
+        n_blocks: int,
+        n_layers: int,
+        p_dropout: float,
+        n_split: int = 4,
+        n_sqz: int = 2,
+        lang_emb_dim: tp.Optional[int] = None,
+        speaker_emb_dim: tp.Optional[int] = None,
+        speech_quality_emb_dim: tp.Optional[int] = None,
     ):
         super().__init__()
-        self.in_channels = in_channels
-        self.hidden_dim = hidden_dim
-        self.kernel_size = kernel_size
-        self.dilation_rate = dilation_rate
-        self.n_blocks = n_blocks
-        self.n_layers = n_layers
-        self.p_dropout = p_dropout
-        self.n_split = n_split
         self.n_sqz = n_sqz
         self.is_inverse = False
 
         self.flows = nn.ModuleList()
-        for i, b in enumerate(range(self.n_blocks)):
-            self.flows.append(ActNorm(channels=self.in_channels * self.n_sqz))
+        for _ in range(n_blocks):
+            self.flows.append(ActNorm(channels=in_channels * self.n_sqz))
             self.flows.append(
-                InvConvNear(channels=self.in_channels * self.n_sqz, n_split=self.n_split)
+                InvConvNear(channels=in_channels * self.n_sqz, n_split=n_split)
             )
             self.flows.append(
                 ResidualCouplingLayer(
-                    self.in_channels * self.n_sqz,
-                    self.hidden_dim,
-                    kernel_size=self.kernel_size,
-                    dilation_rate=self.dilation_rate,
-                    n_layers=self.n_layers,
-                    p_dropout=self.p_dropout,
+                    in_channels * self.n_sqz,
+                    hidden_dim,
+                    kernel_size=kernel_size,
+                    dilation_rate=dilation_rate,
+                    n_layers=n_layers,
+                    p_dropout=p_dropout,
                     lang_emb_dim=lang_emb_dim,
                     speaker_emb_dim=speaker_emb_dim,
                     speech_quality_emb_dim=speech_quality_emb_dim,
@@ -531,7 +382,6 @@ class FlowSpecDecoder(nn.Module):
         lang_emb=None,
         speaker_emb=None,
         speech_quality_emb=None,
-        ssl_feat=None,
     ):
         if not reverse:
             flows = self.flows
@@ -553,7 +403,6 @@ class FlowSpecDecoder(nn.Module):
                     lang_emb=lang_emb,
                     speaker_emb=speaker_emb,
                     speech_quality_emb=speech_quality_emb,
-                    ssl_feat=ssl_feat,
                 )
                 logdet_tot += logdet
             else:
@@ -563,7 +412,6 @@ class FlowSpecDecoder(nn.Module):
                     reverse,
                     lang_emb=lang_emb,
                     speaker_emb=speaker_emb,
-                    ssl_feat=ssl_feat,
                 )
 
         if self.n_sqz > 1:

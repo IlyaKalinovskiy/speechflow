@@ -80,7 +80,7 @@ def parse_args():
         "--batch_size",
         help="num samples in batch",
         type=int,
-        default=24,
+        default=16,
     )
     arguments_parser.add_argument(
         "-epochs",

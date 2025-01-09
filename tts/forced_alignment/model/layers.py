@@ -284,12 +284,7 @@ class ConvReluNorm(nn.Module):
         p_dropout,
     ):
         super().__init__()
-        self.in_channels = in_channels
-        self.hidden_channels = hidden_channels
-        self.out_channels = out_channels
-        self.kernel_size = kernel_size
         self.n_layers = n_layers
-        self.p_dropout = p_dropout
         assert n_layers > 1, "Number of layers should be larger than 0."
 
         self.conv_layers = nn.ModuleList()
@@ -316,11 +311,11 @@ class ConvReluNorm(nn.Module):
     def forward(self, x, x_mask):
         x_org = x
         for i in range(self.n_layers):
-            x = self.conv_layers[i](x * x_mask)
+            x = self.conv_layers[i](apply_mask(x, x_mask))
             x = self.norm_layers[i](x)
             x = self.relu_drop(x)
         x = x_org + self.proj(x)
-        return x * x_mask
+        return apply_mask(x, x_mask)
 
 
 class WN(torch.nn.Module):
@@ -339,10 +334,7 @@ class WN(torch.nn.Module):
         assert kernel_size % 2 == 1
         assert hidden_channels % 2 == 0
         self.hidden_channels = hidden_channels
-        self.kernel_size = (kernel_size,)
-        self.dilation_rate = dilation_rate
         self.n_layers = n_layers
-        self.p_dropout = p_dropout
         self.lang_emb_dim = lang_emb_dim
         self.speaker_emb_dim = speaker_emb_dim
         self.speech_quality_emb_dim = speech_quality_emb_dim
@@ -396,7 +388,6 @@ class WN(torch.nn.Module):
         lang_emb=None,
         speaker_emb=None,
         speech_quality_emb=None,
-        ssl_feat=None,
     ):
         output = torch.zeros_like(x)
         n_channels_tensor = torch.IntTensor([self.hidden_channels])
