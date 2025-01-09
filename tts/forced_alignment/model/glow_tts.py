@@ -154,7 +154,7 @@ class GlowTTS(EmbeddingCalculator):
     def store_inverse(self):
         self.decoder.store_inverse()
 
-    def mas(self, x_m, x_logs, z, attn_mask, inputs, mas_correction=False):
+    def mas(self, x_m, x_logs, z, attn_mask, inputs, attention_correction: bool = False):
         with torch.no_grad():
             x_s_sq_r = torch.exp(-2 * x_logs)
             logp1 = torch.sum(-0.5 * math.log(2 * math.pi) - x_logs, [1]).unsqueeze(
@@ -171,7 +171,7 @@ class GlowTTS(EmbeddingCalculator):
             )  # [b, t, 1]
             logp = logp1 + logp2 + logp3 + logp4  # [b, t, t']
 
-            if mas_correction:
+            if attention_correction:
                 sil_mask = inputs.ling_feat.sil_mask.cpu().numpy()
                 spectral_flatness = inputs.spectral_flatness.cpu().numpy()
                 max_frames_per_phoneme = int(
@@ -215,14 +215,15 @@ class GlowTTS(EmbeddingCalculator):
         duration_loss = torch.sum((logw - logw_) ** 2) / torch.sum(x_lens)
         return mle_loss, duration_loss
 
-    def forward(self, inputs: AlignerForwardInput, mas_correction: bool = False) -> AlignerForwardOutput:  # type: ignore
+    def forward(self, inputs: AlignerForwardInput, attention_correction: bool = False) -> AlignerForwardOutput:  # type: ignore
         x = self.get_transcription_embeddings(inputs)  # type: ignore
         x_lens = inputs.input_lengths
         x_mask = get_mask_from_lengths(x_lens)
 
         y = inputs.spectrogram.transpose(1, -1)
         y_lens = inputs.spectrogram_lengths
-        additional_content = {}
+        y, y_lens = self.preprocess(y, y_lens, y.shape[2])
+        y_mask = get_mask_from_lengths(y_lens)
 
         ling_feat_emb = self.get_ling_feat(inputs)  # type: ignore
         lang_emb = self.get_lang_embedding(inputs)  # type: ignore
@@ -237,9 +238,6 @@ class GlowTTS(EmbeddingCalculator):
             speaker_emb=speaker_emb,
         )
 
-        y, y_lens = self.preprocess(y, y_lens, y.shape[2])
-        y_mask = get_mask_from_lengths(y_lens)
-
         z, logdet = self.decoder(
             y,
             y_mask,
@@ -247,6 +245,8 @@ class GlowTTS(EmbeddingCalculator):
             speaker_emb=speaker_emb,
             speech_quality_emb=speech_quality_emb,
         )
+
+        additional_content = {}
 
         if self.params.use_ssl:
             z_enc = self.ssl_encoder(self.ssl_proj(z), y_mask).transpose(1, -1)
@@ -256,7 +256,7 @@ class GlowTTS(EmbeddingCalculator):
             ssl_prediction_loss = 0
 
         attn_mask = get_attention_mask(x_mask, y_mask)
-        attn = self.mas(x_m, x_logs, z, attn_mask, inputs, mas_correction)
+        attn = self.mas(x_m, x_logs, z, attn_mask, inputs, attention_correction)
 
         mle_loss, duration_loss = self.calculate_losses(
             z, attn, x_m, x_logs, logw, logdet, x_mask, x_lens, y_lens
@@ -276,12 +276,8 @@ class GlowTTS(EmbeddingCalculator):
             except Exception:  # type: ignore
                 aligning_path = attn.squeeze(1).transpose(1, 2)
 
-            additional_content.update(
-                {
-                    "attn_soft": attn_soft,
-                    "attn_logprob": attn_logprob,
-                }
-            )
+            additional_content["attn_soft"] = attn_soft
+            additional_content["attn_logprob"] = attn_logprob
         else:
             aligning_path = attn.squeeze(1).transpose(1, 2)
 
@@ -301,7 +297,6 @@ class GlowTTS(EmbeddingCalculator):
         x = inputs.transcription
         x_lens = inputs.input_lengths
         y = inputs.spectrogram.transpose(1, -1)
-        y_lens = inputs.spectrogram_lengths
 
         speaker_emb = self.get_speaker_embedding(inputs)  # type: ignore
         ling_feat_emb = self.get_ling_feat(inputs)  # type: ignore

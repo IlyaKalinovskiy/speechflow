@@ -50,18 +50,15 @@ model:
     inner_channels_dec: 512
 
     use_dnn_speaker_emb: true
-    speaker_biometric_model: speechbrain
-    speaker_emb_dim: 192
+    speaker_biometric_model: wespeaker
+    speaker_emb_dim: 256
 
     use_ling_feat_emb: true
     use_lang_emb: true
     use_speaker_emb: true
-    use_xpbert: false
     use_speech_quality_emb: true
     use_ssl: true
 
     # use_alignment_encoder: true
     # alignment_encoder_temperature: 15.0
     # alignment_encoder_dist_type: cosine
-
-    # use_mas_correction: true

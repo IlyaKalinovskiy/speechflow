@@ -237,7 +237,7 @@ def add_pauses_from_text(
         elif level == "words":
             group = TokenUtils.group_tokens_by_word(synt.tokens)
 
-            def get_asr_pause_dura(tokens_: tp.List[Token]) -> float:
+            def _get_asr_pause_dura(tokens_: tp.List[Token]) -> float:
                 try:
                     word = [t for t in tokens_ if t.is_word][0]
                     return 0.0 if word.asr_pause is None else float(word.asr_pause)
@@ -245,13 +245,15 @@ def add_pauses_from_text(
                     return 0.0
 
             for i, tokens in enumerate(group[:-1]):
-                asr_pause = get_asr_pause_dura(tokens)
+                asr_pause = _get_asr_pause_dura(tokens)
                 check_pos = any(
                     t.pos in ["ADP", "CCONJ", "SCONJ", "DET", "PART"] for t in tokens
                 )
+                check_len = any(len(t.text) <= 3 for t in tokens)
                 if (
                     not pause_after_short_words
                     and check_pos
+                    and check_len
                     and asr_pause == 0.0
                     and not (tokens[-1].is_punctuation or group[i + 1][0].is_punctuation)
                 ):

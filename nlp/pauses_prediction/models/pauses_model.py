@@ -57,7 +57,6 @@ class SimpleModel(EmbeddingCalculator):
             sil_mask=sil_mask,
             durations=predicted_durations,
         )
-
         return output
 
 

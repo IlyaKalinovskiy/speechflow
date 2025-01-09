@@ -46,7 +46,7 @@ preproc:
           sample_rate: 16000
     voice_bio:
       type: VoiceBiometricProcessor
-      model_type: speechbrain  # use "resemblyzer" for training speedup
+      model_type: wespeaker  # use "resemblyzer" for training speedup
       max_audio_duration: 5
       random_crop: true
     speech_quality:
@@ -73,6 +73,7 @@ preproc:
     add_pauses_from_text:
       level: words
       pauses_with_punctuation: true
+      # pause_after_short_words: true
     text:
       type: TextProcessor
       lang: MULTILANG

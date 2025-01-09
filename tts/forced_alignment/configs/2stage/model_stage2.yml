@@ -56,5 +56,3 @@ model:
     # use_alignment_encoder: true
     # alignment_encoder_temperature: 15.0
     # alignment_encoder_dist_type: cosine
-
-    # use_mas_correction: true

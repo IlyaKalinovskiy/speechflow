@@ -390,7 +390,7 @@ class Aligner:
         forward_input, _, samples = self._batch_processor(batch)
 
         with torch.no_grad():
-            output = self._aligner_model(forward_input, mas_correction=True)
+            output = self._aligner_model(forward_input, attention_correction=True)
 
         x_lens = forward_input.input_lengths.cpu().numpy()
         y_lens = forward_input.output_lengths.cpu().numpy()

@@ -644,6 +644,7 @@ class AlignmentEncoder(torch.nn.Module):
         """
         if self.condition_types:
             keys = self.cond_input(keys.transpose(1, 2), conditioning).transpose(1, 2)
+
         # B x C x T1
         queries_enc = self.query_proj(queries)
         # B x C x T2
