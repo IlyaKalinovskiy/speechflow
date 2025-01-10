@@ -314,6 +314,7 @@ class ConvReluNorm(nn.Module):
             x = self.conv_layers[i](apply_mask(x, x_mask))
             x = self.norm_layers[i](x)
             x = self.relu_drop(x)
+
         x = x_org + self.proj(x)
         return apply_mask(x, x_mask)
 
@@ -427,7 +428,7 @@ class WN(torch.nn.Module):
 
             res_skip_acts = self.res_skip_layers[i](acts)
             if i < self.n_layers - 1:
-                x = (x + res_skip_acts[:, : self.hidden_channels, :]) * x_mask
+                x = apply_mask((x + res_skip_acts[:, : self.hidden_channels, :]), x_mask)
                 output = output + res_skip_acts[:, self.hidden_channels :, :]
             else:
                 output = output + res_skip_acts
@@ -457,17 +458,18 @@ class ActNorm(nn.Module):
             x_mask = torch.ones(x.size(0), 1, x.size(2)).to(
                 device=x.device, dtype=x.dtype
             )
-        x_len = torch.sum(x_mask, [1, 2])
+
+        x_lens = torch.sum(x_mask, [1, 2])
         if not self.initialized:
             self.initialize(x, x_mask)
             self.initialized = True
 
         if reverse:
-            z = (x - self.bias) * torch.exp(-self.logs) * x_mask
+            z = apply_mask((x - self.bias) * torch.exp(-self.logs), x_mask)
             logdet = None
         else:
-            z = (self.bias + torch.exp(self.logs) * x) * x_mask
-            logdet = torch.sum(self.logs) * x_len  # [b]
+            z = apply_mask((self.bias + torch.exp(self.logs) * x), x_mask)
+            logdet = torch.sum(self.logs) * x_lens  # [b]
 
         return z, logdet
 
@@ -480,8 +482,8 @@ class ActNorm(nn.Module):
     def initialize(self, x, x_mask):
         with torch.no_grad():
             denom = torch.sum(x_mask, [0, 2])
-            m = torch.sum(x * x_mask, [0, 2]) / denom
-            m_sq = torch.sum(x * x * x_mask, [0, 2]) / denom
+            m = torch.sum(apply_mask(x, x_mask), [0, 2]) / denom
+            m_sq = torch.sum(apply_mask(x * x, x_mask), [0, 2]) / denom
             v = m_sq - (m**2)
             logs = 0.5 * torch.log(torch.clamp_min(v, 1e-6))
 
@@ -545,7 +547,7 @@ class InvConvNear(nn.Module):
         z = F.conv2d(x, weight)
 
         z = z.view(b, 2, self.n_split // 2, c // self.n_split, t)
-        z = z.permute(0, 1, 3, 2, 4).contiguous().view(b, c, t) * x_mask
+        z = apply_mask(z.permute(0, 1, 3, 2, 4).contiguous().view(b, c, t), x_mask)
         return z, logdet
 
     def store_inverse(self):

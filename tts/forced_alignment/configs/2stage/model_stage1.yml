@@ -40,10 +40,10 @@ loss:
 
 model:
   type: GlowTTS
-  #init_from:
-  #  ckpt_path: /path/to/checkpoint
+  # init_from:
+  #   ckpt_path: /path/to/checkpoint
   params:
-    token_emb_dim: 128
+    token_emb_dim: 256
     mel_spectrogram_dim: 100
 
     inner_channels_enc: 256

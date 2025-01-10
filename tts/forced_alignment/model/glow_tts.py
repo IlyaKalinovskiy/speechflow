@@ -61,8 +61,8 @@ class GlowTTSParams(EmbeddingParams):
     use_ling_feat_emb: bool = False
     use_lang_emb: bool = False
     use_speaker_emb: bool = False
-    use_xpbert: bool = False
     use_speech_quality_emb: bool = False
+    use_xpbert: bool = False
     use_ssl: bool = False
 
     def model_post_init(self, __context: tp.Any):
@@ -266,7 +266,7 @@ class GlowTTS(EmbeddingCalculator):
             attn_soft, attn_logprob = self.alignment_encoder(
                 queries=z,
                 keys=x,
-                mask=(~x_mask).transpose(2, 1),
+                mask=(~x_mask).unsqueeze(1).transpose(2, 1),
                 attn_prior=attn.squeeze(1).transpose(1, 2),
             )
 

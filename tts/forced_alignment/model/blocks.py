@@ -252,14 +252,14 @@ class TextEncoder(nn.Module):
             x += self.pe.position_embeddings(position_ids)
 
             x = self.encoder.encoder(x, attention_mask=attn_mask)[0]
-            x = apply_mask(x, x_mask).transpose(1, -1)
+            x = x.transpose(1, -1)
         else:
-            x = self.encoder(x.transpose(1, -1), x_mask.squeeze(1))
+            x = self.encoder(x.transpose(1, -1), x_mask)
 
-        x_m = apply_mask(self.proj_m(x), x_mask)
+        x_m = self.proj_m(x)
 
         if not self.mean_only:
-            x_logs = apply_mask(self.proj_s(x), x_mask)
+            x_logs = self.proj_s(x)
         else:
             x_logs = torch.zeros_like(x_m)
 

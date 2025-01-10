@@ -30,11 +30,11 @@ parser:
     audio_strip:
       pad: 0.25
     split_by_phrases:
-      max_duration: 10
+      max_duration: 12
 
 preproc:
   pipe: [load_audio, load_audio_segmentation,
-         voice_bio, speech_quality, ssl, noise,
+         vtlp, voice_bio, speech_quality, ssl, monotonic_speech, noise,
          spectrogram, melscale, add_pauses_from_text, text,
          timedim_interpolation, reverse]
   pipe_cfg:
@@ -90,18 +90,21 @@ preproc:
       features: ssl_feat
       shape_as: mel
       # ratio: 0.5
-    augment_wave:
+    vtlp:
       type: WaveAugProcessor
-      p: {train: 1, test: 0.0}
-      shuffle: False
+      p: {train: 1.0, test: 0.0}
       pipe: [vtlp]
       pipe_cfg:
-        monotonic_speech:
-          p: 1.0
         vtlp:
           p: 0.25
           alpha_min: 0.95
           alpha_max: 1.05
+    monotonic_speech:
+      type: WaveAugProcessor
+      pipe: [monotonic_speech]
+      pipe_cfg:
+        monotonic_speech:
+          p: 1.0
 
 collate:
   type: TTSCollate

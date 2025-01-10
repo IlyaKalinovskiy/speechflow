@@ -36,7 +36,7 @@ class GlowTTSLoss(BaseCriterion):
         }
 
         if "attn_soft" in output.additional_content:
-            total_loss.update(self.lor_loss(global_step, output, target))
+            total_loss.update(self.lor_loss(output, target, batch_idx, global_step))
 
         return total_loss
 
@@ -85,12 +85,11 @@ class NemoAlignerLoss(BaseCriterion):
         attn_soft = output.additional_content.get("attn_soft")
         attn_hard = output.additional_content.get("attn_hard")
         attn_logprob = output.additional_content.get("attn_logprob")
-        n_frames_per_step = output.additional_content.get("n_frames_per_step", 1)
 
         forward_sum_loss = self.forward_sum_loss(
             attn_logprob=attn_logprob,
             in_lens=target.input_lengths,
-            out_lens=target.output_lengths // n_frames_per_step,
+            out_lens=output.output_lengths,
         )
         total_loss = {"ForwardSumLoss": forward_sum_loss}
 
