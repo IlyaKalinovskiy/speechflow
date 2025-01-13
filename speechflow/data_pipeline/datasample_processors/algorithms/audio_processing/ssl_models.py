@@ -199,8 +199,9 @@ class Wav2Vec(BaseSSLModel):
         text = self.processor.batch_decode(logits.argmax(dim=-1))[0]
         ssl_feat.text = text
 
-        if self.processor.tokenizer.backend.name() == "espeak":
-            return ssl_feat
+        if hasattr(self.processor.tokenizer, "backend"):
+            if self.processor.tokenizer.backend.name() == "espeak":
+                return ssl_feat
 
         tokens_id = self.processor.tokenizer(text).input_ids
 

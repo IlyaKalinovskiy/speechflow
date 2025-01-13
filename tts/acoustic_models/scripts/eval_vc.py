@@ -3,7 +3,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing.audio_codecs import (
-    DAC,
+    DescriptAC,
 )
 from speechflow.io import AudioChunk
 from speechflow.logging import trace
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     file_list = list(Path(test_files).glob("*.wav"))
     Path(result_path).mkdir(parents=True, exist_ok=True)
 
-    dac = DAC()
+    dac = DescriptAC()
 
     for wav_path in tqdm(file_list):
         result_file_name = Path(result_path) / wav_path.name

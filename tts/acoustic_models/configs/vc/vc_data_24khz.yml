@@ -1,8 +1,8 @@
 ### Data Configuration ###
 
 dirs:
-  # data_root: &data_root ../../../examples/simple_datasets/speech/SEGS
-  data_root: &data_root /media/data1/DECODER_SEGS_v2
+  data_root: &data_root ../../../examples/simple_datasets/speech/SEGS
+  # data_root: &data_root /media/data1/DECODER_SEGS_v2
   dump_folder: &dump_folder dump_vc_whisp_24KHz
 
 file_search:
@@ -10,7 +10,7 @@ file_search:
   with_subfolders: true
 
 data_server:
-  n_processes: { default: 9, debug: 1 }
+  n_processes: { default: 4, debug: 1 }
   n_gpus: { default: 1, debug: ~ }
 
 dataset:
@@ -39,32 +39,10 @@ parser:
       max_len: 0.4
 
 preproc:
-  pipe: [# load data
-         load_audio, load_audio_segmentation,
-         # audio preprocessing
-         denoiser,  # add_pauses_from_timestamps, apply_fade_inside_pauses,
-         multiple,
-         # audio features
-         #  speech_quality,
+  pipe: [load_audio, load_audio_segmentation,
+         denoiser, multiple,
          spectrogram, melscale,
-         #  energy, pitch, energy_enhancement,  # pitch_enhancement,
-         #  energy_pitch_average_by_time, energy_pitch_normalize,
-         #  speaker features
-         #  voice_bio,
-         # tts features
-         #  text, int_durations, transcription_by_frames,
-         #  ssl, plbert,
-         # audio augmentation
-         # load_audio, multiple, audio_augment,
-         ac,
-         # audio_augment,
-         # vc features
-         ssl,
-         # ground truth audio
-         #  load_audio, denoiser, apply_fade_inside_pauses,
-         #  multiple,
-         #  ac, timedim_interpolation
-         ]
+         ac, ssl, timedim_interpolation]
   pipe_cfg:
     load_audio:
       type: SignalProcessor
@@ -74,7 +52,7 @@ preproc:
           sample_rate: 24000
         trim:
           random_chunk: true
-          num_samples_per_chunk: 48000
+          max_duration: 2
     multiple:
       type: SignalProcessor
       pipe: [multiple]
@@ -101,47 +79,6 @@ preproc:
           n_mels: 80
           f_min: 0
           f_max: 8000
-    energy:
-      type: SpectralProcessor
-      pipe: [energy]
-    pitch:
-      type: PitchProcessor
-      method: torchcrepe  # pyworld, torchcrepe
-    energy_enhancement:
-      type: signal_enhancement
-      attributes: [energy]
-      smooth: true
-    pitch_enhancement:
-      type: signal_enhancement
-      attributes: [pitch]
-      smooth: true
-    energy_pitch_average_by_time:
-      type: average_by_time
-      attributes: [energy, pitch]
-      use_quantile: true
-      min_value: 1.e-2
-    energy_pitch_normalize:
-      type: normalize
-      attributes: [energy, pitch]
-      normalize_by: sample
-      method: quantile
-      filter_outliers: true
-      min_value: 0
-    add_pauses_from_timestamps:
-      step: 0.05
-    text:
-      type: TextProcessor
-      lang: MULTILANG
-    int_durations:
-      type: calc_durations
-      as_int: true
-    voice_bio:
-      type: VoiceBiometricProcessor
-      model_type: wespeaker
-      max_audio_duration: 5
-      random_crop: true
-    speech_quality:
-      type: SpeechQualityAssessment
     ssl:
       type: SSLProcessor
       ssl_type: Hubert
@@ -158,51 +95,9 @@ preproc:
         # stream_mod:
         #   chunk_size: 6400
         #   context_size: [64000, 6550]
-    plbert:
-      type: MultilingualPLBert
-      from_ssl_tokens: True
-    audio_augment:
-      type: WaveAugProcessor
-      p: { train: 0.75, test: 0.0 }
-      pipe: [background_noise, colored_noise, room_impulse_response,
-             gain_curve, vtlp, monotonic_speech, whisper]
-      pipe_cfg:
-        background_noise:
-          background_paths:
-            immers:
-              - /media/i.kalinovskiy/GitLab2/speechflow/aug_data/noise/noise_24k
-            justai:
-              - /src/aug_data/noise/noise_24k
-            debug:
-              - C:/FluentaAI/aug_data/noise/noise_24k
-          p: 0.25
-        colored_noise:
-          p: 0.25
-        room_impulse_response:
-          ir_paths:
-            immers:
-              - /media/i.kalinovskiy/GitLab2/speechflow/aug_data/rirs/smallroom_24k
-              - /media/i.kalinovskiy/GitLab2/speechflow/aug_data/rirs/mediumroom_24k
-            justai:
-              - /src/aug_data/rirs/smallroom_24k
-              - /src/aug_data/rirs/mediumroom_24k
-            debug:
-              - C:/FluentaAI/aug_data/rirs/smallroom_24k
-              - C:/FluentaAI/aug_data/rirs/mediumroom_24k
-          p: 0.25
-        gain_curve:
-          p: 0.25
-        vtlp:
-          alpha_min: 0.95
-          alpha_max: 1.05
-          p: 0.2
-        monotonic_speech:
-          p: 0.2
-        whisper:
-          p: 0.2
     ac:
       type: ACProcessor
-      ac_type: DAC
+      ac_type: StableAC
       ac_params:
         feat_type: quantized
     timedim_interpolation:
@@ -222,6 +117,13 @@ collate:
 processor:
   type: DataProcessor
   output_collated_only: true
+  dump:
+    default: ~
+    debug:
+      data_root: *data_root
+      folder_path: !join [*data_root, *dump_folder]
+      mode: file_path
+      full_dump: true
 
 sampler:
   train:

@@ -34,7 +34,7 @@ parser:
 
 preproc:
   pipe: [load_audio, load_audio_segmentation,
-         vtlp, voice_bio, speech_quality, ssl, monotonic_speech, noise,
+         voice_bio, speech_quality, ssl, noise,
          spectrogram, melscale, add_pauses_from_text, text,
          timedim_interpolation, reverse]
   pipe_cfg:

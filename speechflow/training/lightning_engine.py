@@ -75,7 +75,9 @@ class LightningEngine(pl.LightningModule):
         total_loss = torch.tensor(0.0).to(self.device)
         losses_to_log = {}
         for name, loss in losses.items():
-            if loss.requires_grad or step_name != "train":
+            if not isinstance(loss, torch.Tensor):
+                loss = torch.tensor(loss, dtype=torch.float).to(self.device)
+            if step_name != "train" or loss.requires_grad:
                 if "constant" not in name:
                     total_loss += loss
                 losses_to_log[f"{name}/{step_name}"] = loss.detach()
@@ -227,6 +229,8 @@ class GANLightningEngine(pl.LightningModule):
         total_loss = torch.tensor(0.0).to(self.device)
         losses_to_log = {}
         for name, loss in losses.items():
+            if not isinstance(loss, torch.Tensor):
+                loss = torch.tensor(loss, dtype=torch.float).to(self.device)
             total_loss += loss
             losses_to_log[f"{name}/{step_name}"] = loss.detach()
 

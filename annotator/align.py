@@ -134,7 +134,6 @@ class Aligner:
 
         (
             self._cfg_data,
-            self._sample_rate,
             self._hop_len,
             self._speaker_id_map,
             self._lang_id_map,
@@ -205,6 +204,9 @@ class Aligner:
         if "augment_wave" in cfg_data["preproc"]["pipe"]:
             cfg_data["preproc"]["pipe"].remove("augment_wave")
 
+        if "ssl" in cfg_data["preproc"]["pipe"]:
+            cfg_data["preproc"]["pipe"].remove("ssl")
+
         if "reverse" in cfg_data["preproc"]["pipe"]:
             if reverse_mode:
                 cfg_data["preproc"].setdefault("reverse", {})["p"] = 1.0
@@ -212,7 +214,6 @@ class Aligner:
                 LOGGER.info("remove reverse function")
                 cfg_data["preproc"]["pipe"].remove("reverse")
 
-        sample_rate = find_field(cfg_data, "sample_rate")
         hop_len = find_field(cfg_data, "hop_len")
 
         speaker_id_setter = find_field(cfg_data, "SpeakerIDSetter")
@@ -245,7 +246,6 @@ class Aligner:
 
         return (
             cfg_data,
-            sample_rate,
             hop_len,
             speaker_id_map,
             lang_id_map,
@@ -323,7 +323,7 @@ class Aligner:
             b = max(0.0, min((cummulative_lengths[i] * scale), wave_duration))
             intervals.append((a, b))
 
-        return intervals
+        return intervals  # in seconds
 
     @staticmethod
     def _remove_small_pauses(timestamps, min_pause_len):
@@ -342,7 +342,7 @@ class Aligner:
 
         raw_intervals = self._get_intervals(
             cummulative_lens,
-            self._sample_rate,
+            audio_chunk.sr,
             self._hop_len,
             audio_chunk.duration,
         )
@@ -390,7 +390,7 @@ class Aligner:
         forward_input, _, samples = self._batch_processor(batch)
 
         with torch.no_grad():
-            output = self._aligner_model(forward_input, attention_correction=True)
+            output = self._aligner_model(forward_input, adjust_attention=True)
 
         x_lens = forward_input.input_lengths.cpu().numpy()
         y_lens = forward_input.output_lengths.cpu().numpy()

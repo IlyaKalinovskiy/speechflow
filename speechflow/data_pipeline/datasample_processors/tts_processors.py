@@ -249,11 +249,9 @@ def add_pauses_from_text(
                 check_pos = any(
                     t.pos in ["ADP", "CCONJ", "SCONJ", "DET", "PART"] for t in tokens
                 )
-                check_len = any(len(t.text) <= 3 for t in tokens)
                 if (
                     not pause_after_short_words
                     and check_pos
-                    and check_len
                     and asr_pause == 0.0
                     and not (tokens[-1].is_punctuation or group[i + 1][0].is_punctuation)
                 ):

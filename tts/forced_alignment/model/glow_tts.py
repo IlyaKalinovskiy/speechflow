@@ -53,17 +53,22 @@ class GlowTTSParams(EmbeddingParams):
     dilation_rate: int = 1
     p_dropout: float = 0.05
 
-    use_alignment_encoder: bool = False
-    alignment_encoder_n_att_channels: int = 128
-    alignment_encoder_temperature: float = 0.0005
-    alignment_encoder_dist_type: str = "l2"
-
     use_ling_feat_emb: bool = False
     use_lang_emb: bool = False
     use_speaker_emb: bool = False
     use_speech_quality_emb: bool = False
     use_xpbert: bool = False
     use_ssl: bool = False
+
+    # Nemo TTS Alignment (debugging required)
+    use_alignment_encoder: bool = False
+    alignment_encoder_n_att_channels: int = 128
+    alignment_encoder_temperature: float = 0.0005
+    alignment_encoder_dist_type: str = "l2"
+
+    # For adjust attention
+    frames_per_sec: float = 125  # 16000 / 128
+    max_phoneme_duration: float = 0.15
 
     def model_post_init(self, __context: tp.Any):
         super().model_post_init(__context)
@@ -154,7 +159,7 @@ class GlowTTS(EmbeddingCalculator):
     def store_inverse(self):
         self.decoder.store_inverse()
 
-    def mas(self, x_m, x_logs, z, attn_mask, inputs, attention_correction: bool = False):
+    def mas(self, x_m, x_logs, z, attn_mask, inputs, adjust_attention: bool = False):
         with torch.no_grad():
             x_s_sq_r = torch.exp(-2 * x_logs)
             logp1 = torch.sum(-0.5 * math.log(2 * math.pi) - x_logs, [1]).unsqueeze(
@@ -171,7 +176,7 @@ class GlowTTS(EmbeddingCalculator):
             )  # [b, t, 1]
             logp = logp1 + logp2 + logp3 + logp4  # [b, t, t']
 
-            if attention_correction:
+            if adjust_attention:
                 sil_mask = inputs.ling_feat.sil_mask.cpu().numpy()
                 spectral_flatness = inputs.spectral_flatness.cpu().numpy()
                 max_frames_per_phoneme = int(
@@ -215,7 +220,7 @@ class GlowTTS(EmbeddingCalculator):
         duration_loss = torch.sum((logw - logw_) ** 2) / torch.sum(x_lens)
         return mle_loss, duration_loss
 
-    def forward(self, inputs: AlignerForwardInput, attention_correction: bool = False) -> AlignerForwardOutput:  # type: ignore
+    def forward(self, inputs: AlignerForwardInput, adjust_attention: bool = False) -> AlignerForwardOutput:  # type: ignore
         x = self.get_transcription_embeddings(inputs)  # type: ignore
         x_lens = inputs.input_lengths
         x_mask = get_mask_from_lengths(x_lens)
@@ -248,7 +253,7 @@ class GlowTTS(EmbeddingCalculator):
 
         additional_content = {}
 
-        if self.params.use_ssl:
+        if self.training and self.params.use_ssl:
             z_enc = self.ssl_encoder(self.ssl_proj(z), y_mask).transpose(1, -1)
             ssl_prediction_loss = F.mse_loss(z_enc, inputs.ssl_feat[:, : z_enc.shape[1]])
             additional_content["ssl_prediction"] = z_enc
@@ -256,7 +261,7 @@ class GlowTTS(EmbeddingCalculator):
             ssl_prediction_loss = 0
 
         attn_mask = get_attention_mask(x_mask, y_mask)
-        attn = self.mas(x_m, x_logs, z, attn_mask, inputs, attention_correction)
+        attn = self.mas(x_m, x_logs, z, attn_mask, inputs, adjust_attention)
 
         mle_loss, duration_loss = self.calculate_losses(
             z, attn, x_m, x_logs, logw, logdet, x_mask, x_lens, y_lens
