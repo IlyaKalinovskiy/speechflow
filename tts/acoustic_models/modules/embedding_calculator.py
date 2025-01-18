@@ -23,17 +23,27 @@ class EmbeddingCalculator(BaseTorchModel):
     def __init__(self, params: EmbeddingParams):
         super().__init__(params)
 
+        def _get_projection_layer(
+            input_dim: int,
+            output_dim: int,
+            bias: bool = True,
+            activation_fn: tp.Optional[str] = "Tanh",
+        ):
+            af = nn.Identity() if activation_fn is None else getattr(nn, activation_fn)()
+            return nn.Sequential(nn.Linear(input_dim, output_dim, bias=bias), af)
+
         self.embedding = nn.Embedding(params.alphabet_size, params.token_emb_dim)
+        # nn.init.normal_(self.embedding.weight, 0.0, params.token_emb_dim**-0.5)
         nn.init.orthogonal_(self.embedding.weight)
 
         if params.n_symbols_per_token > 1:
-            self.token_proj = nn.Linear(
-                params.token_emb_dim * params.n_symbols_per_token,
-                params.token_emb_dim,
+            self.token_proj = _get_projection_layer(
+                params.token_emb_dim * params.n_symbols_per_token, params.token_emb_dim
             )
 
         if params.n_langs > 1:
             self.lang_embedding = nn.Embedding(params.n_langs, params.token_emb_dim)
+            # nn.init.normal_(self.lang_embedding.weight, 0.0, params.token_emb_dim**-0.5)
             nn.init.orthogonal_(self.lang_embedding.weight)
         else:
             self.lang_embedding = None
@@ -51,6 +61,7 @@ class EmbeddingCalculator(BaseTorchModel):
                 num_embeddings=self.n_speakers,
                 embedding_dim=params.speaker_emb_dim,
             )
+            # nn.init.normal_(self.speaker_emb.weight, 0.0, params.speaker_emb_dim ** -0.5)
             nn.init.orthogonal_(self.speaker_emb.weight)
             self.speaker_emb_dim = params.speaker_emb_dim
         elif params.use_dnn_speaker_emb or params.use_mean_dnn_speaker_emb:
@@ -68,10 +79,8 @@ class EmbeddingCalculator(BaseTorchModel):
                 model_type=params.speaker_biometric_model
             )
             if self.speaker_emb_dim != bio_processor.embedding_dim:
-                self.speaker_emb_proj = Regression(
-                    bio_processor.embedding_dim,
-                    self.speaker_emb_dim,
-                    p_dropout=0.5,
+                self.speaker_emb_proj = _get_projection_layer(
+                    bio_processor.embedding_dim, self.speaker_emb_dim
                 )
 
         if self.params.use_mean_dnn_speaker_emb:
@@ -79,8 +88,8 @@ class EmbeddingCalculator(BaseTorchModel):
                 model_type=params.speaker_biometric_model
             )
             if self.speaker_emb_dim != bio_processor.embedding_dim:
-                self.speaker_emb_proj = nn.Linear(
-                    bio_processor.embedding_dim, self.speaker_emb_dim, bias=False
+                self.speaker_emb_proj = _get_projection_layer(
+                    bio_processor.embedding_dim, self.speaker_emb_dim
                 )
 
         if params.num_additional_integer_seqs > 0:
@@ -90,17 +99,13 @@ class EmbeddingCalculator(BaseTorchModel):
             ) // params.num_additional_integer_seqs
 
             self.ling_feat_proj = nn.ModuleList()
-
             for _ in range(num_proj):
-                proj = nn.Linear(
-                    params.token_emb_dim,
-                    proj_size,
-                )
+                proj = _get_projection_layer(params.token_emb_dim, proj_size)
                 self.ling_feat_proj.append(proj)
         else:
             self.ling_feat_proj = None
 
-        self.projections: tp.Dict[str, tp.Callable] = {}
+        self.projections = nn.ModuleDict()
         for feat_name in [
             "lm_feat",
             "plbert_feat",
@@ -112,7 +117,9 @@ class EmbeddingCalculator(BaseTorchModel):
             feat_dim = getattr(params, f"{feat_name}_dim")
             proj_dim = getattr(params, f"{feat_name}_proj_dim")
             if feat_dim != proj_dim:
-                self.projections[feat_name] = nn.Linear(feat_dim, proj_dim)
+                self.projections[feat_name] = _get_projection_layer(
+                    feat_dim, proj_dim, False, None
+                )
 
         if params.use_average_emb:
             self.averages = nn.ModuleDict()
@@ -179,9 +186,11 @@ class EmbeddingCalculator(BaseTorchModel):
         return biometric_embedding
 
     def get_ling_feat(self, inputs: TTSForwardInput) -> tp.Optional[torch.Tensor]:
+        if inputs.ling_feat is None:
+            return None
+
         proj_idx = 0
         assembled_ling_emb = []
-        assert inputs.ling_feat
         for feat in inputs.ling_feat.to_dict().values():
             if feat is not None:
                 if (

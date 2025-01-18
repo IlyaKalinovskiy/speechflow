@@ -16,7 +16,7 @@ LOGGER = logging.getLogger("root")
 class ProcessWorker(AbstractWorker, mp.Process, ABC):
     """Base worker class which implements "multiprocessing" execution model."""
 
-    def __init__(self, init_logger: bool = True, lock=None):
+    def __init__(self, init_logger: bool = True, lock=None, daemon=None):
         mp.set_start_method("spawn", force=True)
         self._active = mp.Value("i", 0)
         self._started = mp.Value("i", 0)
@@ -24,7 +24,7 @@ class ProcessWorker(AbstractWorker, mp.Process, ABC):
         self._none_stop = mp.Value("i", 0)
         self._init_logger = init_logger
         self._lock = lock
-        mp.Process.__init__(self)
+        mp.Process.__init__(self, daemon=daemon)
 
     def __del__(self):
         self.finish()

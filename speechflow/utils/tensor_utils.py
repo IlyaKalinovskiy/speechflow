@@ -65,6 +65,14 @@ def get_lengths_from_durations(durations):
     return durations.sum(1).floor().long().detach()
 
 
+@lru_cache(maxsize=16)
+@torch.no_grad()
+def get_attention_mask(x_mask, y_mask):
+    _x = x_mask.unsqueeze(1).unsqueeze(-1)
+    _y = y_mask.unsqueeze(1).unsqueeze(2)
+    return (_x * _y).detach()  # type: ignore
+
+
 def apply_mask(t, mask):
     if t.ndim > 4:
         raise RuntimeError(f"Shape out {t.ndim} is not supported")

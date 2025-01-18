@@ -95,7 +95,7 @@ class SimpleSampler(AbstractDataSampler):
         neighbor: DataSample = random.sample(neighbors.difference({ds}), 1)[0]
         return neighbor
 
-    def sample_neighbor(self, ds: DataSample):
+    def sample_neighbor(self, ds: DataSample) -> DataSample:
         neighbor_ds = None
 
         for i in range(len(self._data.item(0).index)):
@@ -103,7 +103,10 @@ class SimpleSampler(AbstractDataSampler):
             if neighbor_ds is not None:
                 break
 
-        assert neighbor_ds is not None, "neighbors weren't been found"
+        if neighbor_ds is None:
+            LOGGER.warning(trace(self, message="neighbors weren't been found"))
+            neighbor_ds = ds.copy()
+
         return neighbor_ds
 
     @staticmethod

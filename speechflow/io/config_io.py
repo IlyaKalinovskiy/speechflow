@@ -3,6 +3,7 @@ import typing as tp
 import hashlib
 
 from copy import deepcopy as copy
+from os import environ as env
 from pathlib import Path
 
 from omegaconf import DictConfig, OmegaConf
@@ -125,6 +126,9 @@ class Config(DictConfig):
         section: tp.Optional[str] = None,
         value_select: tp.Optional[tp.Set] = None,
     ) -> "Config":
+        if value_select and "debug" in value_select:
+            env["VERBOSE"] = "True"
+
         if file_path.suffix in [".yaml", ".yml"]:
             yaml_cfg = file_path.read_text(encoding="utf-8")
             cfg = Config.create_from_yaml(yaml_cfg, section, value_select)

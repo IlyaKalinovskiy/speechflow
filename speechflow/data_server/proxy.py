@@ -21,7 +21,7 @@ class Proxy(ProcessWorker):
         self,
         server_addrs: tp.List[str],
     ):
-        ProcessWorker.__init__(self)
+        ProcessWorker.__init__(self, daemon=True)
         self._server_addrs = server_addrs
         self._proxy_addr = f"127.0.0.1:{find_free_port()}"
         self._zmq_proxy: ZMQProxy = None  # type: ignore
@@ -100,17 +100,8 @@ class Proxy(ProcessWorker):
                     if request["message"] == DCM.INFO:
                         all_info = []
                         for b in self._zmq_proxy.backends:
-                            try:
-                                while True:
-                                    b.send_multipart(message, serialize=False)
-                                    info = b.recv(timeout=1000, deserialize=False)
-                                    if info is not None:
-                                        break
-                            except Exception as e:
-                                LOGGER.error(trace(self, e))
-                                raise RuntimeError("DataServer not responding!")
-
-                            all_info.append(Serialize.load(info[-1]))
+                            info = b.request(message, serialize=False, deserialize=True)
+                            all_info.append(info)
 
                         message[-1] = Serialize.dump(
                             DataPipeline.aggregate_info(all_info)
@@ -120,7 +111,9 @@ class Proxy(ProcessWorker):
                         self._zmq_proxy.backend_send_multipart(message)
 
             for b in self._zmq_proxy.backends:
-                response = b.recv(timeout=1, deserialize=False)
+                response = b.recv_multipart(
+                    max_num_message=5, deserialize=False, timeout=1
+                )
                 if response is not None:
                     response = self.do_preprocessing(response)
                     self._zmq_proxy.frontend_send_multipart(response)

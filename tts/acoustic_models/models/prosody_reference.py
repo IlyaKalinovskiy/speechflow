@@ -355,6 +355,9 @@ class ComplexProsodyReference:
             tp.Union[REFERENECE_TYPE, tp.Dict[str, REFERENECE_TYPE]]
         ] = None,
     ) -> "ComplexProsodyReference":
+        if speaker_name is None:
+            speaker_name = "no_name"
+
         if isinstance(speaker_name, str):
             speaker_name = {"default": speaker_name}
         else:

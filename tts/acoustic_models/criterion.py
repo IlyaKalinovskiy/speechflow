@@ -62,8 +62,15 @@ class TTSLoss(BaseCriterion):
         output_spec = output.spectrogram
         target_spec = target.spectrogram
 
-        input_mask = get_mask_from_lengths(target.input_lengths)
-        output_mask = get_mask_from_lengths(output.spectrogram_lengths)
+        if target.input_lengths is not None:
+            input_mask = get_mask_from_lengths(target.input_lengths)
+        else:
+            input_mask = None
+
+        if output.spectrogram_lengths is not None:
+            output_mask = get_mask_from_lengths(output.spectrogram_lengths)
+        else:
+            output_mask = None
 
         total_loss = {}
         for sp_loss in self.spectral_loss:

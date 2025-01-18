@@ -19,20 +19,9 @@ class DataClient:
         self._uid = uid if uid else uuid.uuid4().hex
         self._server_addr = server_addr
         self._zmq_client = ZMQPatterns.async_client(server_addr)
-        self._info = None
-
-        try:
-            while True:
-                self._info = self.request(
-                    {"message": "info", "sub_type": sub_type, "client_uid": self._uid},
-                    timeout=1000,
-                )
-                if self._info:
-                    break
-        except Exception as e:
-            LOGGER.error(trace(self, e))
-            raise RuntimeError("DataServer not responding!")
-
+        self._info = self.request(
+            {"message": "info", "sub_type": sub_type, "client_uid": self._uid}
+        )
         LOGGER.debug(trace(self, message=f"Start DataClient {self._server_addr}"))
 
     def __enter__(self):
@@ -75,20 +64,21 @@ class DataClient:
 
     def request(
         self,
-        message,
+        message: tp.Any,
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
-    ) -> tp.Optional[tp.Union[tp.List, tp.Any]]:
+    ) -> tp.Optional[tp.Any]:
         message["client_uid"] = self._uid
         return self._zmq_client.request(message, deserialize=deserialize, timeout=timeout)
 
-    def send(self, message):
+    def send(self, message: tp.Any):
         message["client_uid"] = self._uid
         self._zmq_client.send(message)
 
-    def recv(
+    def recv_multipart(
         self,
+        max_num_message: tp.Optional[int] = None,
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
-    ) -> tp.Optional[tp.Union[tp.List, tp.Any]]:
-        return self._zmq_client.recv(deserialize, timeout)
+    ) -> tp.List[tp.Any]:
+        return self._zmq_client.recv_multipart(max_num_message, deserialize, timeout)

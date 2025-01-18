@@ -28,18 +28,9 @@ class BatchWorker(ProcessWorker):
         from speechflow.data_server.server import SubscriberTypes
 
         self._zmq_client = ZMQPatterns.client(self._server_addr)
-
-        try:
-            while True:
-                info = self._zmq_client.request(
-                    {"message": "info", "sub_type": SubscriberTypes.WORKER},
-                    timeout=1000,
-                )
-                if info:
-                    break
-        except Exception as e:
-            LOGGER.error(trace(self, e))
-            raise RuntimeError("DataServer not responding!")
+        info = self._zmq_client.request(
+            {"message": "info", "sub_type": SubscriberTypes.WORKER}
+        )
 
         addr_for_workers = info["addr_for_workers"]
         self._zmq_worker = ZMQPatterns.worker(addr_for_workers)

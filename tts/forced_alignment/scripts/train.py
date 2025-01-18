@@ -27,6 +27,42 @@ from tts.forced_alignment.callbacks import AligningVisualisationCallback
 LOGGER = logging.getLogger("root")
 
 
+def _load_pretrain(cfg_model: Config):
+    ckpt_path = Path(cfg_model["model"]["init_from"].get("ckpt_path", ""))
+    if not ckpt_path.exists():
+        raise FileNotFoundError(f"Checkpoint {ckpt_path.as_posix()} not found")
+
+    LOGGER.warning(f"Loading {ckpt_path.as_posix()}")
+    ckpt = ExperimentSaver.load_checkpoint(ckpt_path)
+    state_dict = {k.replace("model.", ""): v for k, v in ckpt["state_dict"].items()}
+
+    if cfg_model["model"]["params"].n_langs < len(ckpt["lang_id_map"]):
+        cfg_model["model"]["params"].n_langs = len(ckpt["lang_id_map"])
+    if cfg_model["model"]["params"].n_speakers < len(ckpt["speaker_id_map"]):
+        cfg_model["model"]["params"].n_speakers = len(ckpt["speaker_id_map"])
+
+    model_cls = getattr(forced_alignment, cfg_model["model"]["type"])
+    model = init_class_from_config(model_cls, cfg_model["model"]["params"])()
+
+    try:
+        model.load_state_dict(state_dict, strict=True)
+    except Exception as e:
+        LOGGER.error(trace("train", e))
+
+        remove_modules = ["embedding", "encoder", "_emb", "_proj"]
+        remove_modules = cfg_model["model"]["init_from"].get(
+            "remove_modules", remove_modules
+        )
+
+        state_dict = {
+            k: v for k, v in state_dict.items() if all(m not in k for m in remove_modules)
+        }
+        model.load_state_dict(state_dict, strict=False)
+        LOGGER.info(f"List of initialized layers: {list(state_dict.keys())}")
+
+    return model
+
+
 def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]):
     experiment_path = Path(cfg_model["experiment_path"])
 
@@ -44,10 +80,6 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]):
         "params"
     ].n_symbols_per_token = text_proc.num_symbols_per_phoneme_token
 
-    hop_len = dl_train.client.find_info("hop_len")
-    sr = dl_train.client.find_info("sample_rate")
-    cfg_model["model"]["params"].frames_per_sec = sr / hop_len
-
     speaker_id_handler = dl_train.client.find_info("SpeakerIDSetter")
     if speaker_id_handler is not None:
         cfg_model["model"]["params"].n_langs = speaker_id_handler.n_langs
@@ -58,48 +90,11 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]):
         lang_id_map = None
         speaker_id_map = None
 
-    model_cls = getattr(forced_alignment, cfg_model["model"]["type"])
-    model = init_class_from_config(model_cls, cfg_model["model"]["params"])()
-
     if "init_from" in cfg_model["model"]:
-        ckpt_path = Path(cfg_model["model"]["init_from"].get("ckpt_path", ""))
-        if not ckpt_path.exists():
-            raise FileNotFoundError(f"Checkpoint {ckpt_path.as_posix()} not found")
-
-        LOGGER.warning(f"Loading {ckpt_path.as_posix()}")
-        ckpt = ExperimentSaver.load_checkpoint(ckpt_path)
-        state_dict = {k.replace("model.", ""): v for k, v in ckpt["state_dict"].items()}
-
-        if cfg_model["model"]["params"].n_langs < len(ckpt["lang_id_map"]):
-            cfg_model["model"]["params"].n_langs = len(ckpt["lang_id_map"])
-        if cfg_model["model"]["params"].n_speakers < len(ckpt["speaker_id_map"]):
-            cfg_model["model"]["params"].n_speakers = len(ckpt["speaker_id_map"])
-
-        try:
-            model = init_class_from_config(model_cls, cfg_model["model"]["params"])()
-            model.load_state_dict(state_dict, strict=True)
-        except Exception as e:
-            LOGGER.error(trace("train", e))
-            remove_modules = cfg_model["model"]["init_from"].get(
-                "remove_modules",
-                [
-                    "embedding",
-                    "encoder",
-                    "phoneme_proj",
-                    "ling_feat_proj",
-                    "lang_emb",
-                    "cond_proj",
-                ],
-            )
-            if cfg_model["model"]["params"].n_langs != len(ckpt["lang_id_map"]):
-                remove_modules.append("lang_emb")
-
-            state_dict = {
-                k: v
-                for k, v in state_dict.items()
-                if all(m not in k for m in remove_modules)
-            }
-            model.load_state_dict(state_dict, strict=False)
+        model = _load_pretrain(cfg_model)
+    else:
+        model_cls = getattr(forced_alignment, cfg_model["model"]["type"])
+        model = init_class_from_config(model_cls, cfg_model["model"]["params"])()
 
     criterion_cls = getattr(forced_alignment, cfg_model["loss"]["type"])
     criterion = init_class_from_config(criterion_cls, cfg_model["loss"])()
@@ -188,8 +183,8 @@ def main(
 if __name__ == "__main__":
     """
     example:
-        train.py -c=../configs/2stage/model_stage1.yml -cd=../configs/2stage/data_stage1.yml
-        train.py -c=../configs/2stage/model_stage2.yml -cd=../configs/2stage/data_stage2.yml
+        train.py -c=../configs/2stage/model_stage1.yml -cd=../configs/2stage/data_stage1.yml -vs debug
+        train.py -c=../configs/2stage/model_stage2.yml -cd=../configs/2stage/data_stage2.yml -vs debug
 
     """
     args = train_arguments().parse_args()

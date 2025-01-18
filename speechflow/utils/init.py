@@ -72,7 +72,9 @@ def init_method_from_config(
 
 
 def init_class_from_config(
-    cls, cfg: tp.Union[tp.Dict[str, tp.Any], Config], check_keys: bool = True
+    cls,
+    cfg: tp.Union[tp.Dict[str, tp.Any], Config, tp.MutableMapping],
+    check_keys: bool = True,
 ) -> tp.Callable:
     config = copy.deepcopy(cfg)
     config_keys = {k for k in cfg.keys() if k not in ["type"]}

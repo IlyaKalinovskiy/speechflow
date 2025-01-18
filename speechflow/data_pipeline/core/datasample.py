@@ -238,11 +238,10 @@ class DataSample(ToDict, ToTensor, ToNumpy, Serialize):
     transform_params: tp.Optional[tp.Dict[str, tp.Any]] = None
     additional_fields: tp.Optional[tp.Dict[str, tp.Any]] = None
 
-    __uid = str
+    __uid = str = uuid.uuid4().hex
     __all_keys = set()  # type: ignore
 
     def __post_init__(self):
-        self.__uid = uuid.uuid4().hex
         if self.file_path is None:
             self.file_path = Path()
         elif isinstance(self.file_path, str):

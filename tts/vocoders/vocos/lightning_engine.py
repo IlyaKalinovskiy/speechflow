@@ -87,12 +87,18 @@ class VocosLightningEngine(pl.LightningModule):
         """
         super().__init__()
 
-        assert pl.__version__ == "1.8.6", RuntimeError(
-            "pytorch_lightning==1.8.6 required"
+        assert pl.__version__ == "1.9.5", RuntimeError(
+            "pytorch_lightning==1.9.5 required"
         )
 
         self.save_hyperparameters(
-            ignore=["feature_extractor", "backbone", "head", "batch_processor", "saver"]
+            ignore=[
+                "feature_extractor",
+                "backbone",
+                "he" "ad",
+                "batch_processor",
+                "saver",
+            ]
         )
 
         self.feature_extractor = feature_extractor

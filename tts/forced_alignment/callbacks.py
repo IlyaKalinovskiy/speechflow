@@ -62,7 +62,7 @@ class AligningVisualisationCallback(Callback):
 
             spec_lens = inputs.output_lengths.detach().cpu().numpy().tolist()
             phonemes = list(
-                batch.collated_samples.additional_fields["symbols"][random_idx]
+                batch.collated_samples.additional_fields["transcription_text"][random_idx]
             )
             spectrogram = (
                 inputs.spectrogram[random_idx, : spec_lens[random_idx]]
@@ -82,6 +82,15 @@ class AligningVisualisationCallback(Callback):
             self._log_target(pl_module, trainer, spectrogram, alignment, phonemes)
             self._log_aligning(pl_module, trainer, np.transpose(alignment))
 
+            if inputs.ssl_feat is not None:
+                ssl_feat = inputs.ssl_feat[random_idx].cpu().numpy()
+                self._log_spectrogram(pl_module, trainer, ssl_feat, "SSLTarget")
+
+            if "ssl_prediction" in outputs.additional_content:
+                ssl_prediction = outputs.additional_content["ssl_prediction"]
+                ssl_prediction = ssl_prediction[random_idx].cpu().numpy()
+                self._log_spectrogram(pl_module, trainer, ssl_prediction, "SSLPrediction")
+
     @staticmethod
     def _log_target(
         module: pl.LightningModule,
@@ -92,6 +101,7 @@ class AligningVisualisationCallback(Callback):
         name: str = "TargetSpectrogramWithAlignment",
     ):
         frame_ticks = phonemes_to_frame_ticks(alignment, phonemes)
+        frame_ticks = [t for t in frame_ticks]
         fig_to_plot = plot_spectrogram(spectrogram, phonemes, frame_ticks)
         data_to_log = figure_to_ndarray(fig_to_plot)
 
@@ -114,4 +124,22 @@ class AligningVisualisationCallback(Callback):
             _plot_alignment_to_numpy(aligning),
             trainer.global_step,
             dataformats="HWC",
+        )
+
+    @staticmethod
+    def _log_spectrogram(
+        module: pl.LightningModule,
+        trainer: pl.Trainer,
+        spectrogram: npt.NDArray,
+        tag: str,
+        durations=None,
+    ):
+        fig_to_plot = plot_spectrogram(spectrogram, phonemes_ticks=durations)
+        data_to_log = figure_to_ndarray(fig_to_plot)
+
+        module.logger.experiment.add_image(
+            tag,
+            data_to_log,
+            trainer.global_step,
+            dataformats="CHW",
         )

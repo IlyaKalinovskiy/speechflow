@@ -18,13 +18,16 @@ from multilingual_text_parser import Doc, Sentence, Syntagma, TextParser, Token
 import speechflow
 
 from nlp.prosody_prediction.eval_interface import ProsodyPredictionInterface
+from speechflow.data_pipeline.collate_functions.spectrogram_collate import (
+    SpectrogramCollateOutput,
+)
 from speechflow.data_pipeline.core.components import PipelineComponents
 from speechflow.data_pipeline.datasample_processors import add_pauses_from_text
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
 from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
     TTSTextProcessor,
 )
-from speechflow.io import check_path, tp_PATH
+from speechflow.io import AudioChunk, check_path, tp_PATH
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.init import init_class_from_config, init_method_from_config
 from speechflow.utils.seed import set_all_seed
@@ -69,7 +72,7 @@ class TTSContext:
     @staticmethod
     def create(
         lang: str,
-        speaker_name: tp.Union[str, tp.Dict[str, str]],
+        speaker_name: tp.Optional[tp.Union[str, tp.Dict[str, str]]] = None,
         speaker_reference: tp.Optional[
             tp.Union[REFERENECE_TYPE, tp.Dict[str, REFERENECE_TYPE]]
         ] = None,
@@ -127,9 +130,11 @@ class TTSEvaluationInterface:
         tts_ckpt_path: tp_PATH,
         prosody_ckpt_path: tp.Optional[tp_PATH] = None,
         pauses_ckpt_path: tp.Optional[tp_PATH] = None,
-        device: str = "cpu",
+        device_model: str = "cpu",
+        device_pipe: str = "cpu",
+        **kwargs,
     ):
-        env["DEVICE"] = device
+        env["DEVICE"] = device_pipe
 
         tts_ckpt = ExperimentSaver.load_checkpoint(tts_ckpt_path)
         cfg_data, cfg_model = ExperimentSaver.load_configs_from_checkpoint(tts_ckpt)
@@ -173,7 +178,7 @@ class TTSEvaluationInterface:
 
         self.lang_id_map = tts_ckpt.get("lang_id_map", {})
         self.speaker_id_map = tts_ckpt.get("speaker_id_map", {})
-        self.device = torch.device(device)
+        self.device = torch.device(device_model)
 
         # init model
         model_cls = getattr(acoustic_models, cfg_model["model"]["type"])
@@ -184,6 +189,15 @@ class TTSEvaluationInterface:
 
         # update data config
         cfg_data["processor"].pop("dump", None)
+
+        if "hubert_model_path" in kwargs:
+            cfg_data.preproc.pipe_cfg.ssl.ssl_params.pretrain_path = kwargs[
+                "hubert_model_path"
+            ]
+        if "hubert_vocab_path" in kwargs:
+            cfg_data.preproc.pipe_cfg.ssl.ssl_params.vocab_path = kwargs[
+                "hubert_vocab_path"
+            ]
 
         pauses_from_ts_cfg = cfg_data["preproc"]["pipe_cfg"].get(
             "add_pauses_from_timestamps", {}
@@ -308,7 +322,11 @@ class TTSEvaluationInterface:
             },
         )
         self.audio_pipe = self.biometric_pipe.with_ignored_handlers(
-            ignored_data_handlers={"VoiceBiometricProcessor"}
+            ignored_data_handlers={
+                "VoiceBiometricProcessor",
+                "WaveAugProcessor",
+                "DenoisingProcessor",
+            }
         )
         self.biometric_pipe.data_preprocessing = [
             item
@@ -345,7 +363,7 @@ class TTSEvaluationInterface:
                 self.prosody_interface = ProsodyPredictionInterface(
                     ckpt_path=self.prosody_ckpt_path,
                     lang=self.lang,
-                    device=device,
+                    device=device_model,
                     text_parser=self.text_parser,
                 )
         else:
@@ -643,12 +661,12 @@ class TTSEvaluationInterface:
         if opt.sigma_multiplier is not None:
             additional_inputs["sigma_multiplier"] = opt.sigma_multiplier
 
-        inputs, _, _ = self.batch_processor(batch)
+        model_inputs, _, _ = self.batch_processor(batch)
 
-        inputs.additional_inputs.update(additional_inputs)
-        inputs.prosody_reference = ctx.prosody_reference.copy()
-        inputs.output_lengths = None
-        return inputs
+        model_inputs.additional_inputs.update(additional_inputs)
+        model_inputs.prosody_reference = ctx.prosody_reference.copy()
+        model_inputs.output_lengths = None
+        return model_inputs
 
     def predict_variance(self, inputs, ignored_variance: tp.Set = None):
         (
@@ -684,14 +702,70 @@ class TTSEvaluationInterface:
         text: str,
         lang: str,
         speaker_name: str,
+        opt: TTSOptions = TTSOptions(),
     ) -> TTSForwardOutput:
-        ctx = TTSContext.create(speaker_name)
-        opt = TTSOptions()
+        ctx = TTSContext.create(lang, speaker_name)
         text_by_sentence = self.prepare_text(text, lang, opt)
         text_by_sentence = self.predict_prosody_by_text(text_by_sentence, ctx, opt)
-        ctx = self.prepare_embeddings(lang, ctx, opt)
+        ctx = self.prepare_embeddings(ctx, opt)
         inputs = self.prepare_batch(self.split_sentences(text_by_sentence)[0], ctx, opt)
         outputs = self.evaluate(inputs, ctx, opt)
+        return outputs
+
+    @check_path(assert_file_exists=True)
+    def resynthesize(
+        self,
+        wav_path: tp_PATH,
+        ref_wav_path: tp.Optional[tp_PATH] = None,
+        lang: tp.Optional[str] = None,
+        speaker_name: tp.Optional[str] = None,
+        opt: TTSOptions = TTSOptions(),
+    ) -> TTSForwardOutput:
+        audio_chunk = (
+            AudioChunk(file_path=wav_path).load(sr=self.sample_rate).volume(1.25)
+        )
+        ds = TTSDataSample(audio_chunk=audio_chunk)
+        batch = self.audio_pipe.datasample_to_batch([ds])
+        collated: SpectrogramCollateOutput = batch.collated_samples  # type: ignore
+
+        if ref_wav_path is not None:
+            ref_audio_chunk = AudioChunk(file_path=ref_wav_path).load(sr=self.sample_rate)
+            ref_ds = TTSDataSample(audio_chunk=ref_audio_chunk)
+            ref_batch = self.audio_pipe.datasample_to_batch([ref_ds])
+            ref_collated: SpectrogramCollateOutput = ref_batch.collated_samples  # type: ignore
+            collated.speaker_emb = ref_collated.speaker_emb
+            collated.speaker_emb_mean = ref_collated.speaker_emb_mean
+            collated.spectrogram = ref_collated.spectrogram
+            collated.spectrogram_lengths = ref_collated.spectrogram_lengths
+            collated.averages = ref_collated.averages
+            collated.speech_quality_emb = ref_collated.speech_quality_emb
+            collated.additional_fields = ref_collated.additional_fields
+
+        _input = TTSForwardInputWithSSML(
+            spectrogram=collated.spectrogram,
+            spectrogram_lengths=collated.spectrogram_lengths,
+            ssl_feat=collated.ssl_feat,
+            ssl_feat_lengths=collated.ssl_feat_lengths,
+            plbert_feat=collated.plbert_feat,
+            plbert_feat_lengths=collated.plbert_feat_lengths,
+            speaker_emb=collated.speaker_emb,
+            speaker_emb_mean=collated.speaker_emb,
+            speech_quality_emb=collated.speech_quality_emb,
+            averages=collated.averages,
+            additional_inputs=collated.additional_fields,
+            # energy=collated.energy,
+            # pitch=collated.pitch,
+        )
+
+        if lang is not None:
+            _input.lang_id = torch.LongTensor([self.lang_id_map[lang]])
+        if speaker_name is not None:
+            _input.speaker_id = torch.LongTensor([self.speaker_id_map[speaker_name]])
+
+        ctx = TTSContext.create(lang, speaker_name)
+
+        _input.to(self.device)
+        outputs = self.evaluate(_input, ctx, opt)
         return outputs
 
     def inference(self, batch_input: TTSForwardInput, **kwargs):

@@ -23,7 +23,7 @@ from speechflow.logging.server import LoggingServer
 from speechflow.utils.fs import get_root_dir
 from speechflow.utils.gpu_info import get_freer_gpu, get_total_gpu_memory
 from speechflow.utils.init import init_method_from_config
-from tts.forced_alignment.scripts.train import main as run_fa
+from tts.forced_alignment.scripts.train import main as train_fa
 
 LOGGER = logging.getLogger("runner")
 ANNOTATOR_TOTAL_GPU_MEM: int = 8
@@ -80,7 +80,7 @@ def parse_args():
         "--batch_size",
         help="num samples in batch",
         type=int,
-        default=24,
+        default=16,
     )
     arguments_parser.add_argument(
         "-epochs",
@@ -88,7 +88,7 @@ def parse_args():
         help="num epochs for training",
         nargs="+",
         type=int,
-        default=[20, 10],
+        default=[30, 30],
     )
     arguments_parser.add_argument(
         "--use_reverse_mode",
@@ -269,11 +269,11 @@ def _update_fa_configs(
     return cfg_model_path, cfg_data_path
 
 
-def _run_fa(**kwargs) -> Path:
+def _train_fa(**kwargs) -> Path:
     LOGGER.info(f"Run GlowTTS with args {kwargs}")
 
     if sys.platform == "win32":
-        return run_fa(**kwargs)
+        return train_fa(**kwargs)
     else:
         cmd = ["python", "-m", "tts.forced_alignment.scripts.train"]
         for key, value in kwargs.items():
@@ -708,9 +708,9 @@ def main(
                         sega_suffix=sega_suffix,
                         finetune_model=finetune_model,
                     )
-                    experiment_path = _run_fa(
-                        cfg_model_path=cfg_model_path,
-                        cfg_data_path=cfg_data_path,
+                    experiment_path = _train_fa(
+                        model_config_path=cfg_model_path,
+                        data_config_path=cfg_data_path,
                         expr_suffix="all_speakers",
                     )
 

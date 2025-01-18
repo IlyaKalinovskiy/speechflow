@@ -1,13 +1,14 @@
-import random
 import typing as tp
 import logging
 import itertools
 
-from collections import Counter
+from collections import Counter, defaultdict
+from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
 import torch
+import numpy.typing as npt
 import torchaudio.functional as F
 
 from multilingual_text_parser import Doc, Sentence, TextParser, Token, TokenUtils
@@ -84,11 +85,12 @@ class TTSTextProcessor(BaseDSProcessor):
     def __init__(
         self,
         lang: str,
+        ipa_mode: tp.Literal["full", "truncated", "multiline"] = "multiline",
+        words_level: bool = False,
         add_service_tokens: bool = False,
         allow_zero_sil: bool = True,
-        token_level: bool = False,
-        aggregate_syntagmas: bool = False,
-        prob: float = 0.3,
+        use_xpbert_tokenizer: bool = False,
+        xpbert_model: str = "vinai/xphonebert-base",
         ignore_ling_feat: tp.Optional[tp.List[str]] = None,
     ):
         super().__init__()
@@ -97,8 +99,13 @@ class TTSTextProcessor(BaseDSProcessor):
         text_parser = TextParser(lang=lang, cfg={"pipe": []})
 
         self.lang = lang
-        self.is_complex_phoneme_token = text_parser.is_complex_phonemes
-        self.num_symbols_per_phoneme_token = text_parser.num_symbols_per_phoneme
+        self.ipa_mode = ipa_mode
+        self.is_ipa_phonemes = text_parser.is_ipa_phonemes
+
+        if self.is_ipa_phonemes and ipa_mode == "multiline":
+            self.num_symbols_per_phoneme_token = text_parser.num_symbols_per_phoneme
+        else:
+            self.num_symbols_per_phoneme_token = 1
 
         self.service_tokens = (self.pad, self.bos, self.eos, self.sil, self.unk)
         self.phoneme_tokens = text_parser.phonemes
@@ -106,6 +113,7 @@ class TTSTextProcessor(BaseDSProcessor):
         self.pos_tokens = text_parser.pos
         self.rel_tokens = text_parser.rel
         self.intonation_tokens = text_parser.intonation
+        self.intonation_contour_tokens = tuple([i + 1 for i in range(10)] + [-1])
         self.additional_tokens = (
             self.sntgm,
             self.eosntgm,
@@ -118,6 +126,23 @@ class TTSTextProcessor(BaseDSProcessor):
             self.breath,
             self.no_breath,
         )
+        self.additional_sil_tokens = tuple(
+            [f"<{p}>{self.sil}" for p in self.punctuation_tokens]
+        )
+
+        if self.is_ipa_phonemes and self.ipa_mode == "truncated":
+            tokens = ["ˈ" + ph for ph in text_parser.ipa_phonemes]
+            tokens += ["ˌ" + ph for ph in text_parser.ipa_phonemes]
+            tokens += [ph + "ʲ" for ph in text_parser.ipa_phonemes]
+            tokens += [ph + "ː" for ph in text_parser.ipa_phonemes]
+            tokens += [ph + "ɪ" for ph in text_parser.ipa_phonemes]
+            tokens += [ph + "ʊ" for ph in text_parser.ipa_phonemes]
+            # tokens += [ph + "ʃ" for ph in text_parser.ipa_phonemes]
+            # tokens += [ph + "ɕ" for ph in text_parser.ipa_phonemes]
+            # tokens += [ph + "ʒ" for ph in text_parser.ipa_phonemes]
+            self.additional_ipa_tokens = tuple(tokens)
+        else:
+            self.additional_ipa_tokens = ()
 
         self.ru2ipa = text_parser.ru2ipa
         self.en2ipa = text_parser.en2ipa
@@ -127,26 +152,31 @@ class TTSTextProcessor(BaseDSProcessor):
         self._expand_alphabet(self.pos_tokens)
         self._expand_alphabet(self.rel_tokens)
         self._expand_alphabet(self.intonation_tokens)
+        self._expand_alphabet(self.intonation_contour_tokens)
         self._expand_alphabet(self.additional_tokens)
-        self._expand_alphabet(tuple([i + 1 for i in range(10)] + [-1]))
-        self._expand_alphabet(
-            tuple([f"<{p}>{self.sil}" for p in self.punctuation_tokens])
-        )
+        self._expand_alphabet(self.additional_sil_tokens)
+        self._expand_alphabet(self.additional_ipa_tokens)
 
         # Mappings from symbol to numeric ID and vice versa:
         self._symbol_to_id = {s: i for i, s in enumerate(self.alphabet)}
         self._id_to_symbol = {i: s for i, s in enumerate(self.alphabet)}
 
+        self._words_level = words_level
         self._add_service_tokens = add_service_tokens
         self._allow_zero_sil = allow_zero_sil
-        self._token_level = token_level
-        self._aggregate_syntagmas = aggregate_syntagmas
-        self._prob = prob
         self._ignore_ling_feat = ignore_ling_feat
 
         self._float_features = ["syntax_importance", "breath_mask"]
 
-    def _expand_alphabet(self, new_symbols: tp.Tuple[str, ...]):
+        if use_xpbert_tokenizer:
+            assert self.is_ipa_phonemes
+            self._xpbert_tokenizer = AutoTokenizer.from_pretrained(
+                xpbert_model, add_prefix_space=True
+            )
+        else:
+            self._xpbert_tokenizer = None
+
+    def _expand_alphabet(self, new_symbols: tp.Tuple[tp.Union[str, int], ...]):
         self.alphabet += new_symbols
 
     def to_symbol(self, id: int) -> str:
@@ -178,106 +208,124 @@ class TTSTextProcessor(BaseDSProcessor):
                 f"The TextParser does not match the sentence {ds.sent.lang} language."
             )
 
-        ph_by_word = ds.sent.get_phonemes()
-        tokens = list(itertools.chain.from_iterable(ph_by_word))
+        symbols_by_word = ds.sent.get_phonemes()
+        symbols = list(itertools.chain.from_iterable(symbols_by_word))
 
-        if self.lang == "MULTILANG":
-            tokens = self.phons2ipa(ds.sent.lang, tokens)
+        if self.is_ipa_phonemes:
+            symbols = self.phons2ipa(ds.sent.lang, symbols)
 
-        tokens = tuple(tokens)
-
-        if self._token_level:
-            ling_feat, word_lens, synt_lens = self._process_token_level(ds)
+        if self._words_level:
+            ling_feat, word_lens, synt_lens = self._process_words_level(ds)
         else:
-            ling_feat, word_lens, synt_lens = self._process_phoneme_level(ds, tokens)
+            ling_feat, word_lens, synt_lens = self._process_phoneme_level(ds, symbols)
 
-        if self._ignore_ling_feat is not None:
-            for name in self._ignore_ling_feat:
-                if name not in ling_feat:
-                    raise KeyError(f"Linguistic feature '{name}' not found!")
-                else:
-                    ling_feat.pop(name)
+        ling_feat_id = self._apply_ling_feat_tokenizer(ling_feat)
 
-        # encode features
-        for key, field in ling_feat.items():
-            if key == "transcription":
-                if not self.is_complex_phoneme_token:
-                    ling_feat[key] = self._symbols_to_sequence(field)
-                else:
-                    ling_feat[key] = []
-                    for i in range(self.num_symbols_per_phoneme_token):
-                        seq = []
-                        for s in tokens:
-                            if isinstance(s, tuple):
-                                seq.append(s[i] if len(s) > i else TTSTextProcessor.unk)
-                            else:
-                                seq.append(s if i == 0 else TTSTextProcessor.unk)
+        (
+            tokens_id,
+            symbols,
+            ling_feat_id,
+            word_lens,
+            synt_lens,
+        ) = self._apply_phoneme_tokenizer(symbols, ling_feat_id, word_lens, synt_lens)
 
-                        ling_feat[key].append(self._symbols_to_sequence(seq))
-            else:
-                if (
-                    key not in self._float_features
-                ):  # numerical, doesn't need to be encoded
-                    ling_feat[key] = self._symbols_to_sequence(field)
-
-        tokens, ling_feat, word_lens, synt_lens, ds.sent = self._assign_service_tokens(
-            tokens,
-            ling_feat,
+        (
+            symbols,
+            tokens_id,
+            ling_feat_id,
+            word_lens,
+            synt_lens,
+            ds.sent,
+        ) = self._assign_service_tokens(
+            symbols,
+            tokens_id,
+            ling_feat_id,
             word_lens,
             synt_lens,
             ds.sent,
         )
 
-        # check all features have equal lengths
-        for key, field in ling_feat.items():
-            dtype = (
-                np.float32
-                if (key in self._float_features and key != "prosody")
-                else np.int64
-            )
-            ling_feat[key] = np.asarray(field, dtype=dtype)
-            if ling_feat[key].ndim == 2:
-                ling_feat[key] = ling_feat[key].T
-            assert (
-                len(ling_feat["sil_mask"]) == ling_feat[key].shape[0]
-            ), "length sequence is mismatch!"
+        if self._xpbert_tokenizer is not None:
+            tokens_id = self._apply_xpbert_tokenizer(symbols)
 
-        if self._token_level:
-            ds.transcription_text = None
-            ds.transcription_id = None
-        else:
-            ds.transcription_text = tokens
-            ds.transcription_id = ling_feat.pop("transcription")
+        tokens_id, ling_feat_id = self._to_numpy(tokens_id, ling_feat_id)
 
-        ds.word_lengths = np.asarray(word_lens, dtype=np.int64)
-        ds.synt_lengths = np.asarray(synt_lens, dtype=np.int64)
-        assert ds.word_lengths.sum() == len(ds.transcription_text)
-        assert ds.word_lengths.sum() == ds.synt_lengths.sum()
+        self._set_word_lengths(ds, word_lens, synt_lens)
 
-        ds.ling_feat = ling_feat
+        if not self._words_level:
+            ds.transcription_text = symbols
+            ds.transcription_id = tokens_id
+            assert ds.word_lengths.sum() == len(ds.transcription_text)
+            assert ds.word_lengths.sum() == ds.synt_lengths.sum()
+
+        ds.ling_feat = ling_feat_id
         ds.pad_token_id = self._symbol_to_id[self.pad]
         ds.sil_token_id = self._symbol_to_id[self.sil]
 
         if isinstance(ds, PausesPredictionDataSample):
             ds.sil_mask = ling_feat.get("sil_mask")  # type: ignore
 
-        self._set_token_lengths(ds)
-
         ds.transform_params["TTSTextProcessor"] = {
-            "ipa_phonemes": self.lang == "MULTILANG"
+            "ipa_phonemes": self.is_ipa_phonemes,
+            "ipa_mode": self.ipa_mode,
         }
         return ds
 
-    def _syntagmas_aggregator(self, synt_lens):
-        new_lens = [synt_lens[0]]
-        for synt_len in synt_lens[1:]:
-            if random.random() < self._prob:
-                new_lens[-1] += synt_len
-            else:
-                new_lens.append(synt_len)
+    def get_prosody(self, ds):
+        """Extract prosody features."""
+        prosody = []
+        for token in ds.sent.tokens:
+            if not token.is_punctuation:
+                prosody.append(
+                    int(token.prosody) + 1
+                    if hasattr(token, "prosody")
+                    and token.prosody
+                    and token.prosody not in ["undefined", "-1"]
+                    and token.emphasis != "accent"
+                    else -1
+                )
+        return prosody
 
-        assert sum(new_lens) == sum(synt_lens)
-        return new_lens
+    def get_syntax(self, ds):
+        """Extract features from SLOVNET."""
+        full_rels, head_ids = [], []
+        for token in ds.sent.tokens:
+            if not token.is_punctuation:
+                if token.rel:
+                    full_rels.append(token.rel)
+                    head_ids.append(token.head_id)
+                else:
+                    full_rels.append(self.unk)
+                    head_ids.append("-1")
+
+        head_counts = Counter()
+        for token in ds.sent.tokens:
+            if not token.is_punctuation and token.head_id:
+                head_counts[token.head_id] += 1
+
+        full_head_counts = []
+        for token in ds.sent.tokens:
+            if not token.is_punctuation:
+                if token.id:
+                    full_head_counts.append(head_counts[token.id])
+                else:
+                    full_head_counts.append(0)
+
+        return full_rels, full_head_counts
+
+    def phons2ipa(self, lang: str, symbols: tp.List[str]) -> tp.List[str]:
+        ipa_map = None
+        if lang == "RU":
+            ipa_map = self.ru2ipa
+        elif lang == "EN":
+            ipa_map = self.en2ipa
+
+        if ipa_map is not None:
+            return [
+                ipa_map[phoneme] if phoneme in ipa_map else phoneme for phoneme in symbols
+            ]
+        else:
+            return symbols
 
     @staticmethod
     def _intonation_model(sentence: Sentence) -> str:
@@ -348,7 +396,6 @@ class TTSTextProcessor(BaseDSProcessor):
 
         ling_feat = {
             "sil_mask": sil_mask,
-            "transcription": symbols,
             "token_ends": token_ends,
             "syntagma_ends": syntamas_ends,
             "pos_tags": pos_tags,
@@ -360,10 +407,6 @@ class TTSTextProcessor(BaseDSProcessor):
             "breath_mask": breath_mask,
             "prosody": prosody,
         }
-
-        if self._aggregate_syntagmas:
-            word_lens = self._syntagmas_aggregator(word_lens)
-            synt_lens = self._syntagmas_aggregator(synt_lens)
 
         if (
             hasattr(ds, "aggregated")
@@ -378,7 +421,7 @@ class TTSTextProcessor(BaseDSProcessor):
 
         return ling_feat, word_lens, synt_lens
 
-    def _process_token_level(self, ds):
+    def _process_words_level(self, ds):
         word_lens, synt_lens, lens_per_postag = self._count_token_lens(ds.sent)
 
         rels, head_counts = self.get_syntax(ds)
@@ -410,49 +453,109 @@ class TTSTextProcessor(BaseDSProcessor):
         }
         return ling_feat, word_lens, synt_lens
 
-    def get_prosody(self, ds):
-        """Extract prosody features."""
-        prosody = []
-        for token in ds.sent.tokens:
-            if not token.is_punctuation:
-                prosody.append(
-                    int(token.prosody) + 1
-                    if hasattr(token, "prosody")
-                    and token.prosody
-                    and token.prosody not in ["undefined", "-1"]
-                    and token.emphasis != "accent"
-                    else -1
-                )
-        return prosody
+    def _apply_ling_feat_tokenizer(
+        self, ling_feat: tp.Dict[str, tp.Sequence]
+    ) -> tp.Dict[str, tp.Sequence]:
+        ling_feat_seq = {}
 
-    def get_syntax(self, ds):
-        """Extract features from SLOVNET."""
-        full_rels, head_ids = [], []
-        for token in ds.sent.tokens:
-            if not token.is_punctuation:
-                if token.rel:
-                    full_rels.append(token.rel)
-                    head_ids.append(token.head_id)
+        if not self._words_level and self._ignore_ling_feat is not None:
+            for name in self._ignore_ling_feat:
+                if name not in ling_feat:
+                    raise KeyError(f"Linguistic feature '{name}' not found!")
+
+        # encode features
+        for key, field in ling_feat.items():
+            if self._ignore_ling_feat is not None and key in self._ignore_ling_feat:
+                continue
+
+            if key not in self._float_features:  # numerical, doesn't need to be encoded
+                ling_feat_seq[key] = self._symbols_to_sequence(field)
+            else:
+                ling_feat_seq[key] = field
+
+        return ling_feat_seq
+
+    def _apply_phoneme_tokenizer(self, symbols, ling_feat, word_lens, synt_lens):
+        tokens_id = []
+
+        if self.num_symbols_per_phoneme_token == 1:
+            if self.is_ipa_phonemes:
+                if self.ipa_mode == "full":
+                    symbols_expand = []
+                    ling_feat_expand = defaultdict(list)
+                    for i, ph in enumerate(symbols):
+                        if isinstance(ph, tuple):
+                            symbols_expand += list(ph)
+                            for k in ling_feat.keys():
+                                ling_feat_expand[k] += [ling_feat[k][i]] * len(ph)
+                        else:
+                            symbols_expand.append(ph)
+                            for k in ling_feat.keys():
+                                ling_feat_expand[k].append(ling_feat[k][i])
+
+                    word_lens_expand = deepcopy(word_lens)
+                    synt_lens_expand = deepcopy(word_lens)
+                    for lens in [word_lens_expand, synt_lens_expand]:
+                        cum_lens = np.cumsum(np.asarray([0] + lens))
+                        for i, (a, b) in enumerate(zip(cum_lens[:-1], cum_lens[1:])):
+                            num_ph = sum(
+                                len(ph) if isinstance(ph, tuple) else 1
+                                for ph in symbols[a:b]
+                            )
+                            lens[i] = num_ph
+
+                    symbols = symbols_expand
+                    ling_feat = ling_feat_expand
+                    word_lens = word_lens_expand
+                    synt_lens = synt_lens_expand
+                elif self.ipa_mode == "truncated":
+                    symbols = tuple(
+                        "".join(ph[:2]) if isinstance(ph, tuple) else ph for ph in symbols
+                    )
                 else:
-                    full_rels.append(self.unk)
-                    head_ids.append("-1")
+                    raise NotImplementedError(f"ipa_mode='{self.ipa_mode}'")
 
-        head_counts = Counter()
-        for token in ds.sent.tokens:
-            if not token.is_punctuation and token.head_id:
-                head_counts[token.head_id] += 1
+            tokens_id = self._symbols_to_sequence(symbols)
+        else:
+            for i in range(self.num_symbols_per_phoneme_token):
+                seq = []
+                for s in symbols:
+                    if isinstance(s, tuple):
+                        seq.append(s[i] if len(s) > i else TTSTextProcessor.unk)
+                    else:
+                        seq.append(s if i == 0 else TTSTextProcessor.unk)
 
-        full_head_counts = []
-        for token in ds.sent.tokens:
-            if not token.is_punctuation:
-                if token.id:
-                    full_head_counts.append(head_counts[token.id])
+                tokens_id.append(self._symbols_to_sequence(seq))
+
+        return tokens_id, symbols, ling_feat, word_lens, synt_lens
+
+    def _apply_xpbert_tokenizer(
+        self, symbols: tp.Sequence[tp.Union[str, tp.Tuple[str, ...]]]
+    ):
+        seq = []
+        for s in symbols:
+            if self.sil in s:
+                seq.append("▁")
+            elif self.bos in s:
+                continue
+            elif self.eos in s:
+                continue
+            else:
+                if isinstance(s, tuple):
+                    for i in reversed(range(1, len(s) + 1)):
+                        ph = "".join(s[:i])
+                        if ph in self._xpbert_tokenizer.vocab:
+                            seq.append(ph)
+                            break
+                    else:
+                        seq.append("".join(s))
                 else:
-                    full_head_counts.append(0)
+                    seq.append(s)
 
-        return full_rels, full_head_counts
+        result = self._xpbert_tokenizer.encode_plus(seq, is_split_into_words=True)
+        return result.encodings[0].ids
 
-    def _symbols_to_sequence(self, symbols: tp.List[str]) -> tp.List[int]:
+    def _symbols_to_sequence(self, symbols: tp.Sequence[str]) -> tp.List[int]:
         return [self._symbol_to_id[self._is_symbol_in_alphabet(s)] for s in symbols]
 
     def _is_symbol_in_alphabet(self, s: str) -> str:
@@ -461,14 +564,7 @@ class TTSTextProcessor(BaseDSProcessor):
 
         if s not in self._symbol_to_id:
             LOGGER.warning(trace(self, message=f"symbol [{s}] not in alphabet!"))
-            s_rep = s.split(":", 1)[0]
-            if s_rep in self.rel_tokens:
-                LOGGER.warning(
-                    trace(self, message=f"symbol [{s}] replaced with [{s_rep}]!")
-                )
-                return s_rep
-            else:
-                return self.unk
+            return self.unk
         else:
             return s
 
@@ -567,59 +663,29 @@ class TTSTextProcessor(BaseDSProcessor):
         ]
         return list(itertools.chain.from_iterable(res))
 
-    def _count_token_lens(
-        self, sentence: Sentence
-    ) -> tp.Tuple[tp.List, tp.List, tp.List]:
-        """Count token lengths per syntagma."""
-        word_lens, synt_lens, lens_per_postag = [], [], []
-        for synt in sentence.syntagmas:
-            tkn_in_syntagm = 0
-            for token in synt.tokens:
-                if not token.is_punctuation:
-                    tkn_in_syntagm += 1
-                    if self.sil not in token.text:
-                        pos = token.pos if token.pos in self.pos_tokens else self.unkpos
-                        lens_per_postag.append((pos, 1))
-                    else:
-                        lens_per_postag.append((self.sil, 1))
-                    word_lens.append(1)
-            synt_lens.append(tkn_in_syntagm)
-        return word_lens, synt_lens, lens_per_postag
-
-    def _count_phoneme_lens(
-        self, sentence: Sentence
-    ) -> tp.Tuple[tp.List, tp.List, tp.List, tp.List]:
-        """Count phonemes lengths per token, syntagma and pos-tag."""
-        word_lens, synt_lens, token_lens, lens_per_postag = [], [], [], []
-        for synt in sentence.syntagmas:
-            ph_in_syntagm = 0
-            for token in synt.tokens:
-                if not token.is_punctuation:
-                    ph_in_token = token.num_phonemes
-                    token_lens.append(ph_in_token)
-                    ph_in_syntagm += ph_in_token
-                    if self.sil not in token.text:
-                        pos = token.pos if token.pos in self.pos_tokens else self.unkpos
-                        lens_per_postag.append((pos, ph_in_token))
-                    else:
-                        lens_per_postag.append((self.sil, ph_in_token))
-                    word_lens.append(ph_in_token)
-            synt_lens.append(ph_in_syntagm)
-        return word_lens, synt_lens, token_lens, lens_per_postag
-
     def _assign_service_tokens(
         self,
         symbols,
+        tokens_id,
         ling_feat,
         word_lens,
         synt_lens,
         sentence,
-    ) -> tp.Tuple[tp.Tuple[str, ...], tp.Dict, tp.List[int], tp.List[int], Sentence]:
+    ) -> tp.Tuple[
+        tp.Tuple[str, ...], tp.List[int], tp.Dict, tp.List[int], tp.List[int], Sentence
+    ]:
         bos_id = self._symbol_to_id[self.bos]
         eos_id = self._symbol_to_id[self.eos]
 
         if self._add_service_tokens:
-            symbols = (self.bos,) + symbols + (self.eos,)
+            symbols = [self.bos] + symbols + [self.eos]
+
+            if isinstance(tokens_id[0], list):
+                for i in range(len(tokens_id)):
+                    tokens_id[i] = [bos_id] + tokens_id[i] + [eos_id]
+            else:
+                tokens_id = [bos_id] + tokens_id + [eos_id]
+
             for key, field in ling_feat.items():
                 if isinstance(field[0], tp.List):
                     for i in range(len(field)):
@@ -664,9 +730,81 @@ class TTSTextProcessor(BaseDSProcessor):
                     else:
                         ling_feat[key] = ling_feat[key][:-1] + (-1,)
 
-        return symbols, ling_feat, word_lens, synt_lens, sentence
+        return symbols, tokens_id, ling_feat, word_lens, synt_lens, sentence
 
-    def _set_token_lengths(self, ds: TextDataSample):
+    def _to_numpy(self, tokens_id, ling_feat_id):
+        tokens_np = np.asarray(tokens_id, dtype=np.int64)
+        if tokens_np.ndim == 2:
+            tokens_np = tokens_np.T
+
+        ling_feat_np = {}
+        for key, field in ling_feat_id.items():
+            dtype = (
+                np.float32
+                if (key in self._float_features and key != "prosody")
+                else np.int64
+            )
+            ling_feat_np[key] = np.asarray(field, dtype=dtype)
+            if ling_feat_np[key].ndim == 2:
+                ling_feat_np[key] = ling_feat_np[key].T
+
+            # check all features have equal lengths
+            if self._words_level:
+                target_len = ling_feat_np["sil_mask"].shape[0]
+            else:
+                target_len = tokens_np.shape[0]
+
+            assert (
+                target_len == ling_feat_np[key].shape[0]
+            ), "length sequence is mismatch!"
+
+        return tokens_np, ling_feat_np
+
+    def _count_token_lens(
+        self, sentence: Sentence
+    ) -> tp.Tuple[tp.List, tp.List, tp.List]:
+        """Count token lengths per syntagma."""
+        word_lens, synt_lens, lens_per_postag = [], [], []
+        for synt in sentence.syntagmas:
+            tkn_in_syntagm = 0
+            for token in synt.tokens:
+                if not token.is_punctuation:
+                    tkn_in_syntagm += 1
+                    if self.sil not in token.text:
+                        pos = token.pos if token.pos in self.pos_tokens else self.unkpos
+                        lens_per_postag.append((pos, 1))
+                    else:
+                        lens_per_postag.append((self.sil, 1))
+                    word_lens.append(1)
+            synt_lens.append(tkn_in_syntagm)
+        return word_lens, synt_lens, lens_per_postag
+
+    def _count_phoneme_lens(
+        self, sentence: Sentence
+    ) -> tp.Tuple[tp.List, tp.List, tp.List, tp.List]:
+        """Count phonemes lengths per token, syntagma and pos-tag."""
+        word_lens, synt_lens, token_lens, lens_per_postag = [], [], [], []
+        for synt in sentence.syntagmas:
+            ph_in_syntagm = 0
+            for token in synt.tokens:
+                if not token.is_punctuation:
+                    ph_in_token = token.num_phonemes
+                    token_lens.append(ph_in_token)
+                    ph_in_syntagm += ph_in_token
+                    if self.sil not in token.text:
+                        pos = token.pos if token.pos in self.pos_tokens else self.unkpos
+                        lens_per_postag.append((pos, ph_in_token))
+                    else:
+                        lens_per_postag.append((self.sil, ph_in_token))
+                    word_lens.append(ph_in_token)
+            synt_lens.append(ph_in_syntagm)
+        return word_lens, synt_lens, token_lens, lens_per_postag
+
+    @staticmethod
+    def _set_word_lengths(ds: TextDataSample, word_lens, synt_lens):
+        ds.word_lengths = np.asarray(word_lens, dtype=np.int64)
+        ds.synt_lengths = np.asarray(synt_lens, dtype=np.int64)
+
         if not hasattr(ds, "aggregated"):
             return
 
@@ -677,21 +815,6 @@ class TTSTextProcessor(BaseDSProcessor):
         ds.aggregated = {} if ds.aggregated is None else ds.aggregated
         ds.aggregated["word_lengths"] = ds.word_lengths
         ds.aggregated["word_invert_lengths"] = np.array(invert, dtype=np.float32)
-
-    def phons2ipa(self, lang: str, phonemes: tp.List[str]) -> tp.List[str]:
-        ipa_map = None
-        if lang == "RU":
-            ipa_map = self.ru2ipa
-        elif lang == "EN":
-            ipa_map = self.en2ipa
-
-        if ipa_map is not None:
-            return [
-                ipa_map[phoneme] if phoneme in ipa_map else phoneme
-                for phoneme in phonemes
-            ]
-        else:
-            return phonemes
 
 
 # TODO: support legacy models
@@ -856,7 +979,10 @@ class MultilingualPLBert(BaseDSProcessor):
         phonemes = [
             x
             for x in phonemes
-            if x not in [TTSTextProcessor.bos, TTSTextProcessor.eos, TTSTextProcessor.sil]
+            if (
+                x not in [TTSTextProcessor.bos, TTSTextProcessor.eos]
+                and TTSTextProcessor.sil not in x
+            )
         ]
 
         num_phonemes = sum(
@@ -899,7 +1025,10 @@ class MultilingualPLBert(BaseDSProcessor):
         zeros = torch.zeros((1, feat.shape[-1]))
         ds.plbert_feat = []
         for x in ds.transcription_text:
-            if x in [TTSTextProcessor.bos, TTSTextProcessor.eos, TTSTextProcessor.sil]:
+            if (
+                x in [TTSTextProcessor.bos, TTSTextProcessor.eos]
+                or TTSTextProcessor.sil in x
+            ):
                 ds.plbert_feat.append(zeros)
             else:
                 ds.plbert_feat.append(feat[phonemes_indexes[i]].sum(0, keepdims=True))

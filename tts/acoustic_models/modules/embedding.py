@@ -29,8 +29,10 @@ class EmbeddingComponent(Component):
             return self.params.token_emb_dim
         elif self.params.input == "spectrogram":
             return self.params.spectrogram_proj_dim
-        elif self.params.input == "ssl":
-            return self.params.ssl_proj_dim
+        elif self.params.input == "ssl_feat":
+            return self.params.ssl_feat_proj_dim
+        elif self.params.input == "ac_feat":
+            return self.params.ac_feat_proj_dim
         else:
             raise NotImplementedError(
                 f"input_embedding '{self.params.input}' is not support."

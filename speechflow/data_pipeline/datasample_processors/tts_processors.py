@@ -237,7 +237,7 @@ def add_pauses_from_text(
         elif level == "words":
             group = TokenUtils.group_tokens_by_word(synt.tokens)
 
-            def get_asr_pause_dura(tokens_: tp.List[Token]) -> float:
+            def _get_asr_pause_dura(tokens_: tp.List[Token]) -> float:
                 try:
                     word = [t for t in tokens_ if t.is_word][0]
                     return 0.0 if word.asr_pause is None else float(word.asr_pause)
@@ -245,7 +245,7 @@ def add_pauses_from_text(
                     return 0.0
 
             for i, tokens in enumerate(group[:-1]):
-                asr_pause = get_asr_pause_dura(tokens)
+                asr_pause = _get_asr_pause_dura(tokens)
                 check_pos = any(
                     t.pos in ["ADP", "CCONJ", "SCONJ", "DET", "PART"] for t in tokens
                 )
@@ -862,32 +862,42 @@ def transcription_by_frames(ds: TTSDataSample):
 @PipeRegistry.registry(
     inputs={"mel", "transcription_id"}, outputs={"mel", "transcription_id"}
 )
-def reverse(ds: TTSDataSample, p: float = 0.15):
+def reverse(ds: TTSDataSample, p: float = 0.2):
     if random.random() > p:
         return ds
 
-    ds.magnitude = np.flipud(ds.magnitude).copy()
-    ds.mel = np.flipud(ds.mel).copy()
+    if ds.transcription_text is not None:
+        ds.transcription_text = ds.transcription_text[::-1]
 
-    ds.transcription_id = np.flipud(ds.transcription_id).copy()
+    if ds.transcription_id is not None:
+        ds.transcription_id = np.flipud(ds.transcription_id).copy()
 
     for k, v in ds.ling_feat.items():
         ds.ling_feat[k] = np.flipud(v).copy()
 
+    if ds.magnitude is not None:
+        ds.magnitude = np.flipud(ds.magnitude).copy()
+
+    if ds.mel is not None:
+        ds.mel = np.flipud(ds.mel).copy()
+
     if ds.ssl_feat is not None:
         ds.ssl_feat.encoder_feat = np.flipud(ds.ssl_feat.encoder_feat).copy()
 
-    if ds.transcription_text is not None:
-        ds.transcription_text = ds.transcription_text[::-1]
+    if ds.ac_feat is not None:
+        ds.ac_feat.encoder_feat = np.flipud(ds.ac_feat.encoder_feat).copy()
+
+    if ds.plbert_feat is not None:
+        ds.plbert_feat = np.flipud(ds.plbert_feat).copy()
+
+    if ds.lm_feat is not None:
+        ds.lm_feat = np.flipud(ds.lm_feat).copy()
 
     if ds.synt_lengths is not None:
         ds.synt_lengths = np.flipud(ds.synt_lengths).copy()
 
     if ds.word_lengths is not None:
         ds.word_lengths = np.flipud(ds.word_lengths).copy()
-
-    if ds.lm_feat is not None:
-        ds.lm_feat = np.flipud(ds.lm_feat).copy()
 
     return ds
 

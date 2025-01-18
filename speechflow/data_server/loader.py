@@ -70,7 +70,9 @@ class DataLoader:
 
         self._stop_event = Event()
         self._batch_queue: tp.Deque = deque()
-        self._async_supported = self.client.find_info("async_supported", False)
+        self._num_batch_recv = 0
+
+        self._is_verbose_logging = is_verbose_logging()
 
     def __len__(self) -> int:
         return int(self.epoch_len)
@@ -118,19 +120,34 @@ class DataLoader:
         return init_class_from_config(DataLoader, cfg)()
 
     def _log_to_file(self, text: tp.Union[str, bytes]):
-        if is_verbose_logging():
+        if self._is_verbose_logging:
             try:
                 if isinstance(text, bytes):
                     text = text[:100]
                 fn_name = f"{self.__class__.__name__}.{inspect.stack()[1][3]}"
                 message = f"[{self._uid}][{self.subset_name}]: {text}"
-                log_to_file(trace(fn_name, message=message))
+
+                with self._lock:
+                    log_to_file(trace(fn_name, message=message))
+
             except Exception as e:
                 LOGGER.error(trace(self, e))
 
     def _send_info_message(self, text: str):
-        self._msg_client.send({"message": text, "subset_name": self.subset_name})
+        with self._lock:
+            self._msg_client.send({"message": text, "subset_name": self.subset_name})
+
         self._log_to_file(text)
+
+    def _recv_message(
+        self,
+        client: DataClient,
+        max_num_message: int = 25,
+        deserialize: bool = False,
+        timeout: int = 1,
+    ) -> tp.List[tp.Any]:
+        with self._lock:
+            return client.recv_multipart(max_num_message, deserialize, timeout)
 
     def _is_stop_iteration(self):
         if self._stop_event.is_set():
@@ -140,27 +157,27 @@ class DataLoader:
     def _queue_monitoring(self):
         while not self._stop_event.is_set():
             try:
-                self._lock.acquire()
-
-                free_slots = self.prefetch_factor - len(self._batch_queue)
-                if free_slots <= self.prefetch_factor // 4:
+                free_slots = max(self.prefetch_factor - len(self._batch_queue), 0)
+                if free_slots == 0:
                     continue
 
-                response = self._msg_client.request(
-                    message={"message": DCM.IS_READY},
-                    deserialize=False,
-                    timeout=1,
-                )
-                self._log_to_file(DCM.IS_READY)
-                if response is None:
-                    continue
+                self._send_info_message(DCM.IS_READY)
+                response = self._recv_message(self._msg_client)
 
                 is_ready = False
                 is_epoch_complete = False
                 for _bytes in response:
                     self._log_to_file(_bytes)
                     if DSM.READY.encode() in _bytes[:100]:
-                        is_ready = True
+                        num_batch_send = int(_bytes.decode().split(":")[-1])
+                        num_batch_delivery = max(num_batch_send - self._num_batch_recv, 0)
+                        is_ready = free_slots - num_batch_delivery > 0
+                        self._log_to_file(
+                            f"num of batch send: {num_batch_send}; "
+                            f"num of batch delivery: {num_batch_delivery}; "
+                            f"num of batch receive: {self._num_batch_recv}; "
+                            f"free slots: {free_slots}"
+                        )
                     elif DSM.EPOCH_COMPLETE.encode() in _bytes[:100]:
                         is_epoch_complete = True
                         break
@@ -182,14 +199,12 @@ class DataLoader:
             except Exception as e:
                 LOGGER.error(trace(self, e))
             finally:
-                self._lock.release()
-                self._log_to_file("[_queue_monitoring] thread went to sleep")
+                self._log_to_file("thread went to sleep")
                 Profiler.sleep(2.0)
 
     def _loading_batches(self):
         while not self._stop_event.is_set():
             try:
-                self._lock.acquire()
                 self._batch_receive()
             except KeyboardInterrupt:
                 LOGGER.error(trace(self, "Interrupt received, stopping ..."))
@@ -197,9 +212,7 @@ class DataLoader:
             except Exception as e:
                 LOGGER.error(trace(self, e))
             finally:
-                self._lock.release()
-                self._log_to_file("[_loading_batches] thread went to sleep")
-                Profiler.sleep(0.25)
+                Profiler.sleep(0.1)
 
     def _batch_request(self, batch_num: int):
         message = {
@@ -208,24 +221,26 @@ class DataLoader:
             "batch_size": self.batch_size,
             "batch_num": batch_num,
         }
-        self._batch_client.send(message)
+
+        with self._lock:
+            self._batch_client.send(message)
+
         self._log_to_file(str(message))
 
     def _batch_receive(self):
-        response = self._batch_client.recv(deserialize=False, timeout=1)
-        if not response:
-            return
+        response = self._recv_message(self._batch_client)
 
         batch_list = []
         for _bytes in response:
             self._log_to_file(_bytes)
-            if _bytes == b"" or len(_bytes) == 5 or b"info:" in _bytes[:100]:
+            if _bytes == b"" or _bytes[0] == 0 or b"info:" in _bytes[:100]:
                 continue
             else:
                 batch_list.append(_bytes)
 
         if batch_list:
             batch_list = Serialize.loads(batch_list, inplace=True)
+            self._num_batch_recv += len(batch_list)
 
         for batch in batch_list:
             if not isinstance(batch, Batch):
@@ -235,10 +250,11 @@ class DataLoader:
                 self.drop_non_full and batch.size != self.batch_size
             ) or batch.size < self.min_batch_size:
                 message = (
+                    f"[{self._uid}][{self.subset_name}]: "
                     f"batch size mismatch "
                     f"(expected size {self.batch_size} but received {batch.size})"
                 )
-                self._log_to_file(message)
+                LOGGER.warning(message)
             else:
                 if self.pin_memory and batch.collated_samples is not None:
                     batch.collated_samples.pin_memory()
@@ -249,6 +265,7 @@ class DataLoader:
         self._stop_event.clear()
         self._queue_monitoring_task.start()
         self._loading_batches_task.start()
+        self.reset()
 
     def finish(self):
         self._stop_event.set()
@@ -262,19 +279,24 @@ class DataLoader:
         except Exception as e:
             LOGGER.error(trace(self, e))
 
-    def next_batch(self, sleep: float = 0) -> Batch:
-        if len(self._batch_queue) == 0:
+    def next_batch(self, sleep: float = 0, step: int = 3) -> Batch:
+        if sleep > 60:
+            raise RuntimeError(
+                f"DataServer stopped responding for {self.subset_name} DataLoader!"
+            )
+
+        if not self._batch_queue:
             self._is_stop_iteration()
 
             assert (
-                self._loading_batches_task.is_alive()
+                self._queue_monitoring_task.is_alive()
             ), "DataLoader has not been started!"
 
-            if sleep > 0:
+            if sleep >= step:
                 LOGGER.warning(
                     f"[{self._uid}][{self.subset_name}]: Batches receive too slowly!"
                 )
-            else:
+            elif sleep == 0:
                 self.prefetch_factor = int(
                     min(self.prefetch_factor * 1.2, self.max_prefetch_factor)
                 )
@@ -283,18 +305,15 @@ class DataLoader:
             if sleep > 0 and sleep % 12 == 0 and self.non_stop:
                 self.abort_processing()
 
-            elif sleep > 60:
-                raise RuntimeError(
-                    f"DataServer stopped responding for {self.subset_name} DataLoader!"
-                )
+            sleep += 0.5 if sleep < step else step
 
-            Profiler.sleep(sleep + 3)
-            return self.next_batch(sleep + 3)
+            Profiler.sleep(sleep)
+            return self.next_batch(sleep)
 
         try:
             batch = self._batch_queue.popleft()
         except IndexError:
-            return self.next_batch()
+            batch = self.next_batch(sleep + 0.5)
 
         if self.prefetch_on_gpu and len(self._batch_queue) > 0:
             try:
@@ -307,9 +326,11 @@ class DataLoader:
         return batch
 
     def abort_processing(self):
+        self._num_batch_recv = 0
         self._send_info_message(DCM.ABORT)
 
     def reset(self):
+        self._num_batch_recv = 0
         self._batch_queue.clear()
         self._send_info_message(DCM.RESET)
         self.prefetch_factor = self.min_prefetch_factor

@@ -27,6 +27,7 @@ class AlignerBatchProcessor(BaseBatchProcessor):
             transcription_lengths=collated.transcription_lengths,
             ling_feat=collated.ling_feat,
             spectrogram=collated.spectrogram,
+            spectrogram_lengths=collated.spectrogram_lengths,
             spectral_flatness=collated.spectral_flatness,
             ssl_feat=collated.ssl_feat,  # type: ignore
             ssl_feat_lengths=collated.ssl_feat_lengths,

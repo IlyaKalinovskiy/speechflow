@@ -12,6 +12,7 @@ import torchaudio
 import transformers
 
 from speechbrain.pretrained import EncoderClassifier
+from torch.nn import functional as F
 from transformers.tokenization_utils_base import PaddingStrategy
 from whisper.decoding import DecodingTask
 
@@ -154,34 +155,8 @@ class Wav2Vec(BaseSSLModel):
         vocab_path: tp.Optional[tp_PATH],
         kmeans_path: tp.Optional[tp_PATH],
     ):
-        self.model = transformers.Wav2Vec2Model.from_pretrained(
-            model_name,
-            attention_dropout=0.01,
-            hidden_dropout=0.01,
-            feat_proj_dropout=0.0,
-            mask_time_prob=0.05,
-            layerdrop=0.01,
-        )
-        self.feature_extractor = transformers.Wav2Vec2FeatureExtractor(
-            feature_size=1,
-            sampling_rate=self.sample_rate,
-            padding_value=0.0,
-            do_normalize=True,
-            return_attention_mask=True,
-        )
-        self.processor = transformers.Wav2Vec2Processor(
-            feature_extractor=self.feature_extractor,
-            tokenizer=transformers.PreTrainedTokenizerBase(),
-        )
-
-        if pretrain_path is not None:
-            checkpoint = torch.load(pretrain_path, map_location="cpu")
-            state_dict = {
-                k.replace("model.model.", ""): v
-                for k, v in checkpoint["state_dict"].items()
-                if "lm_head" not in k and "phoneme_proj" not in k
-            }
-            self.model.load_state_dict(state_dict, strict=True)
+        self.model = transformers.Wav2Vec2ForCTC.from_pretrained(model_name)
+        self.processor = transformers.Wav2Vec2Processor.from_pretrained(model_name)
 
         self.model.eval()
         self.model.to(self.device)
@@ -199,27 +174,34 @@ class Wav2Vec(BaseSSLModel):
         input_values: torch.Tensor,
         level: int,
     ) -> torch.Tensor:
-        extract_features = self.model.feature_extractor(input_values)
+        model = self.model.wav2vec2
+        extract_features = model.feature_extractor(input_values)
         extract_features = extract_features.transpose(1, 2)
 
-        hidden_states, extract_features = self.model.feature_projection(extract_features)
+        hidden_states, extract_features = model.feature_projection(extract_features)
 
-        position_embeddings = self.model.encoder.pos_conv_embed(hidden_states)
+        position_embeddings = model.encoder.pos_conv_embed(hidden_states)
         hidden_states = hidden_states + position_embeddings
-        hidden_states = self.model.encoder.dropout(hidden_states)
+        hidden_states = model.encoder.dropout(hidden_states)
 
-        for layer in self.model.encoder.layers[:level]:
+        for layer in model.encoder.layers[:level]:
             layer_outputs = layer(hidden_states)
             hidden_states = layer_outputs[0]
 
         return hidden_states
 
     def get_tokens(self, ssl_feat: SSLFeatures) -> SSLFeatures:
-        if self._vocab_path is None or ssl_feat.logits is None:
+        if ssl_feat.logits is None:
             return ssl_feat
 
         logits = ssl_feat.logits
         text = self.processor.batch_decode(logits.argmax(dim=-1))[0]
+        ssl_feat.text = text
+
+        if hasattr(self.processor.tokenizer, "backend"):
+            if self.processor.tokenizer.backend.name() == "espeak":
+                return ssl_feat
+
         tokens_id = self.processor.tokenizer(text).input_ids
 
         dictionary = self.processor.tokenizer.get_vocab()
@@ -229,7 +211,6 @@ class Wav2Vec(BaseSSLModel):
 
         ssl_feat.tokens_id = tokens_id
         ssl_feat.tokens_text = tokens_text
-        ssl_feat.text = text
         return ssl_feat
 
     def get_discrete_units(self, ssl_feat: SSLFeatures) -> SSLFeatures:
@@ -263,8 +244,7 @@ class Wav2Vec(BaseSSLModel):
         if self._feature_type == "logits":
             outputs = self.model(**processed)
             ssl_feat.encoder_feat = outputs.logits
-            if hasattr(outputs, "logits"):
-                ssl_feat.logits = outputs.logits
+            ssl_feat.logits = outputs.logits
         elif self._feature_type in ["centroids", "last_hidden_state"]:
             outputs = self.model(**processed, output_hidden_states=True)
             ssl_feat.encoder_feat = outputs.hidden_states[-1]
@@ -445,7 +425,7 @@ class ECAPABiometric(BaseSSLModel):
         return self.postprocessing(ssl_feat)
 
 
-class Kmeans:
+class KMeans:
     def __init__(self, model_path: Path, device: str = "cpu"):
         self.km_model = joblib.load(model_path)
         self.C_np = self.km_model.cluster_centers_.transpose()

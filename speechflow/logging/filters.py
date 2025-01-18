@@ -23,6 +23,11 @@ class TimestampErrorFilter(logging.Filter):
         return "timestamps.py" not in record.getMessage()
 
 
+class SamplerErrorFilter(logging.Filter):
+    def filter(self, record):
+        return "Sampler" not in record.getMessage()
+
+
 class TextProcessorErrorFilter(logging.Filter):
     def filter(self, record):
         return "ZeroSilTokensError" not in record.getMessage()
@@ -43,6 +48,7 @@ def set_logging_filters(logger, **kwargs):
     logger.addFilter(ValueErrorFilter())
     logger.addFilter(IndexErrorFilter())
     logger.addFilter(TimestampErrorFilter())
+    logger.addFilter(SamplerErrorFilter())
     logger.addFilter(TextProcessorErrorFilter())
     logger.addFilter(LPCProcessorErrorFilter())
     logger.addFilter(CollatedErrorFilter())

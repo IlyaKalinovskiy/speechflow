@@ -86,6 +86,20 @@ class TTSForwardInput(TrainData):
         if self.additional_inputs is None:
             self.additional_inputs = {}
 
+    def get_feat_lengths(self, feat_name: str):
+        if feat_name in ["mel_spectrogram", "linear_spectrogram"]:
+            return getattr(self, "spectrogram_lengths")
+        elif hasattr(self, f"{feat_name}_lengths"):
+            return getattr(self, f"{feat_name}_lengths")
+        else:
+            raise None
+
+    def __getattr__(self, item):
+        if "spectrogram_lengths" in item or item in ["energy_lengths", "pitch_lengths"]:
+            return object.__getattribute__(self, "spectrogram_lengths")
+        else:
+            return object.__getattribute__(self, item)
+
 
 @dataclass
 class TTSForwardInputWithPrompt(TTSForwardInput):

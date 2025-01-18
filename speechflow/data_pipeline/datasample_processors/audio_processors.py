@@ -132,16 +132,19 @@ class SignalProcessor(BaseAudioProcessor):
                 ds.additional_fields["spec_chunk"] = np.asarray(
                     (int(_begin * _s), round(_end * _s))
                 )
-                assert _len == np.diff(ds.additional_fields["spec_chunk"])
+                assert _len == int(np.diff(ds.additional_fields["spec_chunk"]))
 
         dura = ds.audio_chunk.duration
 
         if random_chunk and num_samples_per_chunk:
             y = ds.audio_chunk.waveform
-            hop_len = ds.get_param_val("hop_len")
             assert y.size >= num_samples_per_chunk + 1
             begin = np.random.randint(low=0, high=y.size - num_samples_per_chunk + 1)
-            begin = int(begin / hop_len) * hop_len
+
+            hop_len = ds.get_param_val("hop_len")
+            if hop_len is not None:
+                begin = int(begin / (2 * hop_len)) * 2 * hop_len
+
             y = y[begin : begin + num_samples_per_chunk]
             ds.audio_chunk = AudioChunk(data=y, sr=ds.audio_chunk.sr)
             add_chunk_bound(ds, begin, begin + num_samples_per_chunk)
@@ -418,7 +421,7 @@ class ACProcessor(BaseAudioProcessor):
 
         if self._resynt:
             if ds.ac_feat.waveform is None:
-                feat = ds.ac_feat.encode_feat.t().unsqueeze(0)
+                feat = ds.ac_feat.encoder_feat.t().unsqueeze(0)
                 waveform = self._ac_model.decode(feat.to(self._ac_model.device))
                 waveform = waveform.squeeze().cpu().numpy()
             else:
@@ -498,16 +501,21 @@ def timedim_interpolation(
         attr = getattr(ds, shape_as)
 
         if isinstance(feat, SSLFeatures):
-            t = torch.from_numpy(feat.encoder_feat)
+            t = feat.encoder_feat
         else:
-            t = torch.from_numpy(feat)
+            t = feat
+
+        if isinstance(t, np.ndarray):
+            t = torch.from_numpy(t)
 
         scale = ratio * attr.shape[0] / t.shape[0]
-        if math.floor(t.shape[0] * scale / ratio) < attr.shape[0]:
+        shape = math.floor(t.shape[0] * scale / ratio)
+        if shape < attr.shape[0]:
             scale = ratio * (attr.shape[0] + 1) / t.shape[0]
 
-        t = interpolate(t, scale)
-        assert math.floor(t.shape[0] / ratio) == attr.shape[0]
+        t = interpolate(t, scale).numpy()
+        t = t[: math.floor(ratio * attr.shape[0])]
+        # assert math.floor(t.shape[0] / ratio) == attr.shape[0]
 
         if isinstance(feat, SSLFeatures):
             feat.encoder_feat = t

@@ -214,6 +214,7 @@ class AudioFeatures(FeatureExtractor):
                 use_gmvae=params.style_use_gmvae,
                 use_fsq=params.style_use_fsq,
                 gmvae_n_components=params.style_gmvae_n_components,
+                random_chunk=True,
             )
             self.style_enc = StyleEncoder(style_params, 0)
 
@@ -487,30 +488,20 @@ class AudioFeatures(FeatureExtractor):
     def _get_style(
         self, inputs: VocoderForwardInput, global_step: int
     ) -> tp.Tuple[torch.Tensor, tp.Dict[str, torch.Tensor]]:
-        if self.style_feat_type == "linear_spectrogram":
-            source, source_lengths = inputs.linear_spectrogram, inputs.spectrogram_lengths
-        elif self.style_feat_type == "mel_spectrogram":
-            source, source_lengths = inputs.spectrogram, inputs.spectrogram_lengths
-        elif self.style_feat_type == "ssl_feat":
-            source, source_lengths = inputs.ssl_feat, inputs.ssl_feat_lengths
-        elif self.style_feat_type == "speaker_emb":
-            source, source_lengths = inputs.speaker_emb, None
+        if hasattr(inputs, self.style_feat_type):
+            source = getattr(inputs, self.style_feat_type)
+            source_lengths = inputs.get_feat_lengths(self.style_feat_type)
         elif self.style_feat_type == "style_emb":
             source, source_lengths = inputs.additional_inputs["style_emb"], None
         else:
             raise NotImplementedError
-
-        if source_lengths is not None:
-            source_mask = get_mask_from_lengths(source_lengths)
-        else:
-            source_mask = None
 
         style_emb = None
         style_losses = {}
 
         if self.style_enc is not None:
             style_emb, style_content, style_losses = self.style_enc(
-                source, source_mask, model_inputs=inputs
+                source, source_lengths, model_inputs=inputs
             )
 
             if self.style_enc.params.use_gmvae:
@@ -628,7 +619,7 @@ class AudioFeatures(FeatureExtractor):
             )
             additional_content["energy_predict"] = e_output
             losses.update(e_losses)
-            if not self.training and inputs.energy is None:
+            if inputs.energy is None:
                 inputs.energy = e_output
 
         if self.pitch_predictor is not None:
@@ -641,7 +632,7 @@ class AudioFeatures(FeatureExtractor):
             )
             additional_content["pitch_predict"] = p_output
             losses.update(p_losses)
-            if not self.training and inputs.pitch is None:
+            if inputs.pitch is None:
                 inputs.pitch = p_output
 
         if self.range_predictor is not None:

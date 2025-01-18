@@ -40,13 +40,9 @@ class SubscriberTypes(StrEnum):
 @dataclass
 class SamplingStatus:
     num_batch_in_processing: int = 0
+    num_batch_send: int = 0
     is_last_batch: bool = False
-    batches: tp.List = None  # type: ignore
-    async_mode: bool = True
     subset: str = None  # type: ignore
-
-    def __post_init__(self):
-        self.batches = []
 
 
 class DataServer(ProcessWorker):
@@ -66,7 +62,6 @@ class DataServer(ProcessWorker):
         self._pipe = data_pipeline
         self._n_processes = n_processes if n_processes else mp.cpu_count()
         self._zmq_server: ZMQServer = None  # type: ignore
-        self._async_supported = True
         self._synchronize_loaders = synchronize_loaders
         self._work_queues: tp.Dict[str, SamplingStatus] = defaultdict(SamplingStatus)
         self._uid_map: tp.Dict[bytes, str] = {}
@@ -191,7 +186,10 @@ class DataServer(ProcessWorker):
             self.send_info_message(message, DSM.QUEUE_EXCEEDED, queue_info.subset)
             return True
 
-        if queue_info.is_last_batch and queue_info.num_batch_in_processing > 0:
+        if (
+            queue_info.is_last_batch
+            and queue_info.num_batch_in_processing > self.num_workers
+        ):
             self.send_info_message(
                 message,
                 f"{DSM.EPOCH_ENDING}"
@@ -219,7 +217,6 @@ class DataServer(ProcessWorker):
         if request["message"] == DCM.INFO:
             response = {
                 "subscriber_id": self._subscribers.setdefault(request["sub_type"], 0),
-                "async_supported": self._async_supported,
                 "addr_for_workers": self._addr_for_workers,
                 "subsets": self._info_for_loader.get("subsets", []),
             }
@@ -248,7 +245,11 @@ class DataServer(ProcessWorker):
         elif request["message"] == DCM.IS_READY:
             queue_info = self._work_queues[client_uid]
             if not self.is_reject_request(message, queue_info):
-                self.send_info_message(message, DSM.READY, queue_info.subset)
+                self.send_info_message(
+                    message,
+                    f"{DSM.READY}: {queue_info.num_batch_send}",
+                    queue_info.subset,
+                )
 
         elif request["message"] == DCM.GET_BATCH:
             subset = request["subset_name"]
@@ -256,7 +257,6 @@ class DataServer(ProcessWorker):
             batch_num = request.get("batch_num", 1)
 
             queue_info = self._work_queues[client_uid]
-            queue_info.async_mode = request.get("async_mode", True)
             queue_info.subset = subset
             if self.is_reject_request(message, queue_info):
                 return
@@ -293,18 +293,14 @@ class DataServer(ProcessWorker):
 
         elif request["message"] in [DCM.ABORT, DCM.RESET]:
             status = self._work_queues[client_uid]
-            if status.batches:
-                self._zmq_server.frontend_send_multipart(message + status.batches)
-                self.send_info_message(message, DSM.QUEUE_CLEARED, status.subset)
-                status.batches = []
+            status.num_batch_in_processing = 0
+            status.num_batch_send = 0
 
             if request["message"] == DCM.ABORT:
-                status.num_batch_in_processing = 0
                 self.send_info_message(message, DSM.ABORT, status.subset)
 
             if request["message"] == DCM.RESET:
                 status.is_last_batch = False
-                status.num_batch_in_processing = 0
                 self._total_batch_in_processing = 0
                 self._pipe[request["subset_name"]].sampler.reset()
                 self.send_info_message(message, DSM.RESET, status.subset)
@@ -324,10 +320,6 @@ class DataServer(ProcessWorker):
                 subscriber_uid = self._get_subscriber_uid(message)
                 client_uid = self._uid_map.get(subscriber_uid, uuid.uuid4().hex)
 
-                self._total_batch_in_processing = max(
-                    0, self._total_batch_in_processing - 1
-                )
-
                 queue_info = self._work_queues.get(client_uid)
                 if queue_info is None:
                     self.send_info_message(message, DSM.SKIP_BATCH)
@@ -336,17 +328,12 @@ class DataServer(ProcessWorker):
                 queue_info.num_batch_in_processing = max(
                     0, queue_info.num_batch_in_processing - 1
                 )
+                self._total_batch_in_processing = max(
+                    0, self._total_batch_in_processing - 1
+                )
 
-                if queue_info.async_mode:
-                    self._zmq_server.frontend_send_multipart(message)
-                else:
-                    if queue_info.num_batch_in_processing == 0:
-                        self._zmq_server.frontend_send_multipart(
-                            message + queue_info.batches
-                        )
-                        queue_info.batches = []
-                    else:
-                        queue_info.batches.append(message[2])
+                self._zmq_server.frontend_send_multipart(message)
+                queue_info.num_batch_send += 1
 
                 if queue_info.num_batch_in_processing == 0 and queue_info.is_last_batch:
                     self.send_info_message(message, DSM.EPOCH_COMPLETE, queue_info.subset)

@@ -4,6 +4,8 @@ import logging
 import torch
 import pytorch_lightning as pl
 
+from clearml import Task
+
 from speechflow.data_pipeline.core import BaseBatchProcessor
 from speechflow.data_pipeline.core.batch import Batch
 from speechflow.logging import log_to_file, trace
@@ -30,12 +32,9 @@ class LightningEngine(pl.LightningModule):
         optimizer: Optimizer,
         saver: ExperimentSaver,
         detect_grad_nan: bool = False,
+        use_clearml_logger: bool = False,
     ):
         super().__init__()
-
-        assert int(pl.__version__[0]) >= 2, RuntimeError(
-            "pytorch_lightning==2.0.7 or higher required"
-        )
 
         self.model = model
         self.criterion = criterion
@@ -48,6 +47,15 @@ class LightningEngine(pl.LightningModule):
         self.saver.to_save["params_after_init"] = self.model.get_params(after_init=True)
 
         self.validation_losses = []
+
+        if use_clearml_logger:
+            LOGGER.info(trace(self, message="Init ClearML task"))
+            self.clearml_task = Task.init(
+                task_name=saver.expr_path.name, project_name=saver.expr_path.parent.name
+            )
+            LOGGER.info(trace(self, message="ClearML task has been initialized"))
+        else:
+            self.clearml_task = None
 
     def on_fit_start(self):
         self.batch_processor.set_device(self.device)
@@ -67,7 +75,9 @@ class LightningEngine(pl.LightningModule):
         total_loss = torch.tensor(0.0).to(self.device)
         losses_to_log = {}
         for name, loss in losses.items():
-            if loss.requires_grad or step_name != "train":
+            if not isinstance(loss, torch.Tensor):
+                loss = torch.tensor(loss, dtype=torch.float).to(self.device)
+            if step_name != "train" or loss.requires_grad:
                 if "constant" not in name:
                     total_loss += loss
                 losses_to_log[f"{name}/{step_name}"] = loss.detach()
@@ -219,6 +229,8 @@ class GANLightningEngine(pl.LightningModule):
         total_loss = torch.tensor(0.0).to(self.device)
         losses_to_log = {}
         for name, loss in losses.items():
+            if not isinstance(loss, torch.Tensor):
+                loss = torch.tensor(loss, dtype=torch.float).to(self.device)
             total_loss += loss
             losses_to_log[f"{name}/{step_name}"] = loss.detach()
 

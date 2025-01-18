@@ -166,7 +166,7 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
 
     def get_condition(
         self,
-        inputs: ComponentInput,
+        inputs: tp.Union[ComponentInput, MODEL_INPUT_TYPE],
         condition: tp.Union[str, tp.Tuple[str, ...]],
         average_by_time: bool = True,
     ):

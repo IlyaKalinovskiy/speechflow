@@ -188,7 +188,7 @@ class SpeechSynthesisInterface:
         self.tts = TTSEvaluationInterface(
             tts_ckpt_path=tts_ckpt_path,
             prosody_ckpt_path=prosody_ckpt_path,
-            device=device,
+            device_model=device,
         )
         self.vocoder = VocoderEvaluationInterface(
             ckpt_path=vocoder_ckpt_path, device=device

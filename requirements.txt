@@ -40,6 +40,7 @@ pesq==0.0.4
 hydra-core==1.4.0.dev1
 clearml==1.16.4
 denoiser==0.1.5
+monotonic-align==1.0.0
 
 resemblyzer @ git+https://github.com/resemble-ai/Resemblyzer.git@15d828edebe06bc72b9cabc8ef8ca5ab2cb457ce
 whisper-timestamped @ git+https://github.com/linto-ai/whisper-timestamped.git@5d4fdaa93e9c6e1b8d3152903993c85f5c7c0334
