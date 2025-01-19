@@ -86,11 +86,12 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         feat_cfg = cfg_model["model"].feature_extractor
 
         if feat_cfg.class_name == "TTSFeatures":
-            tts_cfg = feat_cfg.init_args["tts_cfg"]
-            tts_cfg.alphabet_size = text_proc.alphabet_size
-            tts_cfg.n_symbols_per_token = text_proc.num_symbols_per_phoneme_token
-            tts_cfg.n_langs = speaker_id_handler.n_langs
-            tts_cfg.n_speakers = speaker_id_handler.n_speakers
+            feat_cfg.init_args.alphabet_size = text_proc.alphabet_size
+            feat_cfg.init_args.n_symbols_per_token = (
+                text_proc.num_symbols_per_phoneme_token
+            )
+            feat_cfg.init_args.n_langs = speaker_id_handler.n_langs
+            feat_cfg.init_args.n_speakers = speaker_id_handler.n_speakers
         else:
             feat_cfg.init_args.n_langs = speaker_id_handler.n_langs
             feat_cfg.init_args.n_speakers = speaker_id_handler.n_speakers

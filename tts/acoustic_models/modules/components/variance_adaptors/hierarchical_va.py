@@ -100,6 +100,8 @@ class HierarchicalVarianceAdaptor(Component):
 
             self.predictors[name] = predictor_cls(vp_params, content_dim)
 
+            predictor_params.vp_output_dim = self.predictors[name].output_dim
+
         self.embeddings = torch.nn.ModuleDict()
         for name in self.va_variances:
             variance_params = self.va_variance_params[name]

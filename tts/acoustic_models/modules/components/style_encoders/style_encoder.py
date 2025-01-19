@@ -20,12 +20,11 @@ class StyleEncoderParams(EmbeddingParams):
     base_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
     source: tp.Optional[str] = "spectrogram"
     source_dim: int = 80
-    style_emb_dim: int = (128,)
+    style_emb_dim: int = 128
     random_chunk: bool = False
     min_spec_len: int = 128
     max_spec_len: int = 512
     use_gmvae: bool = False
-    gmvae_dim: int = 32
     gmvae_n_components: int = 16
     use_fsq: bool = False
     fsq_levels: tp.Tuple[int, ...] = (
@@ -54,7 +53,7 @@ class StyleEncoder(Component):
         if params.use_gmvae:
             self.gmvae = GMVAE(
                 self.encoder.output_dim,
-                self.params.gmvae_dim,
+                self.params.style_emb_dim,
                 self.params.gmvae_n_components,
             )
         elif params.use_fsq:
@@ -67,7 +66,7 @@ class StyleEncoder(Component):
     @property
     def output_dim(self):
         if self.params.use_gmvae:
-            return self.params.gmvae_dim
+            return self.params.style_emb_dim
         else:
             return self.encoder.output_dim
 
@@ -114,18 +113,20 @@ class StyleEncoder(Component):
             x = self.get_condition(
                 model_inputs, self.params.source, average_by_time=False
             )
-            x_lengths = model_inputs.get_feat_lengths(self.params.source)
-            if x_lengths is None:
-                x_lengths = torch.LongTensor([x.shape[1]] * x.shape[0]).to(x.device)
 
         if self.params.base_encoder_type == "SimpleStyle":
             assert x.shape[1] == 1, ValueError(
                 "This style coder requires a biometric embedding."
             )
+            x_lengths = None
         else:
             assert x.shape[1] > 1, ValueError(
                 "This style coder requires a mel spectrogram."
             )
+
+            x_lengths = model_inputs.get_feat_lengths(self.params.source)
+            if x_lengths is None:
+                x_lengths = torch.LongTensor([x.shape[1]] * x.shape[0]).to(x.device)
 
         if self.params.random_chunk and x.shape[1] > 1:
             chunk, chunk_lengths = self.get_random_chunk(

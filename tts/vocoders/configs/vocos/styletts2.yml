@@ -1,0 +1,230 @@
+### Model configuration ###
+
+experiment_name: styletts2_nsf
+
+dirs:
+  logging: styletts2_experiments
+
+seed: 1234
+
+batch:
+  type: VocoderBatchProcessor
+
+data_loaders:
+  batch_size: { default: 8, debug: 2 }
+  min_batch_size: 2
+  min_prefetch_factor: { default: 50, debug: 1 }
+  max_prefetch_factor: { default: 150, debug: 1 }
+
+trainer:
+  accelerator: { default: gpu, debug: cpu }
+  devices: { default: [auto], debug: 1 }
+  max_steps: 8000000
+  accumulate_grad_batches: 1
+  limit_val_batches: 100
+  log_every_n_steps: 100
+  # resume_from_checkpoint: /path/to/checkpoint
+
+checkpoint:
+  monitor: val_loss
+  filename: vocos_checkpoint_{epoch}_{step}_{val_loss:.4f}
+  save_top_k: 3
+  save_last: true
+
+callbacks:
+  LearningRateMonitor: {}
+  ModelSummary: {}
+  GradNormCallback: {}
+  VisualizerCallback: {}
+
+engine:
+  class_name: VocosLightningEngine
+  init_args:
+    sample_rate: 24000
+    initial_learning_rate: 5.e-4
+    mel_loss_coeff: 10.0
+    mrd_loss_coeff: 0.1
+    auxiliary_loss_coeff: 1.0
+    decay_mel_coeff: false
+    num_warmup_steps: 0  # Optimizers warmup steps
+    pretrain_mel_steps: 0  # 0 means GAN objective from the first iteration
+    use_sm_loss: true
+    use_wavlm_loss: true
+    use_cdpam_loss: false
+    biometric_model_name:
+      default: /src/wespeaker-voxceleb-resnet34-LM
+      debug: C:/FluentaAI/wespeaker-voxceleb-resnet34-LM
+    wavlm_model_name:
+      default: /src/wavlm-base-plus
+      debug: C:/FluentaAI/wavlm-base-plus
+
+    # automatic evaluation
+    evaluate_utmos: false
+    evaluate_pesq: true
+    evaluate_periodicty: true
+
+    use_clearml_logger: false
+
+model:
+  feature_extractor:
+    class_name: TTSFeatures
+    init_args:
+      token_emb_dim: 256
+
+      use_dnn_speaker_emb: true
+      speaker_biometric_model: wespeaker
+      speaker_emb_dim: 128
+
+      use_average_emb: true
+      averages:
+        rate:
+          interval: [0, 64]
+        energy:
+          interval: [0, 200]
+
+      mode_cat:
+        1: [average_emb, speech_quality_emb]
+
+      encoder_type: ForwardEncoder
+      encoder_inner_dim: 1024
+      encoder_params:
+        base_encoder_type: RNNEncoder
+        base_encoder_params:
+          cat_ling_feat: true
+          cat_lm_feat: false
+          condition: [speaker_emb]
+          condition_dim: 128
+        base_adaptor_encoder_type: RNNEncoder
+        base_adaptor_encoder_params:
+          cat_ling_feat: true
+          cat_lm_feat: false
+          condition: [speaker_emb]
+          condition_dim: 128
+
+      va_type: HierarchicalVarianceAdaptor
+
+      decoder_type: ForwardDecoder
+      decoder_inner_dim: 512
+      decoder_output_dim: 512
+
+      postnet_type: ~
+
+      addm_apply_inverse_speaker_classifier:
+        StyleEncoder_0: 128
+
+      va_variances:
+        0: [biometric_style_encoder]
+        1: [aggregate_energy, aggregate_pitch]
+        2: [aggregate_curv_energy, aggregate_curv_pitch]
+        3: [durations]
+        4: [energy, pitch]
+      va_variance_params:
+        biometric_style_encoder:
+          tag: style_emb
+          as_encoder: true
+          predictor_type: StyleEncoder
+          predictor_params:
+            vp_params:
+              base_encoder_type: SimpleStyle
+              source: ecapa_emb
+              source_dim: 192
+              style_emb_dim: 128
+              use_gmvae: true
+              gmvae_n_components: 16
+        spectrogram_style_encoder:
+          tag: style_emb
+          as_encoder: true
+          predictor_type: StyleEncoder
+          predictor_params:
+            vp_params:
+              base_encoder_type: StyleSpeech  # StyleSpeech, StyleTTS2
+              source: spectrogram  # spectrogram, ssl_feat
+              source_dim: 80  # 80, 768
+              style_emb_dim: 128
+        aggregate_energy:
+          predictor_type: TokenLevelPredictor
+          as_embedding: true
+          interval: [0, 200]
+          n_bins: 256
+          emb_dim: 64
+          input_content: [1]
+          cat_to_content: [1]
+        aggregate_pitch:
+          predictor_type: TokenLevelPredictor
+          log_scale: true
+          as_embedding: true
+          interval: [0, 880]
+          n_bins: 256
+          emb_dim: 64
+          input_content: [1]
+          cat_to_content: [1]
+        aggregate_curv_energy:
+          predictor_type: TokenLevelPredictor
+          dim: 2
+          as_embedding: true
+          interval: [-1.58, 1.58]
+          n_bins: 256
+          emb_dim: 64
+          input_content: [1]
+          cat_to_content: [1]
+        aggregate_curv_pitch:
+          predictor_type: TokenLevelPredictor
+          dim: 2
+          as_embedding: true
+          interval: [-1.58, 1.58]
+          n_bins: 256
+          emb_dim: 64
+          input_content: [1]
+          cat_to_content: [1]
+        durations:
+          input_content: [0]
+          predictor_type: TokenLevelDP
+          predictor_params:
+            vp_params:
+              add_noise: true
+          denormalize: false
+        energy:
+          predictor_type: FrameLevelPredictor
+          predictor_params:
+            vp_params:
+               activation_fn: LeakyReLU
+          denormalize: false
+          as_embedding: false
+          interval: [0, 200]
+          n_bins: 256
+          emb_dim: 128
+          input_content: [1]
+          cat_to_content: []
+        pitch:
+          predictor_type: FrameLevelPredictor
+          predictor_params:
+            vp_params:
+               activation_fn: LeakyReLU
+          denormalize: false
+          log_scale: true
+          as_embedding: false
+          interval: [0, 880]
+          n_bins: 256
+          emb_dim: 128
+          input_content: [1]
+          cat_to_content: []
+
+  backbone:
+    class_name: DummyBackbone
+    init_args:
+      input_dim: 512
+      inner_dim: 512
+      # num_blocks: 4
+      # intermediate_dim: 1536
+      # num_layers: 12
+
+  head:
+    class_name: NSFiSTFTHiFiGANHead
+    init_args:
+      input_dim: 512
+      condition_dim: 128
+      upsample_rates: [10, 6]  # hop=240
+      upsample_kernel_sizes: [20, 12]
+      istft_n_fft: 20
+      istft_hop_size: 4
+      adain_upsample: false

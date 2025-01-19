@@ -106,7 +106,7 @@ class SoftLengthRegulator(nn.Module):
                 mask_down = frames_decoder_shifted >= 0
                 mask_up = torch.roll(mask_down, -1, dims=1)
                 mask = torch.bitwise_xor(mask_down, mask_up)
-                attention_weights = (~mask[:, -1, :]).float()
+                attention_weights = mask.float()
             else:
                 attention_weights = torch.softmax(
                     -(frames_decoder_shifted**2) * self._sigma, dim=1

@@ -76,8 +76,13 @@ class VisualizerCallback(Callback):
             target_signal = getattr(targets, name)
             if target_signal is not None:
                 target_signal = target_signal[random_idx][:T]
-                predict = ft_additional[f"{name}_predict"][random_idx][:T]
-                data = torch.stack([target_signal, predict])
+                if f"{name}_predict" in ft_additional:
+                    predict = ft_additional[f"{name}_predict"]
+                elif f"{name}_postprocessed" in ft_additional:
+                    predict = ft_additional[f"{name}_postprocessed"].squeeze(-1)
+                else:
+                    predict = ft_additional[name].squeeze(-1)
+                data = torch.stack([target_signal, predict[random_idx][:T]])
                 self._log_1d(f"predict/{name}", data, pl_module)
 
     @staticmethod

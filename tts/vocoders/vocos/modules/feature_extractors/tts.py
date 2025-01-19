@@ -18,10 +18,10 @@ class TTSFeaturesParams(ParallelTTSParams):
 
 
 class TTSFeatures(FeatureExtractor):
-    def __init__(self, tts_cfg: tp.Union[tp.MutableMapping, TTSFeaturesParams]):
-        super().__init__()
-        self._tts = ParallelTTSModel(tts_cfg)
-        self._mel_proj = Regression(tts_cfg.decoder_output_dim, 80)
+    def __init__(self, params: tp.Union[tp.MutableMapping, TTSFeaturesParams]):
+        super().__init__(params)
+        self._tts = ParallelTTSModel(params)
+        self._mel_proj = Regression(params.decoder_output_dim, params.mel_spectrogram_dim)
 
     def forward(self, inputs: VocoderForwardInput, **kwargs):
         if inputs.__class__.__name__ != "TTSForwardInputWithSSML":
@@ -35,22 +35,19 @@ class TTSFeatures(FeatureExtractor):
 
         if self.training:
             target_spec = inputs.spectrogram
-            if isinstance(outputs.spectrogram, list):
-                for idx, predict_spec in enumerate(outputs.spectrogram):
-                    if predict_spec.shape[-1] == target_spec.shape[-1]:
-                        losses[f"spec_loss_{idx}"] = F.l1_loss(predict_spec, target_spec)
-                    else:
-                        losses[f"spec_loss_{idx}"] = F.l1_loss(
-                            self._mel_proj(predict_spec), target_spec
-                        )
+            if outputs.spectrogram.ndim == 4:
+                x = outputs.spectrogram[0]
 
-                x = outputs.spectrogram[-1]
+                if x.shape[-1] == target_spec.shape[-1]:
+                    losses["spec_loss"] = F.l1_loss(x, target_spec)
+                else:
+                    losses["spec_loss"] = F.l1_loss(self._mel_proj(x), target_spec)
             else:
-                losses["spec_loss"] = F.l1_loss(outputs.spectrogram, target_spec)
                 x = outputs.spectrogram
+                losses["spec_loss"] = F.l1_loss(x, target_spec)
         else:
-            if isinstance(outputs.spectrogram, list):
-                x = outputs.spectrogram[-1]
+            if outputs.spectrogram.ndim == 4:
+                x = outputs.spectrogram[0]
             else:
                 x = outputs.spectrogram
 
@@ -67,9 +64,9 @@ class TTSFeatures(FeatureExtractor):
                 pitch.append(pitch_target[i, a:b])
 
             output = torch.stack(chunk)
-            additional_content["energy"] = torch.stack(energy)
-            additional_content["pitch"] = torch.stack(pitch)
-            additional_content["style_emb"] = outputs.additional_content[
+            additional_content["energy"] = torch.stack(energy).squeeze(-1)
+            additional_content["pitch"] = torch.stack(pitch).squeeze(-1)
+            additional_content["condition_emb"] = outputs.additional_content[
                 "style_emb"
             ].squeeze(1)
         else:
@@ -81,8 +78,8 @@ class TTSFeatures(FeatureExtractor):
             else:
                 raise TypeError(f"Type {type(outputs)} is not supported.")
 
-            additional_content["energy"] = d["energy_postprocessed"]
-            additional_content["pitch"] = d["pitch_postprocessed"]
-            additional_content["style_emb"] = d["style_emb"].squeeze(1)
+            additional_content["energy"] = d["energy_postprocessed"].squeeze(-1)
+            additional_content["pitch"] = d["pitch_postprocessed"].squeeze(-1)
+            additional_content["condition_emb"] = d["style_emb"].squeeze(1)
 
         return output.transpose(1, -1), losses, additional_content

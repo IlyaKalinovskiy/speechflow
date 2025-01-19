@@ -28,7 +28,7 @@ class Timestamps:
 
         if len(self) > 1:
             diff = self.intervals[1:, 0] - self.intervals[:-1, 1]
-            if np.round(diff.min(), 5) < 0:
+            if np.round(diff.min(), 4) < 0:
                 raise ValueError("Back to the future issue is found!")
 
     def __len__(self):

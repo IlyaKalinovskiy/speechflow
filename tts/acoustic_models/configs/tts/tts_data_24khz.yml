@@ -10,7 +10,7 @@ file_search:
 
 data_server:
   n_processes: { default: 8, debug: 1 }
-  n_gpus: { default: 0, debug: 0 }
+  n_gpus: { default: 1, debug: 0 }
 
 dataset:
   subsets: [train, test]
@@ -90,7 +90,7 @@ preproc:
           f_max: 8000
     pitch:
       type: PitchProcessor
-      method: pyworld
+      method: torchcrepe
     enhancement_energy:
       type: signal_enhancement
       attributes: energy
@@ -178,7 +178,11 @@ processor:
                   PitchProcessor, LMProcessor, SSLProcessor, MultilingualPLBert]
       mode: file_path
       # skip_samples_without_dump: true
-    # debug: ~
+    debug:
+      data_root: *data_root
+      folder_path: !join [*data_root, *dump_folder]
+      mode: file_path
+      full_dump: true
 
 sampler:
   train:

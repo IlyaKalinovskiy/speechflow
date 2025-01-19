@@ -438,6 +438,7 @@ def add_pauses_from_timestamps(
     ds.word_timestamps = Timestamps(np.asarray(ts_words_processed))
     ds.phoneme_timestamps = ts_phonemes_processed
 
+    Timestamps(np.concatenate(ts_phonemes_processed))
     assert _fp_eq(ds.word_timestamps.duration, ds.audio_chunk.duration)
     return ds
 
