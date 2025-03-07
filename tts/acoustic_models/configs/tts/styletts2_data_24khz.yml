@@ -9,8 +9,8 @@ file_search:
   with_subfolders: true
 
 data_server:
-  n_processes: { default: 32, debug: 1 }
-  # n_gpus: { default: 1, debug: 0 }
+  n_processes: { default: 8, debug: 1 }
+  n_gpus: { default: 1, debug: 0 }
 
 dataset:
   subsets: [train, test]
@@ -72,7 +72,7 @@ preproc:
       pipe: [linear_to_mel, amp_to_db, normalize]
       pipe_cfg:
         linear_to_mel:
-          n_mels: 80
+          n_mels: 100
           f_min: 0
           f_max: 8000
     pitch:
@@ -101,9 +101,9 @@ preproc:
 
 singleton_handlers:
   handlers: [SpeakerIDSetter]
-  SpeakerIDSetter: {}
-    # langs_filter: RU
-    # min_duration: { default: 1.0, debug: ~ }
+  SpeakerIDSetter:
+    langs_filter: RU
+    min_duration: { default: 1.0, debug: ~ }
     # resume_from_checkpoint: /path/to/checkpoint
 
 collate:
@@ -115,13 +115,7 @@ processor:
   type: DataProcessor
   output_collated_only: true
   dump:
-    default:
-      data_root: *data_root
-      folder_path: !join [*data_root, *dump_folder]
-      fields: [file_path, speaker_name]
-      functions: [VoiceBiometricProcessor, XPBertProcessor, LMProcessor]
-      mode: file_path
-      # skip_samples_without_dump: true
+    default: ~
     debug:
       data_root: *data_root
       folder_path: !join [*data_root, *dump_folder]

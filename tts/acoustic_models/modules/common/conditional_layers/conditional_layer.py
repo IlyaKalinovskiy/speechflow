@@ -4,6 +4,7 @@ import torch
 
 from torch import nn
 
+from speechflow.utils.tensor_utils import apply_mask
 from tts.acoustic_models.modules.common.conditional_layers.ada_layer_norm import (
     AdaLayerNorm,
 )
@@ -63,14 +64,13 @@ class ConditionalLayer(nn.Module):
             c = c.squeeze(1)
 
         if c.ndim == 2 and self.condition_type == "cat":
-            c = c.unsqueeze(1).expand(-1, x.shape[1], -1)
+            c = apply_mask(c.unsqueeze(1).expand(-1, x.shape[1], -1), x_mask)
 
         if self.condition_type == "add":
             c = self.module(c)
             if c.ndim == 2:
-                x = x + c.unsqueeze(1).expand(-1, x.shape[1], -1)
-            else:
-                x = x + c
+                c = c.unsqueeze(1).expand(-1, x.shape[1], -1)
+            x = x + apply_mask(c, x_mask)
         elif self.condition_type == "cat":
             x = torch.cat([x, c], dim=-1)
         else:

@@ -1,6 +1,6 @@
 ### Model configuration ###
 
-experiment_name: styletts2_nsf
+experiment_name: mel_dac
 
 dirs:
   logging: styletts2_experiments
@@ -70,6 +70,7 @@ model:
     class_name: AudioFeatures
     init_args:
       feat_encoder_type: CBHGEncoder
+      mel_spectrogram_dim: 100
       inner_dim: 512
       add_noise: true
 
@@ -85,3 +86,4 @@ model:
     class_name: DACHead
     init_args:
       input_dim: 1024
+      # pretrain_path: weights_24khz_8kbps_0.0.4.pth

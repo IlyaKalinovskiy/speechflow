@@ -42,6 +42,8 @@ class ToTensor:
     @staticmethod
     def _from_numpy(data):
         tensor = torch.as_tensor(data)
+        if isinstance(tensor, torch.DoubleTensor):
+            tensor = tensor.float()
         if not tensor.is_contiguous():
             tensor = tensor.contiguous()
 
@@ -54,6 +56,8 @@ class ToTensor:
                 temp[name] = self._from_numpy(field)
             elif isinstance(field, ToTensor):
                 temp[name] = field.to_tensor()
+            elif isinstance(field, (float, np.double)):
+                temp[name] = np.float32(field)
 
         self.__dict__ = struct_dict(temp)
         return self

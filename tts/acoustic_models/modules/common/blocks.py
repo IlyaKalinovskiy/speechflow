@@ -74,9 +74,9 @@ class Regression(nn.Module):
     ):
         super().__init__()
         self.linear1 = nn.Linear(in_features=in_dim, out_features=in_dim)
-        self.af1 = nn.SiLU()
-        self.dropout = nn.Dropout(p_dropout)
         self.linear2 = nn.Linear(in_features=in_dim, out_features=out_dim)
+        self.drop = nn.Dropout(p_dropout)
+        self.af1 = nn.SiLU()
         self.af2 = getattr(nn, activation_fn)()
 
     def forward(self, x, x_mask=None):
@@ -84,7 +84,7 @@ class Regression(nn.Module):
             x = x.unsqueeze(1)
 
         y = self.af1(self.linear1(x).transpose(2, 1))
-        y = self.af2(self.linear2(self.dropout(y.transpose(2, 1))))
+        y = self.af2(self.linear2(self.drop(y.transpose(2, 1))))
 
         if x_mask is not None:
             y = apply_mask(y, x_mask)

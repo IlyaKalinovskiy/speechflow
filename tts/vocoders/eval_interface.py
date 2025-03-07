@@ -120,6 +120,10 @@ class VocoderLoader:
             for k, v in state_dict.items()
             if "discriminators" not in k and "loss" not in k
         }
+
+        state_dict = {
+            k.replace("head.dac_", "head.dac_model."): v for k, v in state_dict.items()
+        }
         model.load_state_dict(state_dict)
 
         if hasattr(model.head, "remove_weight_norm"):

@@ -1,7 +1,7 @@
 ### Data configuration ###
 
 dirs:
-  data_root: &data_root ../../../examples/simple_datasets/speech/SEGS
+  data_root: &data_root /data
   dump_folder: &dump_folder dump_24KHz_styletts2
 
 file_search:
@@ -62,7 +62,7 @@ preproc:
       pipe: [linear_to_mel, amp_to_db, normalize]
       pipe_cfg:
         linear_to_mel:
-          n_mels: 80
+          n_mels: 100
           f_min: 0
           f_max: 8000
     trim:
@@ -86,8 +86,11 @@ processor:
 
 sampler:
   train:
-    type: SimpleSampler
+    type: WeightedSampler
     comb_by_len: true
+    epoch_size: 100000
+    fields_to_compute_weight: [lang, speaker_name, uid]
+    chunks_ratio: [0.4, 0.4, 0.2]
   test:
     type: SimpleSampler
     comb_by_len: true

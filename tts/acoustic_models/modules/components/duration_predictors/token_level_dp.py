@@ -61,11 +61,18 @@ class TokenLevelDP(TokenLevelPredictor):
                     trg[p, :trunc] = 1
                     trg[p, -1] = frac
 
-                dur_pred = torch.sigmoid(enc).sum(dim=-1)
-                reg = loss_fn(torch.log(dur_pred), torch.log(dur))
-                reg_loss += reg
+                dur_pred = torch.sigmoid(enc[:, :-1]).sum(dim=-1)
+                if self.params.var_params.log_scale:
+                    reg = loss_fn(torch.log(dur_pred), torch.log(dur))
+                else:
+                    reg = loss_fn(dur_pred, dur)
 
-                ce = F.binary_cross_entropy_with_logits(enc.flatten(), trg.flatten())
+                reg_loss += reg
+                reg_loss += loss_fn(enc[:, -1], trg[:, -1])
+
+                ce = F.binary_cross_entropy_with_logits(
+                    enc[:, :-1].flatten(), trg[:, :-1].flatten()
+                )
                 ce_loss += ce
 
             losses[f"{name}_deterministic_loss"] = (
