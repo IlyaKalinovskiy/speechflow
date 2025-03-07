@@ -63,12 +63,8 @@ __all__ = [
 LOGGER = logging.getLogger("root")
 
 try:
-    from nemo.collections.audio.modules.transforms import (
-        AudioToSpectrogram,
-    )
-    from nemo.collections.asr.modules import (
-        AudioToMelSpectrogramPreprocessor,
-    )
+    from nemo.collections.asr.modules import AudioToMelSpectrogramPreprocessor
+    from nemo.collections.audio.modules.transforms import AudioToSpectrogram
 
     logging.getLogger("nemo_logger").setLevel(logging.ERROR)
 except ImportError as e:
@@ -796,7 +792,9 @@ class PitchProcessor(BaseSpectrogramProcessor):
             f0[np.isnan(f0)] = 0.0
 
         elif self.method == "yingram":
-            assert 22050 <= sample_rate <= 24000, "sample rate must be equal 22050Hz or 24000Hz!"
+            assert (
+                22050 <= sample_rate <= 24000
+            ), "sample rate must be equal 22050Hz or 24000Hz!"
             if not hasattr(self, "yingram"):
                 yingram = Yingram(
                     strides=hop_len,
@@ -1341,7 +1339,9 @@ def average_by_time(
     return ds
 
 
-def __get_spec_proc(n_fft: int, hop_len: int, win_len: int, n_bins: int, center: bool = True):
+def __get_spec_proc(
+    n_fft: int, hop_len: int, win_len: int, n_bins: int, center: bool = True
+):
     pipe = (
         "magnitude",
         "energy",

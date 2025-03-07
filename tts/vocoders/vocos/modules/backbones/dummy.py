@@ -9,8 +9,8 @@ __all__ = ["DummyBackbone", "DummyBackboneParams"]
 
 
 class DummyBackboneParams(BaseTorchModelParams):
-    input_dim: int
-    inner_dim: int
+    input_dim: int = 512
+    inner_dim: int = 512
 
 
 class DummyBackbone(Backbone):
@@ -21,12 +21,7 @@ class DummyBackbone(Backbone):
         if params.input_dim != params.inner_dim:
             self.proj = nn.Conv1d(params.input_dim, params.inner_dim, 1)
         else:
-            self.proj = None
+            self.proj = nn.Identity()
 
     def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
-        if self.proj is not None:
-            y = self.proj(x)
-        else:
-            y = x
-
-        return y.transpose(1, -1)
+        return self.proj(x)

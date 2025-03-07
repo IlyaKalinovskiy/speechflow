@@ -1,6 +1,6 @@
 ### Model configuration ###
 
-experiment_name: tts_cfm
+experiment_name: tts_cfm_bigvgan
 
 dirs:
   logging: tts_experiments

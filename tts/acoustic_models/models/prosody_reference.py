@@ -202,6 +202,7 @@ class ProsodyReference:
                 ref_ds = spectrogram_pipe.preprocessing_datasample([ds.copy()])[0]
                 setattr(self, f"{ref_type}_spectrogram", ref_ds.mel)
                 setattr(self, f"{ref_type}_ssl_feat", ref_ds.ssl_feat)
+                setattr(self, f"{ref_type}_transform_params", ref_ds.transform_params)
                 continue
 
     def set_feats_from_model(self, model: callable):

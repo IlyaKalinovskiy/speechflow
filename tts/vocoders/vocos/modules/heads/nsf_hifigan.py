@@ -24,7 +24,11 @@ class NSFHiFiGANHeadParams(BaseTorchModelParams):
     upsample_rates: tp.Tuple[int, ...] = (10, 4, 4, 2)  # for hop=320
     upsample_kernel_sizes: tp.Tuple[int, ...] = (20, 8, 8, 4)
     resblock_kernel_sizes: tp.Tuple[int, ...] = (3, 7, 11)
-    resblock_dilation_sizes: tp.Tuple[int, ...] = ([1, 3, 5], [1, 3, 5], [1, 3, 5])
+    resblock_dilation_sizes: tp.Tuple[tp.List[int], ...] = (
+        [1, 3, 5],
+        [1, 3, 5],
+        [1, 3, 5],
+    )
     adain_upsample: bool = False
     adain_p_dropout: float = 0
     output_sample_rate: int = 24000
@@ -104,7 +108,7 @@ class NSFHiFiGANHead(WaveformGenerator):
         self.generator.remove_weight_norm()
 
     def forward(self, x, **kwargs):
-        y = x.transpose(2, 1)
+        y = x
         s = kwargs["condition_emb"]
         energy = kwargs["energy"]
         pitch = kwargs["pitch"]

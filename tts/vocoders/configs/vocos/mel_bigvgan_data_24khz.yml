@@ -2,7 +2,7 @@
 
 dirs:
   data_root: &data_root ../../../examples/simple_datasets/speech/SEGS
-  dump_folder: &dump_folder dump_24KHz_styletts2
+  dump_folder: &dump_folder dump_24KHz
 
 file_search:
   ext: .TextGridStage3
@@ -32,7 +32,7 @@ parser:
       pad: 0.25
       add_fade: true
     split_by_phrases:
-      max_duration: 15  # 10, 12, 15
+      max_duration: 10  # 10, 12, 15
     check_phoneme_length:
       max_len: 0.4
     get_simple_intonation_type:
@@ -55,24 +55,22 @@ preproc:
       pipe_cfg:
         magnitude:
           n_fft: 1024
-          hop_len: 320
+          hop_len: 256
           win_len: 1024
+          center: False  # False for BigVGAN
     melscale:
       type: MelProcessor
-      pipe: [linear_to_mel, amp_to_db, normalize]
+      pipe: [linear_to_mel, amp_to_db]  # normalize
       pipe_cfg:
         linear_to_mel:
           n_mels: 100
-          f_min: 0
-          f_max: 8000
     trim:
       type: SignalProcessor
       pipe: [trim]
       pipe_cfg:
         trim:
           random_chunk: true
-          num_samples_per_chunk: 40952  # 40952 for DAC head  # hop=320
-          # num_samples_per_chunk: 30720  # hop=240
+          num_samples_per_chunk: 30720  # hop=240,256
     mu_law:
       type: SignalProcessor
       pipe: [mu_law_encode]

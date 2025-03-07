@@ -53,5 +53,4 @@ class VocosResNetBackbone(Backbone):
     def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
         x = self.embed(x)
         x = self.resnet(x)
-        x = x.transpose(1, 2)
         return x

@@ -70,15 +70,18 @@ class VocosBackbone(Backbone):
             nn.init.constant_(m.bias, 0)
 
     def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
-        condition_emb = kwargs.get("condition_emb", None)
+        condition_emb = kwargs.get("condition_emb")
         x = self.embed(x)
+
         if self.adanorm:
             assert condition_emb is not None
-            x = self.norm(x.transpose(1, 2), cond_emb=condition_emb)
+            x = self.norm(x.transpose(1, -1), cond_emb=condition_emb)
         else:
-            x = self.norm(x.transpose(1, 2))
-        x = x.transpose(1, 2)
+            x = self.norm(x.transpose(1, -1))
+
+        x = x.transpose(1, -1)
         for conv_block in self.convnext:
             x = conv_block(x, cond_emb=condition_emb)
-        x = self.final_layer_norm(x.transpose(1, 2))
-        return x
+
+        x = self.final_layer_norm(x.transpose(1, -1))
+        return x.transpose(1, -1)

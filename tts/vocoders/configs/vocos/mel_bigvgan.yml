@@ -1,9 +1,9 @@
 ### Model configuration ###
 
-experiment_name: mel_dac
+experiment_name: mel_bigvgan
 
 dirs:
-  logging: styletts2_experiments
+  logging: vocos_experiments
 
 seed: 1234
 
@@ -69,21 +69,19 @@ model:
   feature_extractor:
     class_name: AudioFeatures
     init_args:
-      feat_encoder_type: CBHGEncoder
+      input_feat_type: mel_spectrogram
       mel_spectrogram_dim: 100
-      inner_dim: 512
+      input_proj_dim: 100
+      inner_dim: 100
       add_noise: true
+      feat_encoder_type: DummyEncoder
 
   backbone:
-    class_name: VocosBackbone
-    init_args:
-      input_dim: 512
-      inner_dim: 1024
-      num_layers: 12
-      intermediate_dim: 1536
+    class_name: DummyBackbone
+    init_args: {}
 
   head:
-    class_name: DACHead
+    class_name: BigVGANHead
     init_args:
-      input_dim: 1024
+      input_dim: 100
       # pretrain_path: weights_24khz_8kbps_0.0.4.pth

@@ -2,7 +2,7 @@
 
 dirs:
   data_root: &data_root ../../../examples/simple_datasets/speech/SEGS
-  dump_folder: &dump_folder dump_24KHz_styletts2
+  dump_folder: &dump_folder dump_24KHz
 
 file_search:
   ext: .TextGridStage3
@@ -10,7 +10,7 @@ file_search:
 
 data_server:
   n_processes: { default: 8, debug: 1 }
-  n_gpus: { default: 1, debug: 0 }
+  # n_gpus: { default: 1, debug: 0 }
 
 dataset:
   subsets: [train, test]
@@ -40,7 +40,7 @@ parser:
 
 preproc:
   pipe: [load_audio, load_audio_segmentation,
-         voice_bio, speech_quality, spectrogram, melscale, add_gate_value,
+         speech_quality, spectrogram, melscale, add_gate_value,
          add_pauses_from_timestamps, add_service_tokens, text, lm,
          calc_durations, average_by_time]
   pipe_cfg:
@@ -100,9 +100,9 @@ preproc:
 
 singleton_handlers:
   handlers: [SpeakerIDSetter]
-  SpeakerIDSetter:
-    langs_filter: RU
-    min_duration: { default: 1.0, debug: ~ }
+  SpeakerIDSetter: {}
+    # langs_filter: RU
+    # min_duration: { default: 1.0, debug: ~ }
     # resume_from_checkpoint: /path/to/checkpoint
 
 collate:

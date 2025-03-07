@@ -69,7 +69,7 @@ model:
   feature_extractor:
     class_name: TTSFeatures
     init_args:
-      input: [transcription, transcription]
+      input: [transcription]
 
       token_emb_dim: 256
 
@@ -77,12 +77,24 @@ model:
       speaker_biometric_model: wespeaker
       speaker_emb_dim: 256
 
+      use_average_emb: true
+      averages:
+        rate:
+          interval: [0, 64]
+        energy:
+          interval: [0, 200]
+
+      general_condition:
+        level_1:
+          - condition: [average_rate, average_energy, speech_quality_emb]
+            condition_type: cat
+            content: [0]
+
       encoder_type: ContextEncoder
       encoder_inner_dim: 512
       encoder_params:
         encoder_type:
           - DiTEncoder
-          - RNNEncoder
         encoder_params:
           - encoder_num_layers: 6
             cnn_n_layers: 3
@@ -90,32 +102,23 @@ model:
             lm_condition_type: add
             condition: [speaker_emb]
             condition_dim: 256
-          - encoder_num_layers: 2
-            cnn_n_layers: 3
-            ling_condition_type: cat
-            lm_condition_type: add
-            condition: [speaker_emb]
-            condition_dim: 256
-            condition_type: DiT
 
       va_type: HierarchicalVarianceAdaptor
 
-      decoder_type: CFMDecoder
-      decoder_num_layers: 6
+      decoder_type: ForwardDecoder
+      decoder_num_layers: 2
       decoder_inner_dim: 512
-      decoder_output_dim: 80
+      decoder_output_dim: 512
       decoder_params:
         condition: [speaker_emb]
         condition_dim: 256
-        estimator_type: DiTEncoder
-        estimator_params:
-          use_lsc: true
 
       postnet_type: ~
 
       va_variances:
         0: [spectrogram_style_encoder]
         1: [durations]
+        2: [energy, pitch]
       va_variance_params:
         spectrogram_style_encoder:
           tag: style_emb
@@ -125,31 +128,48 @@ model:
             vp_params:
               base_encoder_type: StyleSpeech
               source: spectrogram
-              source_dim: 80
-              style_emb_dim: 128
+              source_dim: 100
+              random_chunk: false
+              style_emb_dim: 32
+              use_gmvae: true
+              gmvae_n_components: 16
         durations:
           dim: 50
-          input_content: [1]
-          cat_to_content: [0]
+          detach_input: true
           predictor_type: TokenLevelDP
           log_scale: true
           predictor_params:
             vp_params:
               deterministic: true
               add_noise: true
+        energy:
+          predictor_type: FrameLevelPredictor
+          as_embedding: true
+          interval: [0, 200]
+          n_bins: 256
+          emb_dim: 64
+        pitch:
+          predictor_type: FrameLevelPredictor
+          predictor_params:
+            vp_params:
+              use_ssl_adjustment: true
+          log_scale: true
+          as_embedding: true
+          interval: [0, 880]
+          n_bins: 256
+          emb_dim: 64
 
   backbone:
     class_name: DummyBackbone
     init_args:
-      input_dim: 80
-      inner_dim: 64
+      input_dim: 512
+      inner_dim: 512
       # num_blocks: 4
       # intermediate_dim: 1536
       # num_layers: 12
 
   head:
-    class_name: ISTFTHead
+    class_name: NSFHiFiGANHead
     init_args:
-      input_dim: 64
-      n_fft: 1024
-      hop_length: 240
+      input_dim: 512
+      condition_dim: 32

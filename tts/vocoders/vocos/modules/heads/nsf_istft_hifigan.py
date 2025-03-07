@@ -112,7 +112,7 @@ class NSFiSTFTHiFiGANHead(WaveformGenerator):
         self.generator.remove_weight_norm()
 
     def forward(self, x, **kwargs):
-        y = x.transpose(2, 1)
+        y = x
         s = kwargs["condition_emb"]
         energy = kwargs["energy"]
         pitch = kwargs["pitch"]

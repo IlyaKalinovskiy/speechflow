@@ -13,7 +13,7 @@ __all__ = ["DACHead", "DACHeadParams"]
 
 
 class DACHeadParams(BaseTorchModelParams):
-    input_dim: int
+    input_dim: int = 1024
     pretrain_path: tp.Optional[tp_PATH] = None
 
 
@@ -26,6 +26,6 @@ class DACHead(WaveformGenerator):
         self.proj = nn.Linear(params.input_dim, self.dac_model.embedding_dim)
 
     def forward(self, x, **kwargs):
-        z_hat = self.proj(x)
-        y_g_hat = self.dac_model.model.decoder(10.0 * z_hat.transpose(1, -1))
+        z_hat = self.proj(x.transpose(1, -1)).transpose(1, -1)
+        y_g_hat = self.dac_model.model.decoder(10.0 * z_hat)
         return y_g_hat.squeeze(1), None, {}

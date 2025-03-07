@@ -51,9 +51,7 @@ class SpectrogramCollate(AudioCollate):
         )
 
         pad_val = batch[0].get_param_val("mel_min_val", 0.0)
-        collated.mel, mel_spec_lens = collete_2d(
-            batch, "mel", pad_val, spec_multiple
-        )
+        collated.mel, mel_spec_lens = collete_2d(batch, "mel", pad_val, spec_multiple)
 
         collated.gate, gate_lens = collate_sequence(batch, "gate", 0, spec_multiple)
         collated.energy, en_lens = collete_1d(batch, "energy", 0, spec_multiple)
