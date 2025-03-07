@@ -22,6 +22,7 @@ from tqdm import tqdm
 
 from speechflow.data_pipeline.collate_functions.tts_collate import TTSCollateOutput
 from speechflow.data_pipeline.core import Batch
+from speechflow.data_pipeline.datasample_processors import TTSTextProcessor
 from speechflow.data_server.helpers import LoaderParams, init_data_loader_from_config
 from speechflow.io import Config, json_dump_to_file
 from speechflow.logging import set_verbose_logging
@@ -124,6 +125,7 @@ def update_config(cfg: Config, n_processes: int, n_gpus: int) -> Config:
     cfg["collate"]["type"] = cfg["collate"]["type"].replace("WithPrompt", "")
     cfg["data_server"]["n_processes"] = n_processes
     cfg["data_server"]["n_gpus"] = n_gpus
+    cfg["processor"]["output_collated_only"] = False
     cfg["processor"]["dump"]["skip_samples_without_dump"] = False
 
     for item in cfg["preproc"]["pipe_cfg"].values():
@@ -173,7 +175,12 @@ def validate_dump(
             print("total samples:", count)
 
 
-def clustering(contours: np.array, subset_size: int = 10000, n_clusters: int = 500):
+def clustering(
+    contours: np.array,
+    subset_size: int = 10000,
+    n_clusters: int = 500,
+    n_trees: int = 500,
+):
     """Function for contours clustering.
 
     1. First, a random subset of the given length is obtained.
@@ -196,7 +203,8 @@ def clustering(contours: np.array, subset_size: int = 10000, n_clusters: int = 5
     t = AnnoyIndex(contours.shape[1], "euclidean")
     for i, v in enumerate(subset):
         t.add_item(i, v)
-    t.build(500)
+
+    t.build(n_trees)
     return t, labels
 
 
@@ -211,7 +219,11 @@ def contours_gathering(batch: Batch, contours: np.array, contour_length: int) ->
 
         for idx, (start, end) in enumerate(zip(frame_ts_word[0:-1], frame_ts_word[1:])):
             if idx < len(tokens):
-                if tokens[idx] not in ["<BOS>", "<EOS>", "<SIL>"]:
+                if tokens[idx] not in [
+                    TTSTextProcessor.bos,
+                    TTSTextProcessor.eos,
+                    TTSTextProcessor.sil,
+                ]:
                     frame = frame_ts[start : end + 1]
                     first_ind = frame[0]
                     last_ind = min(frame[-1], pitch.shape[0] - 1)

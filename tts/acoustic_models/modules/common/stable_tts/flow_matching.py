@@ -228,15 +228,18 @@ class BaseCFM(torch.nn.Module, ABC):
         fake_content: tp.Optional[torch.Tensor] = None,
         fake_condition: tp.Optional[torch.Tensor] = None,
     ):
+        if "cfg_condition_masked" in inputs.additional_content:
+            inputs.additional_content.pop("cfg_condition_masked")
+
         dphi_dt = self.estimator(x, mu, mu_mask, t, inputs)
 
-        # if guidance_scale > 0.0:
-        #
-        #     fake_content = fake_content.repeat(x.size(0), 1, x.size(-1))
-        #     fake_condition = fake_condition.repeat(x.size(0), 1)
-        #
-        #     dphi_avg = self.estimator(x, fake_content, mu_mask, t, inputs)
-        #     dphi_dt = dphi_dt + guidance_scale * (dphi_dt - dphi_avg)
+        if guidance_scale > 0.0:
+            fake_content = fake_content.repeat(x.shape[0], x.shape[1], 1)
+            fake_condition = fake_condition.repeat(x.shape[0], 1, 1)
+            inputs.additional_content["cfg_condition_masked"] = fake_condition
+
+            dphi_avg = self.estimator(x, fake_content, mu_mask, t, inputs)
+            dphi_dt = dphi_dt + guidance_scale * (dphi_dt - dphi_avg)
 
         return dphi_dt
 

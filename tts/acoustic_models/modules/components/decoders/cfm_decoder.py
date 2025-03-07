@@ -80,6 +80,7 @@ class CFMDecoderParams(DecoderParams):
 
     use_cfg: bool = False
     cfg_p_dropout: float = 0.1
+    cfg_guidance_scale: float = 0.5
 
     # condition
     condition: tp.Tuple[str, ...] = ()
@@ -206,13 +207,25 @@ class CFMDecoder(Component):
         #     x_mask = F.pad(x_mask | True, (0, pad), value=True)
         #     y = F.pad(y.transpose(2, 1), (0, pad), value=-4).transpose(1, 2)
 
-        decoder_outputs = self.decoder(
-            mu=mu,
-            mu_mask=x_mask,
-            inputs=inputs,
-            n_timesteps=self.params.cfm_n_timesteps,
-            temperature=self.params.cfm_temperature,
-        )
+        if self.params.use_cfg:
+            decoder_outputs = self.decoder(
+                mu=mu,
+                mu_mask=x_mask,
+                inputs=inputs,
+                n_timesteps=self.params.cfm_n_timesteps,
+                temperature=self.params.cfm_temperature,
+                guidance_scale=self.params.cfg_guidance_scale,
+                fake_content=self.fake_content,
+                fake_condition=self.fake_condition,
+            )
+        else:
+            decoder_outputs = self.decoder(
+                mu=mu,
+                mu_mask=x_mask,
+                inputs=inputs,
+                n_timesteps=self.params.cfm_n_timesteps,
+                temperature=self.params.cfm_temperature,
+            )
 
         # if pad != 16:
         #     decoder_outputs = decoder_outputs[:, :-pad, :]

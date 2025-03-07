@@ -151,7 +151,7 @@ class EncoderParams(EmbeddingParams):
 class DecoderParams(EmbeddingParams):
     """Decoder component parameters."""
 
-    decoder_type: str = "ForwardDecoder"
+    decoder_type: tp.Optional[str] = "ForwardDecoder"
     decoder_num_layers: int = 2
     decoder_inner_dim: int = 512
     decoder_output_dim: int = 80

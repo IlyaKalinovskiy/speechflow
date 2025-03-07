@@ -85,19 +85,27 @@ class ParallelTTSModel(BaseTorchModel):
             adaptor, _ = TTS_VARIANCE_ADAPTORS["DummyVarianceAdaptor"]
             self.va.append(adaptor(params, input_dim=input_dim))
 
-        self.cond_module_2 = GeneralCondition(
-            params, input_dim=self.va[-1].output_dim[0], level=ModelLevel.level_2
-        )
+        output_dim = self.va[-1].output_dim[0]
 
-        cls, params_cls = TTS_DECODERS[params.decoder_type]
-        decoder_params = params_cls.init_from_parent_params(params, params.decoder_params)
-        self.decoder = cls(decoder_params, input_dim=self.cond_module_2.output_dim)
+        if params.decoder_type is not None:
+            self.cond_module_2 = GeneralCondition(
+                params, input_dim=output_dim, level=ModelLevel.level_2
+            )
 
-        self.cond_module_3 = GeneralCondition(
-            params, input_dim=self.decoder.output_dim, level=ModelLevel.level_3  # type: ignore
-        )
+            cls, params_cls = TTS_DECODERS[params.decoder_type]
+            decoder_params = params_cls.init_from_parent_params(
+                params, params.decoder_params
+            )
+            self.decoder = cls(decoder_params, input_dim=self.cond_module_2.output_dim)
+            output_dim = self.decoder.output_dim
+        else:
+            self.decoder = None
 
         if params.postnet_type is not None:
+            self.cond_module_3 = GeneralCondition(
+                params, input_dim=output_dim, level=ModelLevel.level_3  # type: ignore
+            )
+
             cls, params_cls = TTS_POSTNETS[params.postnet_type]
             postnet_params = params_cls.init_from_parent_params(
                 params, params.postnet_params
@@ -105,8 +113,8 @@ class ParallelTTSModel(BaseTorchModel):
             self.postnet = cls(postnet_params, input_dim=self.cond_module_3.output_dim)  # type: ignore
             output_dim = self.postnet.output_dim
         else:
+            self.cond_module_3 = None
             self.postnet = None
-            output_dim = self.decoder.output_dim
 
         self.additional_modules = AdditionalModules(params, input_dim=output_dim)
 
@@ -156,8 +164,9 @@ class ParallelTTSModel(BaseTorchModel):
 
         va_output, variance_predictions = self._predict_variances(x)
 
-        x = self.cond_module_2(va_output)
-        x = self.decoder(x)  # type: ignore
+        if self.decoder is not None:
+            x = self.cond_module_2(va_output)
+            x = self.decoder(x)  # type: ignore
 
         s_all = x.stack_content()
         decoder_output = x
@@ -175,7 +184,7 @@ class ParallelTTSModel(BaseTorchModel):
             spectrogram_lengths=x.content_lengths,
             after_postnet_spectrogram=x.content,
             variance_predictions=variance_predictions,
-            gate=decoder_output.gate,
+            gate=getattr(decoder_output, "gate", None),
             additional_content=x.additional_content,
             additional_losses=x.additional_losses,
             embeddings=x.embeddings,

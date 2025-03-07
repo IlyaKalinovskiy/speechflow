@@ -654,24 +654,23 @@ class DataPipeline:
             "epoch_size": {name: self[name].sampler.epoch_size for name in self.subsets},
         }
 
+        temp = {}
+        for name in self.subsets:
+            temp[name] = self[name].sampler
+            cfg = self[name].config.section("sampler")
+            sampler_cls = getattr(samplers, cfg["type"])
+            self[name].sampler = init_class_from_config(sampler_cls, cfg)()
+
         try:
             LOGGER.debug(trace(self, message="Pickling DataPipeline"))
-
-            temp = {}
-            for name in self.subsets:
-                temp[name] = self[name].sampler
-                cfg = self[name].config.section("sampler")
-                sampler_cls = getattr(samplers, cfg["type"])
-                self[name].sampler = init_class_from_config(sampler_cls, cfg)()
-
             info["data_pipeline"] = Serialize.dump(self)
-
-            for name in self.subsets:
-                self[name].sampler = temp[name]
         except (TypeError, pickle.PickleError) as e:
             LOGGER.debug(
                 trace(self, e, "Current pipelines configuration not support pickle!")
             )
+        finally:
+            for name in self.subsets:
+                self[name].sampler = temp[name]
 
         if object_size_limit > 0:
             singleton_handlers = {}

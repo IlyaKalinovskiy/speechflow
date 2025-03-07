@@ -140,7 +140,7 @@ model:
       postnet_type: ~
 
       addm_apply_inverse_speaker_classifier:
-        StyleEncoder_0: 128
+        StyleEncoder_0: ~
 
       va_variances:
         0: [biometric_style_encoder]

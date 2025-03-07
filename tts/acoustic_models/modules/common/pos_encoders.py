@@ -14,6 +14,23 @@ __all__ = [
 ]
 
 
+class PositionalEncodings(nn.Module):
+    def __init__(
+        self, pe_type: PE_TYPES, d: int, base: int = 10_000, batch_first: bool = False
+    ):
+        super().__init__()
+
+        if pe_type == "PE":
+            self.module = BasePositionalEncodings(d, base, batch_first)
+        elif pe_type == "RoPE":
+            self.module = RotaryPositionalEmbeddings(d, base, batch_first)
+        else:
+            raise NotImplementedError
+
+    def forward(self, x: torch.Tensor):
+        return self.module(x)
+
+
 class BasePositionalEncodings(nn.Module):
     """Positional Encoding proposed in "Attention Is All You Need". Since transformer
     contains no recurrence and no convolution, in order for the model to make use of the
@@ -128,8 +145,13 @@ class RotaryPositionalEmbeddings(nn.Module):
         """
         * `x` is the Tensor at the head of a key or a query with shape `[seq_len, batch_size, n_heads, d]`
         """
+        ndim = x.ndim
+
         if self.batch_first:
-            x = x.transpose(0, 1).unsqueeze(1)
+            x = x.transpose(0, 1)
+
+        if ndim == 3:
+            x = x.unsqueeze(1)
 
         # Cache $\cos$ and $\sin$ values
         x = x.permute(2, 0, 1, 3)  # b h t d -> t b h d
@@ -149,24 +171,10 @@ class RotaryPositionalEmbeddings(nn.Module):
 
         x = torch.cat((x_rope, x_pass), dim=-1).permute(1, 2, 0, 3)  # t b h d -> b h t d
 
+        if ndim == 3:
+            x = x.squeeze(1)
+
         if self.batch_first:
-            x = x.squeeze(1).transpose(0, 1)
+            x = x.transpose(0, 1)
 
         return x
-
-
-class PositionalEncodings(nn.Module):
-    def __init__(
-        self, pe_type: PE_TYPES, d: int, base: int = 10_000, batch_first: bool = False
-    ):
-        super().__init__()
-
-        if pe_type == "PE":
-            self.module = BasePositionalEncodings(d, base, batch_first)
-        elif pe_type == "RoPE":
-            self.module = RotaryPositionalEmbeddings(d, base, batch_first)
-        else:
-            raise NotImplementedError
-
-    def forward(self, x: torch.Tensor):
-        return self.module(x)

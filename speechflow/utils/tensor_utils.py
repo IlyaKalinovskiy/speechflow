@@ -62,7 +62,7 @@ def get_lengths_from_mask(mask):
 @lru_cache(maxsize=16)
 @torch.no_grad()
 def get_lengths_from_durations(durations):
-    return durations.sum(1).floor().long().detach()
+    return durations.sum(1).round().long().detach()
 
 
 @lru_cache(maxsize=16)

@@ -2,7 +2,7 @@
 
 dirs:
   data_root: &data_root ../../../examples/simple_datasets/speech/SEGS
-  dump_folder: &dump_folder dump_24KHz
+  dump_folder: &dump_folder prosody_dump_24KHz
 
 file_search:
   ext: .TextGridStage3
@@ -41,12 +41,11 @@ parser:
 preproc:
   pipe: [load_audio, load_audio_segmentation,
          voice_bio_speechbrain, store_bio_emb, voice_bio_wespeaker, mean_bio_embedding,
-         speech_quality, ssl,
-         spectrogram, melscale, add_gate_value, timedim_interpolation,
-         pitch, enhancement_energy, enhancement_pitch,
-         add_pauses_from_timestamps, add_service_tokens, text, xpbert, lm,
-         calc_durations, average_by_time, norm, aggregate_by_phoneme,
-         trim, mu_law]
+         spectrogram, melscale, pitch, ssl, timedim_interpolation,
+         add_pauses_from_timestamps, add_service_tokens, text, lm,
+         calc_durations, calc_invert_durations,
+         normalize_pitch, enhancement_pitch, pitch_mean,
+         contours, normalize_durations]
   pipe_cfg:
     load_audio:
       type: SignalProcessor
@@ -68,10 +67,6 @@ preproc:
       model_type: wespeaker
       # max_audio_duration: 5
       # random_crop: true
-    speech_quality:
-      type: SpeechQualityAssessment
-      # max_audio_duration: 5
-      # random_crop: true
     spectrogram:
       type: SpectralProcessor
       pipe: [magnitude, energy]
@@ -90,23 +85,22 @@ preproc:
     pitch:
       type: PitchProcessor
       method: torchcrepe  # pyworld
-    enhancement_energy:
-      type: signal_enhancement
-      attributes: energy
-      smooth: true
-    enhancement_pitch:
-      type: signal_enhancement
-      attributes: pitch
-      smooth: true
+    ssl:
+      type: SSLProcessor
+      ssl_type: Wav2Vec
+      ssl_params:
+        feature_type: partial
+        level: 13  # 23
+    timedim_interpolation:
+      features: [ssl_feat]
+      shape_as: mel
     add_pauses_from_timestamps:
       step: 0.05
-      calc_noise_level: true
+      calc_noise_level: True
     text:
       type: TTSTextProcessor
       lang: MULTILANG
       # lang: { default: MULTILANG, ru: RU, en: EN, ml: MULTILANG }
-    xpbert:
-      type: XPBertProcessor
     lm:
       type: LMProcessor
       lang: { default: MULTILANG, ru: RU, en: EN }
@@ -114,33 +108,38 @@ preproc:
         default: google-bert/bert-base-multilingual-cased
         ru: ai-forever/sbert_large_nlu_ru
       by_transcription: False
-    ssl:
-      type: SSLProcessor
-      ssl_type: { default: Wav2Vec, ml: WavLM }
-    timedim_interpolation:
-      features: [ssl_feat]
-      shape_as: mel
-    average_by_time:
-      attributes: [durations, energy, pitch, rate]
-      use_quantile: true
-    norm:
+    calc_durations:
+      as_int: True
+      token_level: True
+    calc_invert_durations:
+      token_level: True
+    normalize_pitch:
       type: normalize
-      attributes: [energy, pitch]
-      normalize_by: speaker
-    aggregate_by_phoneme:
-      attributes: [energy, pitch]
-      agg: mean
-    trim:
-      type: SignalProcessor
-      pipe: [trim]
-      pipe_cfg:
-        trim:
-          random_chunk: true
-          # num_samples_per_chunk: 40960  # 40952 for DAC head  # hop=320
-          num_samples_per_chunk: 30720  # hop=240,256
-    mu_law:
-      type: SignalProcessor
-      pipe: [mu_law_encode]
+      attributes: [pitch]
+      normalize_by: sample
+    normalize_durations:
+      type: normalize
+      attributes: [durations]
+      normalize_by: sample
+    pitch_mean:
+      type: aggregate_by_phoneme
+      attributes: [pitch]
+      agg: range_diff
+    enhancement_pitch:
+      type: signal_enhancement
+      attributes: pitch
+      smooth: True
+      interpolate_zeros: True
+      set_zero_in_pauses: True
+      max_zero_interval: 5
+      smooth_options:
+        window_length: 9
+        polyorder: 3
+        mode: nearest
+    contours:
+      type: ContoursExtractor
+      index_filename: !join [*data_root, *dump_folder, index.ann]
+      labels_filename: !join [*data_root, *dump_folder, labels.npy]
 
 singleton_handlers:
   handlers: [SpeakerIDSetter, StatisticsRange, MeanBioEmbeddings]
@@ -157,8 +156,6 @@ singleton_handlers:
 
 collate:
   type: TTSCollate
-  # multiple:
-  #  spec: 16
 
 processor:
   type: DataProcessor
@@ -168,8 +165,7 @@ processor:
       data_root: *data_root
       dump_path: !join [*data_root, *dump_folder]
       fields: [file_path, speaker_name]
-      handlers: [VoiceBiometricProcessor, SpeechQualityAssessment, SSLProcessor,
-                 PitchProcessor, XPBertProcessor, LMProcessor]
+      handlers: [VoiceBiometricProcessor, SSLProcessor, PitchProcessor, LMProcessor]
       mode: file_path
       skip_samples_without_dump: true
     # debug:
@@ -182,9 +178,9 @@ sampler:
   train:
     type: WeightedSampler
     comb_by_len: true
-    epoch_size: 100000
-    fields_to_compute_weight: [lang, speaker_name, uid]
-    chunks_ratio: [0.4, 0.4, 0.2]
+    epoch_size: 50000
+    fields_to_compute_weight: [uid, intonation_type]
+    chunks_ratio: [0.6, 0.4]
   test:
     type: SimpleSampler
     comb_by_len: true

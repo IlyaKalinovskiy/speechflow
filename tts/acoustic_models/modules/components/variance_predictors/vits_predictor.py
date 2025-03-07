@@ -97,7 +97,7 @@ class VITSPredictor(Component):
 
         self.flow = self._init_flow(params)
 
-        self.lr = SoftLengthRegulator()
+        self.length_regulator = SoftLengthRegulator()
 
         if params.init_from_checkpoint is not None:
             checkpoint = ExperimentSaver.load_checkpoint(params.init_from_checkpoint)
@@ -337,8 +337,12 @@ class VITSPredictor(Component):
 
             if self.params.mode == VITSMode.text:
                 if r.content.shape[1] != y_mask.shape[1]:
-                    m_p, _ = self.lr(m_p, durations, max_len=y_mask.shape[1])
-                    logs_p, _ = self.lr(logs_p, durations, max_len=y_mask.shape[1])
+                    m_p, _ = self.length_regulator(
+                        m_p, durations, max_len=y_mask.shape[1]
+                    )
+                    logs_p, _ = self.length_regulator(
+                        logs_p, durations, max_len=y_mask.shape[1]
+                    )
 
             m_and_logs.append((m_p, logs_p))
 

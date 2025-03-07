@@ -4,7 +4,6 @@ from copy import deepcopy
 from dataclasses import dataclass
 from os import environ as env
 
-import numpy as np
 import torch
 import numpy.typing as npt
 
@@ -20,6 +19,7 @@ from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.dictutils import find_field
 from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
 from tts.vocoders.data_types import VocoderForwardInput, VocoderForwardOutput
+from tts.vocoders.denoiser import Denoiser
 from tts.vocoders.vocos.modules.feature_extractors.tts import TTSFeatures
 from tts.vocoders.vocos.pretrained import Vocos
 
@@ -28,7 +28,8 @@ __all__ = ["VocoderEvaluationInterface", "VocoderOptions"]
 
 @dataclass
 class VocoderOptions:
-    pass
+    denoiser_strength: float = 0.005
+    denoiser_use_energies: bool = True
 
     def copy(self) -> "VocoderOptions":
         return deepcopy(self)
@@ -85,6 +86,11 @@ class VocoderLoader:
             self.speaker_id_map
         )
 
+        self.sample_rate = find_field(self.cfg_data, "sample_rate")
+        self.hop_len = find_field(self.cfg_data, "hop_len")
+        self.n_mels = find_field(self.cfg_data, "n_mels")
+        self.preemphasis_coef = self.find_preemphasis_coef(self.cfg_data)
+
         # Load model
         if self._check_vocos_signature(checkpoint):
             self.model = self._load_vocos_model(cfg_model, checkpoint)
@@ -93,6 +99,13 @@ class VocoderLoader:
 
         self.device = torch.device(device) if isinstance(device, str) else device
         self.model.to(self.device)
+
+        self.denoiser = Denoiser(
+            self._get_bias_audio(),
+            fft_size=find_field(self.cfg_data, "n_fft"),
+            win_size=find_field(self.cfg_data, "win_len"),
+            hop_size=find_field(self.cfg_data, "hop_len"),
+        ).to(self.device)
 
     @staticmethod
     def _check_vocos_signature(checkpoint: tp.Dict) -> bool:
@@ -141,22 +154,6 @@ class VocoderLoader:
 
         return model
 
-
-class VocoderEvaluationInterface(VocoderLoader):
-    @check_path(assert_file_exists=True)
-    def __init__(
-        self,
-        ckpt_path: tp_PATH,
-        device: str = "cpu",
-        ckpt_preload: tp.Optional[dict] = None,
-        **kwargs,
-    ):
-        super().__init__(ckpt_path, device, ckpt_preload, **kwargs)
-        self.sample_rate = find_field(self.cfg_data, "sample_rate")
-        self.hop_len = find_field(self.cfg_data, "hop_len")
-        self.n_mels = find_field(self.cfg_data, "n_mels")
-        self.preemphasis_coef = self.find_preemphasis_coef(self.cfg_data)
-
     @staticmethod
     def find_preemphasis_coef(cfg_data: Config):
         beta = None
@@ -169,23 +166,44 @@ class VocoderEvaluationInterface(VocoderLoader):
                         beta = 0.97
         return beta
 
+    @torch.no_grad()
+    def _get_bias_audio(self, num_frames: int = 80):
+        zero_input = VocoderForwardInput(
+            spectrogram=torch.zeros((1, num_frames, self.n_mels)),
+            spectrogram_lengths=torch.LongTensor([num_frames]),
+        ).to(self.device)
+        return self.model.inference(zero_input).waveform
+
+
+class VocoderEvaluationInterface(VocoderLoader):
     @torch.inference_mode()
     def evaluate(
-        self, inputs: VocoderForwardInput, opt: VocoderOptions
+        self,
+        inputs: VocoderForwardInput,
+        opt: VocoderOptions,
     ) -> VocoderForwardOutput:
-        inputs.to(self.device)
-        outputs = self.model.inference(inputs)
+        outputs = self.model.inference(inputs.to(self.device))
 
         waveforms = []
-        for idx in range(outputs.waveform.shape[0]):
-            waveforms.append(outputs.waveform[idx].cpu().numpy())
+        for signal, spec_len in zip(outputs.waveform, inputs.spectrogram_lengths):
+            signal_len = spec_len * self.hop_len
+            waveforms.append(signal[:signal_len])
 
-        waveforms = np.concatenate(waveforms)
+        waveform = torch.cat(waveforms).unsqueeze(0)
+
+        if opt.denoiser_strength > 0:
+            waveform = self.denoiser(
+                waveform,
+                strength=opt.denoiser_strength,
+                use_energies=opt.denoiser_use_energies,
+            )
+
+        waveform = waveform.cpu().numpy()[0]
 
         if self.preemphasis_coef is not None:
-            waveforms = self.inv_preemphasis(waveforms, self.preemphasis_coef)
+            waveform = self.inv_preemphasis(waveform, self.preemphasis_coef)
 
-        outputs.audio_chunk = AudioChunk(data=waveforms, sr=self.sample_rate)
+        outputs.audio_chunk = AudioChunk(data=waveform, sr=self.sample_rate)
         return outputs
 
     @staticmethod

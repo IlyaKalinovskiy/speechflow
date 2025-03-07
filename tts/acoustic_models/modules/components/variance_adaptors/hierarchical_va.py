@@ -235,11 +235,8 @@ class HierarchicalVarianceAdaptor(Component):
                 if target is None:
                     if "dummy" not in var_name:
                         target = inputs.model_inputs.additional_inputs.get(target_name)
-                if target is not None:
-                    if not isinstance(target, tp.Sequence):
-                        targets[var_name] = target.float()  # type: ignore
-                    else:
-                        targets[var_name] = target
+
+                targets[var_name] = target
 
         return targets
 
@@ -611,7 +608,7 @@ class HierarchicalVarianceAdaptor(Component):
 
         def _cat_tensors(content_, embedding_):
             if embedding_.shape[1] == 1:
-                embedding_ = embedding_.expand(-1, content_.shape[1], -1)
+                embedding_ = embedding_.expand(content_.shape[0], content_.shape[1], -1)
             delta = content_.shape[1] - embedding_.shape[1]
             if abs(delta) > 1:
                 message = f"delta: {delta}, content.shape: {content_.shape}, embedding.shape: {embedding_.shape}"

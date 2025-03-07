@@ -22,7 +22,7 @@ __all__ = ["AdditionalModules", "AdditionalModulesParams"]
 
 
 class AdditionalModulesParams(EmbeddingParams):
-    addm_apply_inverse_speaker_classifier: tp.Dict[str, int] = Field(
+    addm_apply_inverse_speaker_classifier: tp.Dict[str, tp.Optional[int]] = Field(
         default_factory=lambda: {}
     )
     addm_apply_inverse_speaker_emb: tp.Dict[str, int] = Field(default_factory=lambda: {})

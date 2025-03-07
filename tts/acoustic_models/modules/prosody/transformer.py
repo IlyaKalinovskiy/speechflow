@@ -5,10 +5,8 @@ import torch.nn.functional as F
 
 from torch import nn
 
+from tts.acoustic_models.modules.common.pos_encoders import PositionalEncodings
 from tts.acoustic_models.modules.prosody.multihead_attention import MultiheadAttention
-from tts.acoustic_models.modules.prosody.position_embedding import (
-    SinusoidalPositionalEmbedding,
-)
 
 __all__ = ["MultimodalTransformerEncoder"]
 
@@ -45,11 +43,11 @@ class MultimodalTransformerEncoder(nn.Module):
         self.attn_dropout = attn_dropout
         self.embed_dim = embed_dim
         self.embed_scale = math.sqrt(embed_dim)
-        self.embed_positions = SinusoidalPositionalEmbedding(embed_dim)
+        self.embed_positions = PositionalEncodings("RoPE", embed_dim)
 
         self.attn_mask = attn_mask
 
-        self.layers = nn.ModuleList([])
+        self.layers = nn.ModuleList()
         for layer in range(layers):
             new_layer = TransformerEncoderLayer(
                 embed_dim,
@@ -80,25 +78,15 @@ class MultimodalTransformerEncoder(nn.Module):
                   padding elements of shape `(batch, src_len)`
         """
         # embed tokens and positions
-        x = self.embed_scale * x_in
-        if self.embed_positions is not None:
-            x += self.embed_positions(x_in.transpose(0, 1)[:, :, 0]).transpose(
-                0, 1
-            )  # Add positional embedding
+        x = self.embed_scale * self.embed_positions(x_in)
         x = F.dropout(x, p=self.dropout, training=self.training)
 
-        if x_in_k is not None and x_in_v is not None:
-            # embed tokens and positions
-            x_k = self.embed_scale * x_in_k
-            x_v = self.embed_scale * x_in_v
-            if self.embed_positions is not None:
-                x_k += self.embed_positions(x_in_k.transpose(0, 1)[:, :, 0]).transpose(
-                    0, 1
-                )  # Add positional embedding
-                x_v += self.embed_positions(x_in_v.transpose(0, 1)[:, :, 0]).transpose(
-                    0, 1
-                )  # Add positional embedding
+        if x_in_k is not None:
+            x_k = self.embed_scale * self.embed_positions(x_in_k)
             x_k = F.dropout(x_k, p=self.dropout, training=self.training)
+
+        if x_in_v is not None:
+            x_v = self.embed_scale * self.embed_positions(x_in_v)
             x_v = F.dropout(x_v, p=self.dropout, training=self.training)
 
         # encoder layers
@@ -114,12 +102,6 @@ class MultimodalTransformerEncoder(nn.Module):
             x = self.layer_norm(x)
 
         return x
-
-    def max_positions(self):
-        """Maximum input length supported by the encoder."""
-        if self.embed_positions is None:
-            return self.max_source_positions
-        return min(self.max_source_positions, self.embed_positions.max_positions())
 
 
 class TransformerEncoderLayer(nn.Module):

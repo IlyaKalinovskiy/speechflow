@@ -4,7 +4,6 @@ import torch
 
 from pydantic import Field
 from torch import nn
-from torch.nn import functional as F
 from vector_quantize_pytorch import ResidualFSQ, ResidualLFQ
 
 from tts.acoustic_models.modules.common.layers import Conv
@@ -171,6 +170,7 @@ class VQEncoderWithClassificationAdaptor(VQEncoder):
                     w_init_gain="relu",
                 ),
                 nn.BatchNorm1d(self.output_dim),
+                nn.SiLU(),
             )
             convolutions.append(conv_layer)
 
@@ -189,7 +189,7 @@ class VQEncoderWithClassificationAdaptor(VQEncoder):
         if self.training:
             ctx = content.transpose(2, 1)
             for conv in self.convolutions:
-                ctx = F.relu(conv(ctx))
+                ctx = conv(ctx)
 
             adaptor_context.append(ctx.transpose(2, 1))
 

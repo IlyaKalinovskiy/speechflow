@@ -67,11 +67,11 @@ class TTSForwardInput(TrainData):
     spectral_envelope: Tensor = None
     pitch: Tensor = None
     aggregate_energy: Tensor = None
-    aggregate_spectral_flatness: Tensor = None
-    aggregate_spectral_envelope: Tensor = None
     aggregate_pitch: Tensor = None
     aggregate_curv_energy: Tensor = None
     aggregate_curv_pitch: Tensor = None
+    aggregate_spectral_flatness: Tensor = None
+    aggregate_spectral_envelope: Tensor = None
     averages: tp.Dict[str, Tensor] = None  # type: ignore
     ranges: tp.Dict[str, Tensor] = None  # type: ignore
     num_words: Tensor = None
@@ -121,7 +121,6 @@ class TTSForwardOutput(TrainData):
     spectrogram_lengths: Tensor = None
     after_postnet_spectrogram: Tensor = None
     gate: Tensor = None
-    attention_weights: Tensor = None
     embeddings: tp.Optional[tp.Dict[str, Tensor]] = None
     variance_predictions: tp.Optional[tp.Dict[str, Tensor]] = None
     additional_content: tp.Optional[tp.Dict[str, Tensor]] = None

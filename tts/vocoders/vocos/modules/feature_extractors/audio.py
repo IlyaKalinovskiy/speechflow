@@ -316,10 +316,10 @@ class AudioFeatures(FeatureExtractor):
         # ----- init upsampling -----
 
         if params.use_upsample:
-            self.lr = SoftLengthRegulator(sigma=0.9)
+            self.length_regulator = SoftLengthRegulator(sigma=0.9)
             self.register_buffer("mean_scale_factor", torch.tensor(1.5))
         else:
-            self.lr = None
+            self.length_regulator = None
 
         # ----- init 1d predictors -----
 
@@ -531,14 +531,14 @@ class AudioFeatures(FeatureExtractor):
             scale_factor = inputs.spectrogram_lengths / x_lens
             dura = scale_factor.unsqueeze(-1).repeat(1, x.shape[1]).to(x.device)
             dura = apply_mask(dura, get_mask_from_lengths(x_lens, x.shape[1]))
-            y, _ = self.lr(x, dura)
+            y, _ = self.length_regulator(x, dura)
             y_lens = inputs.spectrogram_lengths
             self.mean_scale_factor = scale_factor.mean()
         else:
             scale_factor = self.mean_scale_factor.unsqueeze(-1)
             dura = scale_factor.repeat(x.shape[0], x.shape[1]).to(x.device)
             dura = apply_mask(dura, get_mask_from_lengths(x_lens, x.shape[1]))
-            y, _ = self.lr(x, dura)
+            y, _ = self.length_regulator(x, dura)
 
             if inputs.output_lengths is not None:
                 y_lens = inputs.output_lengths
@@ -611,7 +611,7 @@ class AudioFeatures(FeatureExtractor):
         else:
             prosody = x.detach()
 
-        if self.lr is not None:
+        if self.length_regulator is not None:
             prosody, _ = self._upsample(prosody, x_lens, inputs)
             x, x_lens = self._upsample(x, x_lens, inputs)
             if inputs.output_lengths is None:

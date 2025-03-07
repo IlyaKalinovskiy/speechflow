@@ -22,7 +22,6 @@ __all__ = [
     "SpectrogramDataSample",
     "TextDataSample",
     "TTSDataSample",
-    "PausesPredictionDataSample",
     "SSLFeatures",
     "AudioCodecFeatures",
     "ProsodySSMLDataSample",
@@ -147,11 +146,6 @@ class TTSDataSample(SpectrogramDataSample, TextDataSample, ProsodySSMLDataSample
     transcription_id_by_frames: tp_DATA = None
     aggregated: tp.Dict[str, tp_DATA] = None
     pauses_durations: torch.Tensor = None
-
-
-@dataclass(eq=False)
-class PausesPredictionDataSample(TTSDataSample):
-    sil_mask: tp_DATA = None
 
 
 @dataclass(eq=False)

@@ -185,6 +185,7 @@ class SFEncoderWithClassificationAdaptor(SFEncoder):
                     w_init_gain="relu",
                 ),
                 nn.BatchNorm1d(self.output_dim),
+                nn.SiLU(),
             )
             convolutions.append(conv_layer)
 
@@ -198,10 +199,9 @@ class SFEncoderWithClassificationAdaptor(SFEncoder):
             f"adaptor_context_{self.id}", []
         )
 
-        ctx = self.get_content(result)[0]
-        ctx = ctx.transpose(1, 2)
+        ctx = x.get_content(0).transpose(1, 2)
         for conv in self.conv_module:
-            ctx = F.relu(conv(ctx))
+            ctx = conv(ctx)
 
         adaptor_context.append(ctx.transpose(2, 1))
 

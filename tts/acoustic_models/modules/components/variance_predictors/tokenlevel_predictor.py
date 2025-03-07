@@ -1,5 +1,7 @@
 import typing as tp
 
+from functools import partial
+
 import torch
 
 from pydantic import Field
@@ -98,7 +100,7 @@ class TokenLevelPredictor(Component):
         self.token_encoder = _init_encoder(
             enc_cls, enc_params_cls, params.token_encoder_params, input_dim
         )
-        self.lr = SoftLengthRegulator()
+        self.length_regulator = SoftLengthRegulator()
 
     @property
     def output_dim(self):
@@ -119,6 +121,10 @@ class TokenLevelPredictor(Component):
         predict = apply_mask(predict, get_mask_from_lengths(lengths))
 
         loss_fn = getattr(F, self.params.loss_type)
+        if self.params.loss_type == "cross_entropy":
+            loss_fn = partial(loss_fn, ignore_index=-1)
+            predict = predict.transpose(1, -1)
+
         return {f"{name}_{self.params.loss_type}_by_tokens": loss_fn(predict, target)}
 
     def forward_step(
@@ -138,7 +144,9 @@ class TokenLevelPredictor(Component):
         max_num_words = model_inputs.num_words.max().item()
 
         if self.params.add_lm_feat:
-            x_by_words, _ = self.lr(x.detach(), word_inv_lengths, max_num_words)
+            x_by_words, _ = self.length_regulator(
+                x.detach(), word_inv_lengths, max_num_words
+            )
             x_by_words = x_by_words + self.lm_proj(model_inputs.lm_feat)
             wd_predict, wd_ctx = self.word_encoder.process_content(
                 x_by_words, model_inputs.num_words, model_inputs

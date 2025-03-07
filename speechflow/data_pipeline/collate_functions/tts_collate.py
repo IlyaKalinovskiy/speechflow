@@ -139,11 +139,15 @@ class TTSCollate(SpectrogramCollate):
         if batch[0].aggregated is not None:
             for name in batch[0].aggregated.keys():
                 data = [sample.aggregated[name] for sample in batch]
-                pad_id = batch[0].get_param_val("mel_min_val") if "mel" in name else 0.0
+                pad_val = (
+                    batch[0].get_param_val("mel_min_val")
+                    if "mel" in name
+                    else batch[0].get_param_val(f"{name}_pad", 0)
+                )
                 collated.aggregated[name], _ = (
-                    pad_1d(data)
+                    pad_1d(data, pad_val=pad_val)
                     if data[0].ndim == 1
-                    else pad_2d(data, data[0].shape[1], pad_id)
+                    else pad_2d(data, data[0].shape[1], pad_val)
                 )
 
         collated.ling_feat = LinguisticFeatures.collate(batch)

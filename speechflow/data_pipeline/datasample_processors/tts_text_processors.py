@@ -13,10 +13,7 @@ from transformers import AutoModel, AutoTokenizer
 
 from speechflow.data_pipeline.core.base_ds_processor import BaseDSProcessor
 from speechflow.data_pipeline.core.registry import PipeRegistry
-from speechflow.data_pipeline.datasample_processors.data_types import (
-    PausesPredictionDataSample,
-    TextDataSample,
-)
+from speechflow.data_pipeline.datasample_processors.data_types import TextDataSample
 from speechflow.io import AudioSeg
 from speechflow.logging import trace
 from speechflow.utils.fs import get_module_dir
@@ -246,9 +243,6 @@ class TTSTextProcessor(BaseDSProcessor):
         ds.ling_feat = ling_feat_id
         ds.pad_token_id = self._symbol_to_id[self.pad]
         ds.sil_token_id = self._symbol_to_id[self.sil]
-
-        if isinstance(ds, PausesPredictionDataSample):
-            ds.sil_mask = ling_feat.get("sil_mask")  # type: ignore
 
         ds.transform_params["TTSTextProcessor"] = {
             "ipa_phonemes": self.is_ipa_phonemes,

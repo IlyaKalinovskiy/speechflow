@@ -1035,6 +1035,8 @@ class ContoursExtractor:
         ), f"Shapes mismatch after aggr {indices.shape[0], ds.durations.shape[0]}"
         ds.aggregated["pitch_contour"] = indices
 
+        ds.transform_params.setdefault("ContoursExtractor", {})
+        ds.transform_params["ContoursExtractor"]["pitch_contour_pad"] = -1
         return ds
 
 
