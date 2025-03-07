@@ -127,7 +127,7 @@ model:
       #   condition_type: AdaNorm
 
       decoder_type: WrapperDecoder
-      decoder_num_layers: 6
+      decoder_num_layers: 4
       decoder_inner_dim: 384
       decoder_output_dim: 384
       decoder_params:
@@ -223,7 +223,7 @@ model:
           predictor_params:
             vp_params:
               activation_fn: SiLU
-              use_ssl_adjustment: true
+              use_ssl_adjustment: false
           denormalize: true
           log_scale: false
 

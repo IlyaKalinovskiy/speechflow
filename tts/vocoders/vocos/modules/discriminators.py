@@ -120,6 +120,7 @@ class DiscriminatorP(nn.Module):
                 ),
             ]
         )
+
         if num_embeddings is not None:
             self.emb = torch.nn.Embedding(
                 num_embeddings=num_embeddings, embedding_dim=1024
@@ -140,6 +141,7 @@ class DiscriminatorP(nn.Module):
             n_pad = self.period - (t % self.period)
             x = torch.nn.functional.pad(x, (0, n_pad), "reflect")
             t = t + n_pad
+
         x = x.view(b, c, t // self.period, self.period)
 
         for i, l in enumerate(self.convs):
@@ -147,11 +149,13 @@ class DiscriminatorP(nn.Module):
             x = torch.nn.functional.leaky_relu(x, self.lrelu_slope)
             if i > 0:
                 fmap.append(x)
+
         if cond_embedding_id is not None:
             emb = self.emb(cond_embedding_id)
             h = (emb.view(1, -1, 1, 1) * x).sum(dim=1, keepdims=True)
         else:
             h = 0
+
         x = self.conv_post(x)
         fmap.append(x)
         x += h
@@ -294,12 +298,15 @@ class DiscriminatorR(nn.Module):
                 if i > 0:
                     fmap.append(band)
             x.append(band)
+
         x = torch.cat(x, dim=-1)
+
         if cond_embedding_id is not None:
             emb = self.emb(cond_embedding_id)
             h = (emb.view(1, -1, 1, 1) * x).sum(dim=1, keepdims=True)
         else:
             h = 0
+
         x = self.conv_post(x)
         fmap.append(x)
         x += h
@@ -432,6 +439,7 @@ class DiscriminatorB(nn.Module):
                 band = torch.nn.functional.leaky_relu(band, 0.1)
                 if i > 0:
                     fmap.append(band)
+
             x.append(band)
 
         x = torch.cat(x, dim=-1)

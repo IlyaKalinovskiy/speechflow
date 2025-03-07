@@ -154,7 +154,6 @@ model:
       aggregate_energy:
         predictor_type: TokenLevelPredictor
         input_content: [2]
-        detach_input: [true, false]
         cat_to_content: [2]
         predictor_params:
           vp_params:
@@ -166,7 +165,6 @@ model:
       aggregate_pitch:
         predictor_type: TokenLevelPredictor
         input_content: [2]
-        detach_input: [true, false]
         cat_to_content: [2]
         predictor_params:
           vp_params:
@@ -207,7 +205,7 @@ model:
         predictor_params:
           vp_params:
             activation_fn: SiLU
-            use_ssl_adjustment: true
+            use_ssl_adjustment: false
         denormalize: true
         log_scale: false
         as_embedding: true

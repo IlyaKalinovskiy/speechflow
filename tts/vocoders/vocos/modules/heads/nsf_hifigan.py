@@ -48,9 +48,7 @@ class NSFHiFiGANHead(WaveformGenerator):
         self.pitch_conv = weight_norm(
             nn.Conv1d(1, 1, kernel_size=3, stride=stride, padding=1)
         )
-        self.res_proj = nn.Sequential(
-            weight_norm(nn.Conv1d(params.input_dim, res_dim, kernel_size=1)),
-        )
+        self.res_proj = weight_norm(nn.Conv1d(params.input_dim, res_dim, kernel_size=1))
 
         self.encode = AdainResBlk1d(
             params.input_dim + 2,
@@ -105,6 +103,9 @@ class NSFHiFiGANHead(WaveformGenerator):
         )
 
     def remove_weight_norm(self):
+        remove_weight_norm(self.energy_conv)
+        remove_weight_norm(self.pitch_conv)
+        remove_weight_norm(self.res_proj)
         self.generator.remove_weight_norm()
 
     def forward(self, x, **kwargs):
@@ -624,7 +625,6 @@ class Generator(torch.nn.Module):
             remove_weight_norm(l_)
         for l_ in self.resblocks:
             l_.remove_weight_norm()
-        remove_weight_norm(self.conv_pre)
         remove_weight_norm(self.conv_post)
 
 

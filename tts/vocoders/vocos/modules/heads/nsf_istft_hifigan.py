@@ -50,9 +50,7 @@ class NSFiSTFTHiFiGANHead(WaveformGenerator):
         self.pitch_conv = weight_norm(
             nn.Conv1d(1, 1, kernel_size=3, stride=stride, padding=1)
         )
-        self.res_proj = nn.Sequential(
-            weight_norm(nn.Conv1d(params.input_dim, res_dim, kernel_size=1)),
-        )
+        self.res_proj = weight_norm(nn.Conv1d(params.input_dim, res_dim, kernel_size=1))
 
         self.encode = AdainResBlk1d(
             params.input_dim + 2,

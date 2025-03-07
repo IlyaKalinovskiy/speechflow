@@ -960,8 +960,17 @@ class LMProcessor(BaseDSProcessor):
     @torch.inference_mode()
     def _process_lm(self, sentence: Sentence):
         tokens = [tk for tk in sentence.tokens if tk.text not in self.service_tokens]
+
+        text = []
+        for idx, tk in enumerate(tokens):
+            t = tk.text
+            if idx == 0 or tk.is_capitalize:
+                t = f"{t[:1].upper()}{t[1:]}"
+
+            text.append(t)
+
         inp = self._tokenizer(
-            [[tk.text for tk in tokens]],
+            [text],
             return_tensors="pt",
             max_length=512,
             is_split_into_words=True,

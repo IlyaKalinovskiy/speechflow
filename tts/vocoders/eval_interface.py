@@ -20,6 +20,7 @@ from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.dictutils import find_field
 from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
 from tts.vocoders.data_types import VocoderForwardInput, VocoderForwardOutput
+from tts.vocoders.vocos.modules.feature_extractors.tts import TTSFeatures
 from tts.vocoders.vocos.pretrained import Vocos
 
 __all__ = ["VocoderEvaluationInterface", "VocoderOptions"]
@@ -124,7 +125,16 @@ class VocoderLoader:
         state_dict = {
             k.replace("head.dac_", "head.dac_model."): v for k, v in state_dict.items()
         }
-        model.load_state_dict(state_dict)
+
+        if isinstance(model.feature_extractor, TTSFeatures):
+            state_dict = {
+                k: v
+                for k, v in state_dict.items()
+                if not k.startswith("feature_extractor")
+            }
+            model.load_state_dict(state_dict, strict=False)
+        else:
+            model.load_state_dict(state_dict)
 
         if hasattr(model.head, "remove_weight_norm"):
             model.head.remove_weight_norm()

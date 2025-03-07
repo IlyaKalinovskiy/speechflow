@@ -144,13 +144,14 @@ class TTSEvaluationInterface:
                 "params": cfg_model["model"]["feature_extractor"]["init_args"],
             }
             tts_ckpt["params"] = cfg_model["model"]["params"]
+            tts_ckpt["params"]["n_symbols_per_token"] = 3
 
             sd = tts_ckpt["state_dict"]
             for k in list(sd.keys()):
                 if any(
                     x in k
                     for x in [
-                        "feature_extractor._mel_proj",
+                        "feature_extractor.proj",
                         "backbones",
                         "head",
                         "sm_loss",
@@ -158,12 +159,11 @@ class TTSEvaluationInterface:
                         "melspec_loss",
                         "multiperiod_disc",
                         "multiresd_disc",
-                        "additional_modules",
                     ]
                 ):
                     sd.pop(k)
                 elif "feature_extractor" in k:
-                    sd[k.replace("feature_extractor._tts", "model")] = sd.pop(k)
+                    sd[k.replace("feature_extractor.tts_model", "model")] = sd.pop(k)
 
         version_check(
             multilingual_text_parser, tts_ckpt["versions"]["libs"]["text_parser"]
