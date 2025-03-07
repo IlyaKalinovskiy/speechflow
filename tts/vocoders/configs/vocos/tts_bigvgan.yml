@@ -1,6 +1,6 @@
 ### Model configuration ###
 
-experiment_name: tts_hifigan
+experiment_name: tts_bigvgan
 
 dirs:
   logging: vocos_experiments
@@ -47,7 +47,8 @@ engine:
     auxiliary_loss_coeff: 1.0
     decay_mel_coeff: false
     num_warmup_steps: 0  # Optimizers warmup steps
-    pretrain_mel_steps: 0  # 0 means GAN objective from the first iteration
+    pretrain_mel_steps: 10000  # 0 means GAN objective from the first iteration
+    use_cqtd_disc: true
     use_sm_loss: false
     use_wavlm_loss: false
     use_cdpam_loss: false
@@ -57,6 +58,7 @@ engine:
     wavlm_model_name:
       default: /src/wavlm-base-plus
       debug: C:/FluentaAI/wavlm-base-plus
+    # disc_pretrain_path: bigvgan_discriminator_optimizer.pt
 
     # automatic evaluation
     evaluate_utmos: false
@@ -115,7 +117,7 @@ model:
       decoder_type: ForwardDecoder
       decoder_num_layers: 2
       decoder_inner_dim: 512
-      decoder_output_dim: 512
+      decoder_output_dim: 100
       decoder_params:
         condition: [speaker_emb]
         condition_dim: 256
@@ -181,7 +183,7 @@ model:
     init_args: {}
 
   head:
-    class_name: NSFHiFiGANHead
+    class_name: BigVGANHead
     init_args:
-      input_dim: 512
-      condition_dim: 32
+      input_dim: 100
+      # pretrain_path: bigvgan_generator.pt

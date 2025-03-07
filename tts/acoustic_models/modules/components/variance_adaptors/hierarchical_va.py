@@ -264,7 +264,9 @@ class HierarchicalVarianceAdaptor(Component):
         model_inputs,
     ):
         content = []
-        for name in variance_params.input_content:
+        for name, is_detach in zip(
+            variance_params.input_content, variance_params.detach_input
+        ):
             if str(name).isdigit():
                 if name == 0:
                     content.append(x)
@@ -272,6 +274,8 @@ class HierarchicalVarianceAdaptor(Component):
                     content.append(x_duration)
                 elif name == 2:
                     content.append(x_adaptor)
+                else:
+                    raise NotImplementedError(f"input_content={name}")
             else:
                 feat = model_inputs.additional_inputs.get(name)
                 if feat is None:
@@ -287,6 +291,9 @@ class HierarchicalVarianceAdaptor(Component):
                         feat = feat.expand(-1, t_dim, -1)
 
                 content.append(feat)
+
+            if is_detach:
+                content[-1] = content[-1].detach()
 
         content = torch.cat(content, dim=-1)
         content = content.detach() if variance_params.detach_input else content

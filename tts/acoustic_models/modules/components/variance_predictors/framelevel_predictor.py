@@ -55,6 +55,7 @@ class FrameLevelPredictor(Component):
             _enc_params.encoder_num_layers = params.vp_num_layers
             _enc_params.encoder_inner_dim = params.vp_inner_dim
             _enc_params.encoder_output_dim = _output_dim
+            _enc_params.projection_activation_fn = params.activation_fn
             return _enc_cls(_enc_params, _input_dim)
 
         enc_cls, enc_params_cls = TTS_ENCODERS[params.frame_encoder_type]
@@ -90,9 +91,6 @@ class FrameLevelPredictor(Component):
 
         self.frame_encoder = _init_encoder(
             enc_cls, enc_params_cls, params.frame_encoder_params, input_dim
-        )
-        self.frame_proj = Regression(
-            params.vp_inner_dim, params.vp_output_dim, activation_fn=params.activation_fn
         )
 
     @property
@@ -131,8 +129,8 @@ class FrameLevelPredictor(Component):
             merger_embs = mtm_target_embs * m.unsqueeze(-1) + mtm_predict_embs * inv_m
             x = torch.cat([x, merger_embs.detach()], dim=-1)
 
-        _, enc_ctx = self.frame_encoder.process_content(x, x_lengths, model_inputs)
-        predict = self.frame_proj(enc_ctx).squeeze(-1)
+        predict, enc_ctx = self.frame_encoder.process_content(x, x_lengths, model_inputs)
+        predict = predict.squeeze(-1)
 
         if self.training:
             loss_fn = getattr(F, self.params.loss_type)

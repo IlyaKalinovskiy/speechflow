@@ -20,12 +20,15 @@ class TTSFeaturesParams(ParallelTTSParams):
 class TTSFeatures(FeatureExtractor):
     def __init__(self, params: tp.Union[tp.MutableMapping, TTSFeaturesParams]):
         super().__init__(params)
-        self._tts = ParallelTTSModel(params)
-        self._mel_proj = Regression(params.decoder_output_dim, params.mel_spectrogram_dim)
+        self.tts_model = ParallelTTSModel(params)
+        if params.decoder_output_dim != params.mel_spectrogram_dim:
+            self.proj = Regression(params.decoder_output_dim, params.mel_spectrogram_dim)
+        else:
+            self.proj = torch.nn.Identity()
 
     def forward(self, inputs: VocoderForwardInput, **kwargs):
         if inputs.__class__.__name__ != "TTSForwardInputWithSSML":
-            outputs: TTSForwardOutput = self._tts(inputs)
+            outputs: TTSForwardOutput = self.tts_model(inputs)
             losses = outputs.additional_losses
             additional_content = outputs.additional_content
         else:
@@ -33,23 +36,14 @@ class TTSFeatures(FeatureExtractor):
             losses = {}
             additional_content = {}
 
+        if isinstance(outputs.spectrogram, list) or outputs.spectrogram.ndim == 4:
+            x = outputs.spectrogram[0]
+        else:
+            x = outputs.spectrogram
+
         if self.training:
             target_spec = inputs.spectrogram
-            if isinstance(outputs.spectrogram, list) or outputs.spectrogram.ndim == 4:
-                x = outputs.spectrogram[0]
-
-                if x.shape[-1] == target_spec.shape[-1]:
-                    losses["spec_loss"] = F.l1_loss(x, target_spec)
-                else:
-                    losses["spec_loss"] = F.l1_loss(self._mel_proj(x), target_spec)
-            else:
-                x = outputs.spectrogram
-                losses["spec_loss"] = F.l1_loss(x, target_spec)
-        else:
-            if isinstance(outputs.spectrogram, list) or outputs.spectrogram.ndim == 4:
-                x = outputs.spectrogram[0]
-            else:
-                x = outputs.spectrogram
+            losses["spectral_loss"] = F.l1_loss(self.proj(x), target_spec)
 
         if "spec_chunk" in inputs.additional_inputs:
             energy_target = outputs.additional_content["energy_postprocessed"]

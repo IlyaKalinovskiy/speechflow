@@ -384,23 +384,25 @@ class DiscriminatorB(nn.Module):
         bands = [(int(b[0] * n_fft), int(b[1] * n_fft)) for b in bands]
         self.bands = bands
 
-        def convs(): return nn.ModuleList(
-            [
-                weight_norm(nn.Conv2d(2, channels, (3, 9), (1, 1), padding=(1, 4))),
-                weight_norm(
-                    nn.Conv2d(channels, channels, (3, 9), (1, 2), padding=(1, 4))
-                ),
-                weight_norm(
-                    nn.Conv2d(channels, channels, (3, 9), (1, 2), padding=(1, 4))
-                ),
-                weight_norm(
-                    nn.Conv2d(channels, channels, (3, 9), (1, 2), padding=(1, 4))
-                ),
-                weight_norm(
-                    nn.Conv2d(channels, channels, (3, 3), (1, 1), padding=(1, 1))
-                ),
-            ]
-        )
+        def convs():
+            return nn.ModuleList(
+                [
+                    weight_norm(nn.Conv2d(2, channels, (3, 9), (1, 1), padding=(1, 4))),
+                    weight_norm(
+                        nn.Conv2d(channels, channels, (3, 9), (1, 2), padding=(1, 4))
+                    ),
+                    weight_norm(
+                        nn.Conv2d(channels, channels, (3, 9), (1, 2), padding=(1, 4))
+                    ),
+                    weight_norm(
+                        nn.Conv2d(channels, channels, (3, 9), (1, 2), padding=(1, 4))
+                    ),
+                    weight_norm(
+                        nn.Conv2d(channels, channels, (3, 3), (1, 1), padding=(1, 1))
+                    ),
+                ]
+            )
+
         self.band_convs = nn.ModuleList([convs() for _ in range(len(self.bands))])
 
         self.conv_post = weight_norm(

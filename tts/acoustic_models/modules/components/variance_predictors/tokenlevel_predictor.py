@@ -56,6 +56,7 @@ class TokenLevelPredictor(Component):
             _enc_params.encoder_num_layers = params.vp_num_layers
             _enc_params.encoder_inner_dim = params.vp_inner_dim
             _enc_params.encoder_output_dim = _output_dim
+            _enc_params.projection_activation_fn = params.activation_fn
             return _enc_cls(_enc_params, _input_dim)
 
         enc_cls, enc_params_cls = TTS_ENCODERS[params.token_encoder_type]
@@ -96,9 +97,6 @@ class TokenLevelPredictor(Component):
 
         self.token_encoder = _init_encoder(
             enc_cls, enc_params_cls, params.token_encoder_params, input_dim
-        )
-        self.token_proj = Regression(
-            params.vp_inner_dim, params.vp_output_dim, activation_fn=params.activation_fn
         )
         self.lr = SoftLengthRegulator()
 
@@ -173,10 +171,10 @@ class TokenLevelPredictor(Component):
             x_by_tokens = torch.cat([x_by_tokens, merger_embs.detach()], dim=-1)
 
         tk_proj = self.prenet(x_by_tokens)
-        _, enc_ctx = self.token_encoder.process_content(tk_proj, x_lengths, model_inputs)
-        predict = apply_mask(
-            self.token_proj(enc_ctx).squeeze(-1), get_mask_from_lengths(x_lengths)
+        predict, enc_ctx = self.token_encoder.process_content(
+            tk_proj, x_lengths, model_inputs
         )
+        predict = predict.squeeze(-1)
 
         if self.training:
             losses.update(

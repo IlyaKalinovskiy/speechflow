@@ -208,7 +208,7 @@ class VarianceParams(BaseTorchModelParams):
     target: str = None
     input_content: tp.Tuple[int, ...] = (0,)
     input_content_dim: tp.Tuple[int, ...] = None
-    detach_input: bool = False
+    detach_input: tp.Union[bool, tp.Tuple[bool, ...]] = False
     detach_output: bool = True
     use_target: bool = True
     denormalize: bool = False
@@ -236,6 +236,11 @@ class VarianceParams(BaseTorchModelParams):
         self.input_content = tuple(self.input_content)
         self.cat_to_content = tuple(self.cat_to_content)
         self.overwrite_content = tuple(self.overwrite_content)
+
+        if isinstance(self.detach_input, bool):
+            self.detach_input = tuple([self.detach_input] * len(self.input_content))
+        else:
+            self.detach_input = tuple(self.detach_input)
 
         if self.as_encoder:
             self.dim = self.predictor_params.vp_output_dim

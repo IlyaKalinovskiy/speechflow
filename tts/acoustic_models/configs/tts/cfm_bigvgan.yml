@@ -62,7 +62,7 @@ model:
     # use_dnn_speaker_emb: true
     # speaker_biometric_model: wespeaker
     use_learnable_speaker_emb: true
-    speaker_emb_dim: 64
+    speaker_emb_dim: 256
 
     use_average_emb: true
     averages:
@@ -88,7 +88,7 @@ model:
           ling_condition_type: cat
           lm_condition_type: add
           condition: [speaker_emb]
-          condition_dim: 64
+          condition_dim: 256
 
     va_type: HierarchicalVarianceAdaptor
 
@@ -100,7 +100,7 @@ model:
       use_prior_decoder: false
       use_cfg: true
       condition: [speaker_emb]
-      condition_dim: 64
+      condition_dim: 256
       estimator_type: DiTEncoder
       estimator_params:
         use_lsc: true

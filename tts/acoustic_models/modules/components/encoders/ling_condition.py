@@ -21,6 +21,9 @@ class LinguisticConditionParams(EncoderParams):
     # language model condition
     lm_condition_type: tp.Optional[CONDITIONAL_TYPES] = None
 
+    # prosodic model condition
+    xpbert_condition_type: tp.Optional[CONDITIONAL_TYPES] = None
+
     p_dropout: float = 0.1
 
 
@@ -37,6 +40,11 @@ class LinguisticCondition(Component):
             params.lm_condition_type,
             self.ling_cond_layer.output_dim,
             self.params.lm_feat_proj_dim,
+        )
+        self.xpbert_cond_layer = ConditionalLayer(
+            params.xpbert_condition_type,
+            self.lm_cond_layer.output_dim,
+            self.params.xpbert_feat_proj_dim,
         )
 
         self.hard_lr = SoftLengthRegulator(hard=True)
@@ -62,5 +70,10 @@ class LinguisticCondition(Component):
 
             lm_feat = self.seq_dropout(lm_feat)
             x = self.lm_cond_layer(x, lm_feat, x_mask)
+
+        if self.params.xpbert_condition_type is not None:
+            xpbert_feat = inputs.embeddings["xpbert_feat"]
+            xpbert_feat = self.seq_dropout(xpbert_feat)
+            x = self.xpbert_cond_layer(x, xpbert_feat, x_mask)
 
         return ComponentOutput.copy_from(inputs).set_content(x)
