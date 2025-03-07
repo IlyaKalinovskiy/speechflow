@@ -65,16 +65,15 @@ preproc:
       pipe_cfg:
         magnitude:
           n_fft: 1024
-          hop_len: 320
+          hop_len: 256
           win_len: 1024
+          center: False  # False for BigVGAN
     melscale:
       type: MelProcessor
       pipe: [linear_to_mel, amp_to_db, normalize]
       pipe_cfg:
         linear_to_mel:
           n_mels: 100
-          f_min: 0
-          f_max: 8000
     pitch:
       type: PitchProcessor
       method: torchcrepe
@@ -118,7 +117,7 @@ processor:
     default: ~
     debug:
       data_root: *data_root
-      folder_path: !join [*data_root, *dump_folder]
+      dump_path: !join [*data_root, *dump_folder]
       mode: file_path
       full_dump: true
       # skip_samples_without_dump: true

@@ -1,7 +1,7 @@
 ### Data configuration ###
 
 dirs:
-  data_root: &data_root /data
+  data_root: &data_root ../../../examples/simple_datasets/speech/SEGS
   dump_folder: &dump_folder dump_24KHz_styletts2
 
 file_search:

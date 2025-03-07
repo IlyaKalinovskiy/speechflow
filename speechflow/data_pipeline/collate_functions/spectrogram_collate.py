@@ -45,14 +45,14 @@ class SpectrogramCollate(AudioCollate):
 
         spec_multiple = self.multiple_values.get("spectrogram")
 
-        min_level_db = batch[0].get_param_val("min_level_db", 0.0)
+        pad_val = batch[0].get_param_val("min_level_db", 0.0)
         collated.magnitude, mag_spec_lens = collete_2d(
-            batch, "magnitude", min_level_db, spec_multiple
+            batch, "magnitude", pad_val, spec_multiple
         )
 
-        min_level_db = batch[0].get_param_val("mel_min_val", 0.0)
+        pad_val = batch[0].get_param_val("mel_min_val", 0.0)
         collated.mel, mel_spec_lens = collete_2d(
-            batch, "mel", min_level_db, spec_multiple
+            batch, "mel", pad_val, spec_multiple
         )
 
         collated.gate, gate_lens = collate_sequence(batch, "gate", 0, spec_multiple)

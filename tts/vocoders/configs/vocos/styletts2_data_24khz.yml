@@ -181,7 +181,7 @@ processor:
   dump:
     default:
       data_root: *data_root
-      folder_path: !join [*data_root, *dump_folder]
+      dump_path: !join [*data_root, *dump_folder]
       fields: [file_path, speaker_name]
       functions: [VoiceBiometricProcessor, SpeechQualityAssessment,
                   PitchProcessor, XPBertProcessor, LMProcessor, SSLProcessor]
@@ -189,7 +189,7 @@ processor:
       # skip_samples_without_dump: true
     debug:
       data_root: *data_root
-      folder_path: !join [*data_root, *dump_folder]
+      dump_path: !join [*data_root, *dump_folder]
       mode: file_path
       full_dump: true
       # skip_samples_without_dump: true

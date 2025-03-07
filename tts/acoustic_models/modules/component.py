@@ -271,8 +271,8 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
 
         if x.shape[1] < min_len:
             gt = F.pad(
-                x.transpose(2, 1), (0, min_len - x.shape[1]), value=pad_val
-            ).transpose(2, 1)
+                x.transpose(1, -1), (0, min_len - x.shape[1]), value=pad_val
+            ).transpose(1, -1)
             gt_mask = F.pad(x_mask, (0, min_len - x.shape[1]))
         else:
             if self.training:

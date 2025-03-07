@@ -63,9 +63,11 @@ __all__ = [
 LOGGER = logging.getLogger("root")
 
 try:
+    from nemo.collections.audio.modules.transforms import (
+        AudioToSpectrogram,
+    )
     from nemo.collections.asr.modules import (
         AudioToMelSpectrogramPreprocessor,
-        AudioToSpectrogram,
     )
 
     logging.getLogger("nemo_logger").setLevel(logging.ERROR)
@@ -120,20 +122,25 @@ class SpectralProcessor(BaseSpectrogramProcessor):
         n_fft: int,
         hop_len: int,
         win_len: int,
-        win_type: tp.Optional[str] = None,
+        win_type: str = "hann",
+        center: bool = True,
     ) -> tp.Union[npt.NDArray, torch.Tensor]:
 
         if self.window is None:
-            win_type = win_type if win_type else "hann"
             self.window = FFTWindow(win_type).get_window(win_len)
 
         if self.backend == ComputeBackend.librosa:
+            if not center:
+                pad_size = (n_fft - hop_len) // 2
+                waveform = np.pad(waveform, pad_size, mode="reflect")
+
             stft = librosa.stft(
                 y=waveform,
                 n_fft=n_fft,
                 hop_length=hop_len,
                 win_length=win_len,
                 window=self.window,
+                center=center,
                 pad_mode="reflect",
             )
 
@@ -145,6 +152,8 @@ class SpectralProcessor(BaseSpectrogramProcessor):
             )
 
         elif self.backend == ComputeBackend.nvidia:
+            if not center:
+                raise ValueError("center=False is not support for nvidia backend")
             if self.stft_module is None:
                 self.stft_module = nvidia_stft.STFT(
                     filter_length=n_fft,
@@ -156,9 +165,11 @@ class SpectralProcessor(BaseSpectrogramProcessor):
             stft = self.stft_module(waveform)
 
         elif self.backend == ComputeBackend.nemo:
+            if not center:
+                raise ValueError("center=False is not support for nvidia backend")
             if self.stft_module is None:
                 self.stft_module = AudioToSpectrogram(
-                    fft_length=n_fft, hop_length=hop_len, power=1.0
+                    fft_length=n_fft, hop_length=hop_len, magnitude_power=1.0
                 )
 
             waveform = torch.from_numpy(waveform).unsqueeze(0).unsqueeze(0)
@@ -178,7 +189,8 @@ class SpectralProcessor(BaseSpectrogramProcessor):
         n_fft: int,
         hop_len: int,
         win_len: int,
-        win_type: tp.Optional[str] = None,
+        win_type: str = "hann",
+        center: bool = True,
         remove_last_frame: bool = False,
     ) -> SpectrogramDataSample:
         stft = self._stft(
@@ -189,6 +201,7 @@ class SpectralProcessor(BaseSpectrogramProcessor):
             hop_len,
             win_len,
             win_type,
+            center,
         )
 
         if self.backend == ComputeBackend.librosa:
@@ -783,7 +796,7 @@ class PitchProcessor(BaseSpectrogramProcessor):
             f0[np.isnan(f0)] = 0.0
 
         elif self.method == "yingram":
-            assert sample_rate == 22050, "sample rate must be equal 22050Hz!"
+            assert 22050 <= sample_rate <= 24000, "sample rate must be equal 22050Hz or 24000Hz!"
             if not hasattr(self, "yingram"):
                 yingram = Yingram(
                     strides=hop_len,
@@ -1328,7 +1341,7 @@ def average_by_time(
     return ds
 
 
-def __get_spec_proc(n_fft: int, hop_len: int, win_len: int, n_bins: int):
+def __get_spec_proc(n_fft: int, hop_len: int, win_len: int, n_bins: int, center: bool = True):
     pipe = (
         "magnitude",
         "energy",
@@ -1341,6 +1354,7 @@ def __get_spec_proc(n_fft: int, hop_len: int, win_len: int, n_bins: int):
             "n_fft": n_fft,
             "hop_len": hop_len,
             "win_len": win_len,
+            "center": center,
         },
         "spectral_envelope": {"n_bins": n_bins},
     }
@@ -1481,7 +1495,7 @@ if __name__ == "__main__":
     matplotlib.use("TkAgg")
 
     _file_path = get_root_dir() / "tests/data/test_audio.wav"
-    _audio_chunk = AudioChunk(file_path=_file_path).load(sr=22050).trim(end=8)
+    _audio_chunk = AudioChunk(file_path=_file_path).load(sr=24000).trim(end=4)
 
     _spec_proc = __get_spec_proc(1024, 256, 1024, 80)
     _mel_proc = __get_mel_proc(80)

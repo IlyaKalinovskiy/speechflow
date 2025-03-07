@@ -170,7 +170,7 @@ processor:
   dump:
     default:
       data_root: *data_root
-      folder_path: !join [*data_root, *dump_folder]
+      dump_path: !join [*data_root, *dump_folder]
       fields: [file_path, speaker_name]
       functions: [VoiceBiometricProcessor, SpeechQualityAssessment,
                   PitchProcessor, LMProcessor, SSLProcessor]

@@ -215,4 +215,4 @@ def test_lpc():
 
 
 if __name__ == "__main__":
-    test_spectrogram(visualize=True)
+    test_spectrogram(visualize=False)

@@ -55,7 +55,7 @@ class DumpProcessor:
     def __init__(
         self,
         data_root: tp_PATH,
-        folder_path: tp_PATH,
+        dump_path: tp_PATH,
         mode: str = "file_path",
         fields: tp.Optional[tp.Union[str, tp.List[str]]] = None,
         functions: tp.Optional[tp.Union[str, tp.List[str]]] = None,
@@ -71,8 +71,8 @@ class DumpProcessor:
         self.use_verbose_logging = is_verbose_logging()
 
         self.data_root = data_root
-        self.folder_path = folder_path
-        self.dump_files_path = folder_path / "files"
+        self.dump_path = dump_path
+        self.dump_files_path = dump_path / "files"
         self.mode = mode
         self.full_dump = full_dump
         self.track_broken_samples = track_broken_samples
@@ -110,7 +110,7 @@ class DumpProcessor:
                 self.preproc_functions.append(func)
 
         if track_broken_samples:
-            self.skip_flist_path = self.folder_path / "skip_samples.txt"
+            self.skip_flist_path = self.dump_path / "skip_samples.txt"
             self.skip_samples = self._load_skip_samples(self.skip_flist_path)
         else:
             self.skip_samples = []
@@ -470,7 +470,7 @@ if __name__ == "__main__":
         "-d", "--data_root", help="path to dataset", type=Path, required=True
     )
     arguments_parser.add_argument(
-        "-f", "--folder_path", help="path to dump folder", type=Path, required=True
+        "-f", "--dump_path", help="path to dump folder", type=Path, required=True
     )
     arguments_parser.add_argument(
         "-ext",
@@ -482,9 +482,9 @@ if __name__ == "__main__":
     args = arguments_parser.parse_args()
 
     flist = construct_file_list(args.data_root, ext=args.file_extension)
-    dlist = construct_file_list(args.folder_path, ext=".pkl")
+    dlist = construct_file_list(args.dump_path, ext=".pkl")
 
-    dump_proc = DumpProcessor(folder_path=args.folder_path, data_root=args.data_root)
+    dump_proc = DumpProcessor(dump_path=args.dump_path, data_root=args.data_root)
 
     for file_path_ in flist[:100]:
         fname_ = dump_proc._get_filename(DataSample(file_path=Path(file_path_))).name

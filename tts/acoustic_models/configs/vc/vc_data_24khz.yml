@@ -121,7 +121,7 @@ processor:
     default: ~
     debug:
       data_root: *data_root
-      folder_path: !join [*data_root, *dump_folder]
+      dump_path: !join [*data_root, *dump_folder]
       mode: file_path
       full_dump: true
 
