@@ -111,7 +111,7 @@ model:
     decoder_type: ForwardDecoder
     decoder_inner_dim: 1024
     decoder_params:
-      condition: [speaker_emb, bio_style_emb]
+      condition: [speaker_emb, style_emb]
       condition_dim: 384
       condition_type: AdaNorm
 
@@ -140,7 +140,7 @@ model:
             use_gmvae: true
             gmvae_n_components: 16
       biometric_style_encoder:
-        tag: bio_style_emb
+        tag: style_emb
         as_encoder: true
         predictor_type: StyleEncoder
         predictor_params:

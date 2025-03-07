@@ -117,14 +117,25 @@ model:
 
       va_type: HierarchicalVarianceAdaptor
 
-      decoder_type: ForwardDecoder
-      decoder_num_layers: 2
-      decoder_inner_dim: 512
-      decoder_output_dim: 512
+      # decoder_type: ForwardDecoder
+      # decoder_num_layers: 2
+      # decoder_inner_dim: 512
+      # decoder_output_dim: 512
+      # decoder_params:
+      #   condition: [speaker_emb]
+      #   condition_dim: 256
+      #   condition_type: AdaNorm
+
+      decoder_type: WrapperDecoder
+      decoder_num_layers: 6
+      decoder_inner_dim: 384
+      decoder_output_dim: 384
       decoder_params:
-        condition: [speaker_emb]
-        condition_dim: 256
-        condition_type: AdaNorm
+        base_decoder_type: DiTEncoder
+        base_decoder_params:
+          cnn_n_layers: 0
+          condition: [speaker_emb]
+          condition_dim: 256
 
       postnet_type: ~
 
@@ -132,7 +143,7 @@ model:
         StyleEncoder_0: 128
 
       va_variances:
-        0: [spectrogram_style_encoder, biometric_style_encoder]
+        0: [biometric_style_encoder]
         1: [aggregate_energy, aggregate_pitch]
         2: [durations]
         3: [energy, pitch]
@@ -140,7 +151,6 @@ model:
         spectrogram_style_encoder:
           tag: style_emb
           as_encoder: true
-          cat_to_content: [0]
           predictor_type: StyleEncoder
           predictor_params:
             vp_params:
@@ -152,9 +162,8 @@ model:
               use_gmvae: true
               gmvae_n_components: 16
         biometric_style_encoder:
-          tag: bio_style_emb
+          tag: style_emb
           as_encoder: true
-          cat_to_content: [1, 2]
           predictor_type: StyleEncoder
           predictor_params:
             vp_params:
@@ -191,7 +200,7 @@ model:
           dim: 50
           predictor_type: TokenLevelDP
           input_content: [1, 2]
-          detach_input: [true, false]
+          detach_input: true
           log_scale: true
           predictor_params:
             vp_params:
@@ -225,5 +234,5 @@ model:
   head:
     class_name: NSFHiFiGANHead
     init_args:
-      input_dim: 512
+      input_dim: 384
       condition_dim: 128

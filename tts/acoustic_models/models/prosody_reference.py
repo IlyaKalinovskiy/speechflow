@@ -296,7 +296,7 @@ class ProsodyReference:
             if len(shape) == 3:
                 if feat.ndim == 2:
                     feat = feat.unsqueeze(1)
-                feat = feat.expand(shape[0], shape[1], -1)
+                # feat = feat.expand(shape[0], shape[1], -1)
             else:
                 feat = feat.expand(shape[0], -1)
 

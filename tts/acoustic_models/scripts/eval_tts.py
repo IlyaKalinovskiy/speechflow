@@ -95,24 +95,6 @@ def synthesize(
         else:
             voc_out = None
 
-    from speechflow.data_pipeline.datasample_processors.data_types import (
-        SpectrogramDataSample,
-    )
-    from speechflow.data_pipeline.datasample_processors.spectrogram_processors import (
-        MelProcessor,
-    )
-
-    mel_proc = MelProcessor()
-    ds = SpectrogramDataSample(
-        mel=tts_out.spectrogram,
-        transform_params=tts_ctx.prosody_reference.default.style_transform_params,
-    )
-    ds = mel_proc.denormalize(ds)
-
-    import numpy as np
-
-    np.save(r"M:\Илья\JustAI/tests/dump", ds.mel[0].numpy())
-
     plotting(tts_in, tts_out, doc)
     return voc_out.audio_chunk
 
@@ -120,9 +102,9 @@ def synthesize(
 if __name__ == "__main__":
     device = "cpu"
 
-    tts_model_path = "M:\\Илья\\JustAI\\epoch=29-step=93750_bigvgan.pt"
+    tts_model_path = "M:\\Илья\\JustAI\\epoch=19-step=125000.ckpt"
     voc_model_path = (
-        "M:\\Илья\\JustAI\\vocos_checkpoint_epoch=9_step=250000_val_loss=6.6804.pt"
+        "M:\\Илья\\JustAI\\vocos_checkpoint_epoch=1_step=16668_val_loss=5.8527.ckpt"
     )
     prosody_model_path = None
 

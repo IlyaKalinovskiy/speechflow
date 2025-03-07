@@ -78,6 +78,9 @@ class Vocos(nn.Module):
         )()
         backbone = backbone_cls(backbone_params)
 
+        if "pretrain_path" in cfg.head.init_args:
+            cfg.head.init_args.pretrain_path = None
+
         head_cls, head_params_cls = VOCOS_HEADS[cfg["head"]["class_name"]]
         head_params = init_class_from_config(head_params_cls, cfg["head"]["init_args"])()
         head = head_cls(head_params)

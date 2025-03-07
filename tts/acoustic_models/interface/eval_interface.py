@@ -272,15 +272,6 @@ class TTSEvaluationInterface:
             self.bio_embs = None
             self.audio_hours_per_speaker = None  # type: ignore
 
-        # init averages
-        if self.stat_ranges is not None:
-            model_averages = self.model.get_params().get("averages", {})
-            self.averages = self._get_averages_by_speaker(
-                self.stat_ranges.statistics, model_averages
-            )
-        else:
-            self.averages = None
-
         # init data pipeline
         self.pipeline = PipelineComponents(cfg_data, "test")
         self.sample_rate = cfg_data.section("preproc").find_field(
@@ -378,6 +369,15 @@ class TTSEvaluationInterface:
             print(e)
             self.model.load_state_dict(tts_ckpt["state_dict"], strict=False)
         self.model.to(self.device)
+
+        # init averages
+        if self.stat_ranges is not None:
+            model_averages = self.model.get_params().get("averages", {})
+            self.averages = self._get_averages_by_speaker(
+                self.stat_ranges.statistics, model_averages
+            )
+        else:
+            self.averages = None
 
     @staticmethod
     def _load_info(ckpt_path: Path) -> tp.Dict[str, tp.Any]:

@@ -208,6 +208,9 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
             if feat.shape[1] > 1 and average_by_time:
                 feat = torch.mean(feat, dim=1, keepdim=True)
 
+            if feat.shape[1] == 1:
+                average_by_time = True
+
             g.append(feat.detach() if detach else feat)
 
         if isinstance(inputs, ComponentOutput) and inputs.content is not None:
