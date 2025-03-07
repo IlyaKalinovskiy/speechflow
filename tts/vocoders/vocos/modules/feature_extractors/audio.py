@@ -627,7 +627,7 @@ class AudioFeatures(FeatureExtractor):
             )
             additional_content["energy_predict"] = e_output
             losses.update(e_losses)
-            if inputs.energy is None:
+            if not kwargs.get("discriminator_step", False):
                 inputs.energy = e_output
 
         if self.pitch_predictor is not None:
@@ -640,7 +640,7 @@ class AudioFeatures(FeatureExtractor):
             )
             additional_content["pitch_predict"] = p_output
             losses.update(p_losses)
-            if inputs.pitch is None:
+            if not kwargs.get("discriminator_step", False):
                 inputs.pitch = p_output
 
         if self.range_predictor is not None:

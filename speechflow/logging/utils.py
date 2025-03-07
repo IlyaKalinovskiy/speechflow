@@ -7,7 +7,19 @@ import logging
 import traceback
 import multiprocessing
 
-__all__ = ["trace", "log_to_console", "log_to_file", "log_profiler", "track_process"]
+from os import environ as env
+
+from speechflow.utils.checks import str_to_bool
+
+__all__ = [
+    "trace",
+    "log_to_console",
+    "log_to_file",
+    "log_profiler",
+    "track_process",
+    "set_verbose_logging",
+    "is_verbose_logging",
+]
 
 
 def trace(
@@ -103,6 +115,14 @@ def track_process(name: str, pid: int, auto_terminate: bool = False):
     for handler in logger.handlers:
         if isinstance(handler, ZeroMQFileHandler):
             handler.log(message)
+
+
+def set_verbose_logging():
+    env["VERBOSE"] = "True"
+
+
+def is_verbose_logging():
+    return str_to_bool(env.get("VERBOSE", "False"))
 
 
 if __name__ == "__main__":

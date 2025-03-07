@@ -287,9 +287,9 @@ class VocosLightningEngine(pl.LightningModule):
         kwargs = self._get_kwargs(inputs)
 
         # train discriminator
-        if optimizer_idx == 0 and self.train_discriminator and self.global_step > 10_000:
+        if optimizer_idx == 0 and self.train_discriminator:
             with torch.no_grad():
-                audio_hat, _, _ = self(inputs, **kwargs)
+                audio_hat, _, _ = self(inputs, discriminator_step=True, **kwargs)
 
             real_score_mp, gen_score_mp, _, _ = self.multiperiod_disc(
                 y=audio_input,
@@ -323,6 +323,7 @@ class VocosLightningEngine(pl.LightningModule):
         # train generator
         if optimizer_idx == 1:
             audio_hat, _, inner_losses = self(inputs, **kwargs)
+
             if self.train_discriminator:
                 _, gen_score_mp, fmap_rs_mp, fmap_gs_mp = self.multiperiod_disc(
                     y=audio_input,

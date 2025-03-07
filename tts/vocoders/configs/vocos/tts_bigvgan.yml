@@ -47,7 +47,7 @@ engine:
     auxiliary_loss_coeff: 1.0
     decay_mel_coeff: false
     num_warmup_steps: 0  # Optimizers warmup steps
-    pretrain_mel_steps: 10000  # 0 means GAN objective from the first iteration
+    pretrain_mel_steps: 0  # 0 means GAN objective from the first iteration
     use_cqtd_disc: true
     use_sm_loss: false
     use_wavlm_loss: false
@@ -126,13 +126,14 @@ model:
       postnet_type: ~
 
       va_variances:
-        0: [spectrogram_style_encoder]
+        0: [spectrogram_style_encoder, biometric_style_encoder]
         1: [durations]
         2: [energy, pitch]
       va_variance_params:
         spectrogram_style_encoder:
           tag: style_emb
           as_encoder: true
+          cat_to_content: [0]
           predictor_type: StyleEncoder
           predictor_params:
             vp_params:
@@ -140,7 +141,20 @@ model:
               source: spectrogram
               source_dim: 100
               random_chunk: false
-              style_emb_dim: 32
+              style_emb_dim: 128
+              use_gmvae: trueV
+              gmvae_n_components: 16
+        biometric_style_encoder:
+          tag: bio_style_emb
+          as_encoder: true
+          cat_to_content: [1, 2]
+          predictor_type: StyleEncoder
+          predictor_params:
+            vp_params:
+              base_encoder_type: SimpleStyle
+              source: ecapa_emb
+              source_dim: 192
+              style_emb_dim: 128
               use_gmvae: true
               gmvae_n_components: 16
         durations:

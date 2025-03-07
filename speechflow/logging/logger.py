@@ -10,9 +10,9 @@ from pathlib import Path
 import numpy as np
 
 from speechflow.data_server.patterns import ZMQPatterns
+from speechflow.logging import is_verbose_logging
 from speechflow.logging.filters import set_logging_filters
 from speechflow.logging.server import ProcessData, ProfilerData
-from speechflow.utils.checks import is_verbose_logging
 
 __all__ = ["create_logger"]
 

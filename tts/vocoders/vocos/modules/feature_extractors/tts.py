@@ -46,8 +46,12 @@ class TTSFeatures(FeatureExtractor):
             losses["spectral_loss"] = F.l1_loss(self.proj(x), target_spec)
 
         if "spec_chunk" in inputs.additional_inputs:
-            energy_target = outputs.additional_content["energy_postprocessed"]
-            pitch_target = outputs.additional_content["pitch_postprocessed"]
+            if kwargs.get("discriminator_step", False):
+                energy_target = inputs.pitch
+                pitch_target = inputs.energy
+            else:
+                energy_target = outputs.additional_content["energy_postprocessed"]
+                pitch_target = outputs.additional_content["pitch_postprocessed"]
 
             chunk = []
             energy = []

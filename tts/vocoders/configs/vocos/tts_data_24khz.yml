@@ -40,7 +40,8 @@ parser:
 
 preproc:
   pipe: [load_audio, load_audio_segmentation,
-         voice_bio_wespeaker, speech_quality, ssl,
+         voice_bio_speechbrain, store_bio_emb, voice_bio_wespeaker,
+         speech_quality, ssl,
          spectrogram, melscale, add_gate_value, timedim_interpolation,
          pitch, enhancement_energy, enhancement_pitch,
          add_pauses_from_timestamps, add_service_tokens, text, xpbert, lm,
@@ -53,6 +54,15 @@ preproc:
       pipe_cfg:
         load:
           sample_rate: 24000
+    voice_bio_speechbrain:
+      type: VoiceBiometricProcessor
+      model_type: speechbrain
+      max_audio_duration: 5
+      random_crop: true
+    store_bio_emb:
+      type: store_field
+      key: speaker_emb
+      as_key: ecapa_emb
     voice_bio_wespeaker:
       type: VoiceBiometricProcessor
       model_type: wespeaker
@@ -151,8 +161,8 @@ processor:
       data_root: *data_root
       dump_path: !join [*data_root, *dump_folder]
       fields: [file_path, speaker_name]
-      functions: [VoiceBiometricProcessor, SpeechQualityAssessment,
-                  PitchProcessor, XPBertProcessor, LMProcessor, SSLProcessor]
+      handlers: [VoiceBiometricProcessor, SpeechQualityAssessment, SSLProcessor,
+                 PitchProcessor, XPBertProcessor, LMProcessor]
       mode: file_path
       # skip_samples_without_dump: true
     debug:

@@ -19,9 +19,8 @@ from speechflow.data_pipeline.core.parser_types import (
     MultiMetadataTransform,
 )
 from speechflow.data_pipeline.core.registry import PipeRegistry
-from speechflow.logging import trace
+from speechflow.logging import is_verbose_logging, trace
 from speechflow.logging.logger import create_logger
-from speechflow.utils.checks import is_verbose_logging
 
 __all__ = ["BaseDSParser", "multi_transform"]
 

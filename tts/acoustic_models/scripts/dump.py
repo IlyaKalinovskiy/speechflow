@@ -24,6 +24,7 @@ from speechflow.data_pipeline.collate_functions.tts_collate import TTSCollateOut
 from speechflow.data_pipeline.core import Batch
 from speechflow.data_server.helpers import LoaderParams, init_data_loader_from_config
 from speechflow.io import Config, json_dump_to_file
+from speechflow.logging import set_verbose_logging
 from speechflow.logging.server import LoggingServer
 
 LOGGER = logging.getLogger("root")
@@ -284,6 +285,9 @@ def main(
     else:
         contours_clustering = False
 
+    if "trim" in cfg["preproc"]["pipe"]:
+        cfg["preproc"]["pipe"].remove("trim")
+
     if attributes == [""]:
         attributes = []
 
@@ -301,7 +305,7 @@ def main(
             if (
                 prev_cfg["preproc"]["pipe"] != cfg["preproc"]["pipe"]
                 or prev_dump_cfg.get("fields") != curr_dump_cfg.get("fields")
-                or prev_dump_cfg.get("functions") != curr_dump_cfg.get("functions")
+                or prev_dump_cfg.get("handlers") != curr_dump_cfg.get("handlers")
             ):
                 if click.confirm(
                     f"The pipe configuration has been changed, do you want to remove the old dump? ({dump_folder.as_posix()})"
@@ -484,4 +488,5 @@ if __name__ == "__main__":
         dump.py -cd=../configs/tts/tts_data_24khz.yml -nproc=10 -ngpu=1
 
     """
+    set_verbose_logging()
     main(**parse_args().__dict__)

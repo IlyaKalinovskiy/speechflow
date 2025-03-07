@@ -796,7 +796,7 @@ class XPBertProcessor(BaseDSProcessor):  # https://github.com/VinAIResearch/XPho
         self._model = AutoModel.from_pretrained(self._model_name)
         self._model.to(self.device).eval()
 
-    @PipeRegistry.registry(inputs={"sent", "transcription_text"}, outputs={"lm_feat"})
+    @PipeRegistry.registry(inputs={"sent", "transcription_text"}, outputs={"xpbert_feat"})
     @lazy_initialization
     def process(self, ds: TextDataSample) -> TextDataSample:
         ds = super().process(ds)

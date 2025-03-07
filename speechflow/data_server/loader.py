@@ -13,8 +13,7 @@ from speechflow.data_server.server import SubscriberTypes
 from speechflow.data_server.system_messages import DataClientMessages as DCM
 from speechflow.data_server.system_messages import DataServerMessages as DSM
 from speechflow.io import Config, check_path, tp_PATH
-from speechflow.logging import log_to_file, trace
-from speechflow.utils.checks import is_verbose_logging
+from speechflow.logging import is_verbose_logging, log_to_file, trace
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.profiler import Profiler
 from speechflow.utils.serialize import Serialize
