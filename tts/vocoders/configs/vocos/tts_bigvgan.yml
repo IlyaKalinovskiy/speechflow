@@ -142,7 +142,7 @@ model:
               source_dim: 100
               random_chunk: false
               style_emb_dim: 128
-              use_gmvae: trueV
+              use_gmvae: true
               gmvae_n_components: 16
         biometric_style_encoder:
           tag: bio_style_emb

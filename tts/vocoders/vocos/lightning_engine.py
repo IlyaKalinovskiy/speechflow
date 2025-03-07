@@ -2,6 +2,7 @@ import io
 import math
 import typing as tp
 import logging
+import itertools
 
 import numpy as np
 import torch
@@ -109,6 +110,7 @@ class VocosLightningEngine(pl.LightningModule):
         self.saver = saver
 
         self.multiperiod_disc = MultiPeriodDiscriminator()
+
         if use_cqtd_disc:
             self.multiresd_disc = MultiScaleSubbandCQTDiscriminator(
                 sample_rate=sample_rate
@@ -170,7 +172,7 @@ class VocosLightningEngine(pl.LightningModule):
 
     def on_fit_start(self):
         self.batch_processor.set_device(self.device)
-        for loss in [self.sm_loss, self.cdpam_loss]:
+        for loss in [self.sm_loss, self.wavlm_loss, self.cdpam_loss]:
             if loss is not None:
                 if self.hparams.loss_device == "cpu":
                     loss.set_device(str(self.device))
@@ -178,10 +180,9 @@ class VocosLightningEngine(pl.LightningModule):
                     loss.set_device(self.hparams.loss_device)
 
     def configure_optimizers(self):
-        disc_params = [
-            {"params": self.multiperiod_disc.parameters()},
-            {"params": self.multiresd_disc.parameters()},
-        ]
+        disc_params = itertools.chain(
+            self.multiresd_disc.parameters(), self.multiperiod_disc.parameters()
+        )
         gen_params = [
             {"params": self.feature_extractor.parameters()},
             {"params": self.backbone.parameters()},
@@ -189,10 +190,12 @@ class VocosLightningEngine(pl.LightningModule):
         ]
 
         opt_disc = torch.optim.AdamW(
-            disc_params, lr=self.hparams.initial_learning_rate, betas=(0.8, 0.9)
+            disc_params,
+            lr=self.hparams.initial_learning_rate,
+            betas=(0.8, 0.99),
         )
         opt_gen = torch.optim.AdamW(
-            gen_params, lr=self.hparams.initial_learning_rate, betas=(0.8, 0.9)
+            gen_params, lr=self.hparams.initial_learning_rate, betas=(0.8, 0.99)
         )
 
         max_steps = self.trainer.max_steps // 2  # Max steps per optimizer
@@ -206,6 +209,13 @@ class VocosLightningEngine(pl.LightningModule):
             num_warmup_steps=self.hparams.num_warmup_steps,
             num_training_steps=max_steps,
         )
+
+        if self.hparams.disc_pretrain_path is not None:
+            state_dict = torch.load(self.hparams.disc_pretrain_path, map_location="cpu")
+            try:
+                opt_disc.load_state_dict(state_dict["optim_d"])
+            except Exception as e:
+                LOGGER.error(e)
 
         return (
             [opt_disc, opt_gen],
