@@ -71,8 +71,7 @@ preproc:
       pipe_cfg:
         trim:
           random_chunk: true
-          num_samples_per_chunk: 40952  # 40952 for DAC head  # hop=320
-          # num_samples_per_chunk: 30720  # hop=240,256
+          num_samples_per_chunk: 40952  # 40960 or 40952 for DAC head  # hop=320
     mu_law:
       type: SignalProcessor
       pipe: [mu_law_encode]

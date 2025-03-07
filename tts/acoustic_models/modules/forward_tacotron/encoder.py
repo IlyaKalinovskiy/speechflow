@@ -49,7 +49,10 @@ class ForwardEncoder(Component):
 
     @property
     def output_dim(self):
-        return self.encoder.output_dim
+        output_dim = self.encoder.output_dim
+        if self.params.cat_ling_feat_after_encode:
+            output_dim += self.params.token_emb_dim
+        return [output_dim, output_dim]
 
     def encode(self, x: ComponentOutput):
         return self.encoder(x), self.adaptor_encoder(x)
@@ -59,12 +62,19 @@ class ForwardEncoder(Component):
 
         if self.params.cat_ling_feat_after_encode:
             ling_feat = x.embeddings["ling_feat"]
-            encoder_content = torch.cat([encoder_output.content, ling_feat], dim=2)
+            encoder_content = torch.cat([encoder_output.get_content(0), ling_feat], dim=2)
             adaptor_encoder_content = torch.cat(
-                [adaptor_encoder_output.content, ling_feat], dim=2
+                [adaptor_encoder_output.get_content(0), ling_feat], dim=2
             )
             content = [encoder_content, adaptor_encoder_content]
         else:
-            content = [encoder_output.content, adaptor_encoder_output.content]
+            content = [
+                encoder_output.get_content(0),
+                adaptor_encoder_output.get_content(0),
+            ]
 
-        return EncoderOutput.copy_from(x).set_content(content)
+        content_lens = [
+            encoder_output.get_content_lengths(0),
+            adaptor_encoder_output.get_content_lengths(0),
+        ]
+        return EncoderOutput.copy_from(x).set_content(content, content_lens)

@@ -86,8 +86,8 @@ class CFMDecoderParams(DecoderParams):
     condition_dim: int = 0
 
     # cfm params
-    cfm_n_timesteps: int = 10
-    cfm_temperature: float = 0.667
+    cfm_n_timesteps: int = 200
+    cfm_temperature: float = 0.67
     cfm_sigma_min: float = 1e-4
 
 
@@ -112,6 +112,16 @@ class CFMDecoder(Component):
             prior_params = WrapperDecoderParams.init_from_parent_params(params)
             prior_params.base_decoder_type = params.prior_decoder_type
             prior_params.base_decoder_params = params.prior_decoder_params
+
+            if "decoder_num_layers" in params.prior_decoder_params:
+                prior_params.decoder_num_layers = params.prior_decoder_params.pop(
+                    "decoder_num_layers"
+                )
+            if "decoder_inner_dim" in params.prior_decoder_params:
+                prior_params.decoder_inner_dim = params.prior_decoder_params.pop(
+                    "decoder_inner_dim"
+                )
+
             prior_params.base_decoder_params["condition"] = params.condition
             prior_params.base_decoder_params["condition_dim"] = params.condition_dim
             self.prior_decoder = WrapperDecoder(prior_params, input_dim)

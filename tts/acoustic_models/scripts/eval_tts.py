@@ -95,6 +95,24 @@ def synthesize(
         else:
             voc_out = None
 
+    from speechflow.data_pipeline.datasample_processors.data_types import (
+        SpectrogramDataSample,
+    )
+    from speechflow.data_pipeline.datasample_processors.spectrogram_processors import (
+        MelProcessor,
+    )
+
+    mel_proc = MelProcessor()
+    ds = SpectrogramDataSample(
+        mel=tts_out.spectrogram,
+        transform_params=tts_ctx.prosody_reference.default.style_transform_params,
+    )
+    ds = mel_proc.denormalize(ds)
+
+    import numpy as np
+
+    np.save(r"M:\Илья\JustAI/tests/dump", ds.mel[0].numpy())
+
     plotting(tts_in, tts_out, doc)
     return voc_out.audio_chunk
 
@@ -102,9 +120,9 @@ def synthesize(
 if __name__ == "__main__":
     device = "cpu"
 
-    tts_model_path = "M:\\Илья\\JustAI\\epoch=29-step=125010.ckpt"
+    tts_model_path = "M:\\Илья\\JustAI\\epoch=29-step=93750_bigvgan.pt"
     voc_model_path = (
-        "M:\\Илья\\JustAI\\vocos_checkpoint_epoch=3_step=141200_val_loss=9.0557.ckpt"
+        "M:\\Илья\\JustAI\\vocos_checkpoint_epoch=9_step=250000_val_loss=6.6804.pt"
     )
     prosody_model_path = None
 
@@ -124,11 +142,11 @@ if __name__ == "__main__":
     tests = [
         {
             "lang": "RU",
-            "speaker_name": "Tatiana",
+            "speaker_name": "Ksyusha",
             "style_reference": Path("M:/Илья/JustAI/30872.wav"),
             "utterances": """
 
-            Россия три года назад «зашла слишком далеко», но сейчас это сделала Украина, заявил Маск. По его мнению, у тех, кто поддерживает «бесконечные смерти в окопах», нет ни эмпатии, ни мозгов.
+            С нача+ла следующего учебного года в школах Петербурга планируют увеличить стоимость школьных обедов, изменение цен затронет все категории школьников.
 
             """,
         },

@@ -292,6 +292,9 @@ class ParallelTTSModel(BaseTorchModel):
             cfg_model["model"]["params"].decoder_output_dim = find_field(
                 cfg_data["preproc"], "linear_to_mel.n_mels"
             )
+            cfg_model["model"]["params"].postnet_output_dim = find_field(
+                cfg_data["preproc"], "linear_to_mel.n_mels"
+            )
 
         if "SSIM" in cfg_model["loss"]:
             max_abs_value = find_field(cfg_data["preproc"], "normalize.max_abs_value")

@@ -4,6 +4,7 @@ import torch
 
 from torch.nn import functional as F
 
+from speechflow.training.losses.vae_loss import VAELoss
 from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
 from tts.acoustic_models.models.tts_model import ParallelTTSModel, ParallelTTSParams
 from tts.acoustic_models.modules.common.blocks import Regression
@@ -21,6 +22,9 @@ class TTSFeatures(FeatureExtractor):
     def __init__(self, params: tp.Union[tp.MutableMapping, TTSFeaturesParams]):
         super().__init__(params)
         self.tts_model = ParallelTTSModel(params)
+        self.vae_loss = VAELoss(
+            scale=0.00002, every_iter=1, begin_iter=1000, end_anneal_iter=10000
+        )
         if params.decoder_output_dim != params.mel_spectrogram_dim:
             self.proj = Regression(params.decoder_output_dim, params.mel_spectrogram_dim)
         else:
@@ -37,18 +41,32 @@ class TTSFeatures(FeatureExtractor):
             additional_content = {}
 
         if isinstance(outputs.spectrogram, list) or outputs.spectrogram.ndim == 4:
-            x = outputs.spectrogram[0]
+            x = outputs.spectrogram[-1]
         else:
             x = outputs.spectrogram
 
         if self.training:
+            spec_loss = 0
             target_spec = inputs.spectrogram
-            losses["spectral_loss"] = F.l1_loss(self.proj(x), target_spec)
+            for predict in outputs.spectrogram:
+                spec_loss = spec_loss + F.l1_loss(self.proj(predict), target_spec)
+
+            losses["spectral_l1_loss"] = spec_loss
+
+            for name, loss in losses.items():
+                if "kl_loss" in name:
+                    losses[name] = self.vae_loss(inputs.global_step, loss, name)[name]
 
         if "spec_chunk" in inputs.additional_inputs:
             if kwargs.get("discriminator_step", False):
                 energy_target = inputs.pitch
                 pitch_target = inputs.energy
+
+                if inputs.ranges:
+                    re = inputs.ranges["energy"]
+                    rp = inputs.ranges["pitch"]
+                    energy_target = energy_target * re[:, 2:3] + re[:, 0:1]
+                    pitch_target = pitch_target * rp[:, 2:3] + rp[:, 0:1]
             else:
                 energy_target = outputs.additional_content["energy_postprocessed"]
                 pitch_target = outputs.additional_content["pitch_postprocessed"]

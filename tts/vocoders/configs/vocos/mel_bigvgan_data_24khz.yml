@@ -32,7 +32,7 @@ parser:
       pad: 0.25
       add_fade: true
     split_by_phrases:
-      max_duration: 10  # 10, 12, 15
+      max_duration: 15  # 10, 12, 15
     check_phoneme_length:
       max_len: 0.4
     get_simple_intonation_type:

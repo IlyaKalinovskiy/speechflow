@@ -48,6 +48,7 @@ engine:
     decay_mel_coeff: false
     num_warmup_steps: 0  # Optimizers warmup steps
     pretrain_mel_steps: 0  # 0 means GAN objective from the first iteration
+    use_cqtd_disc: false
     use_sm_loss: false
     use_wavlm_loss: false
     use_cdpam_loss: false

@@ -17,7 +17,7 @@ __all__ = [
 
 
 class TokenLevelDPParams(TokenLevelPredictorParams):
-    activation_fn: str = "ReLU"
+    activation_fn: str = "SiLU"
     loss_type: str = "l1_loss"
     add_noise: bool = False
     deterministic: bool = False

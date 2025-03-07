@@ -25,8 +25,8 @@ class NSFiSTFTHiFiGANHeadParams(BaseTorchModelParams):
     inner_dim: int = 1024
     condition_dim: int = 64
     upsample_initial_channel: int = 512
-    upsample_rates: tp.Tuple[int, ...] = (10, 4, 2)  # for hop=320
-    upsample_kernel_sizes: tp.Tuple[int, ...] = (20, 8, 4)
+    upsample_rates: tp.Tuple[int, ...] = (8, 4, 2)  # for hop=256
+    upsample_kernel_sizes: tp.Tuple[int, ...] = (16, 8, 4)
     resblock_kernel_sizes: tp.Tuple[int, ...] = (3, 7, 11)
     resblock_dilation_sizes: tp.Tuple[int, ...] = ([1, 3, 5], [1, 3, 5], [1, 3, 5])
     n_fft: int = 20

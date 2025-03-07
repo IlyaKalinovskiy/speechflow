@@ -242,6 +242,8 @@ class VarianceParams(BaseTorchModelParams):
         else:
             self.detach_input = tuple(self.detach_input)
 
+        assert len(self.input_content) == len(self.detach_input)
+
         if self.as_encoder:
             self.dim = self.predictor_params.vp_output_dim
             self.use_target = False

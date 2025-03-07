@@ -103,12 +103,16 @@ def update_config(cfg: Config, n_processes: int, n_gpus: int) -> Config:
     cfg["dataset"]["subsets"] = [cfg["dataset"]["subsets"][0]]
     cfg["dataset"]["split_ratio"] = {cfg["dataset"]["subsets"][0]: [0, 1]}
 
-    cfg["preproc"]["pipe"] = [
-        item for item in cfg["preproc"]["pipe"] if "norm" not in item
-    ]
-    cfg["preproc"]["pipe"] = [
-        item for item in cfg["preproc"]["pipe"] if "aug" not in item
-    ]
+    if not cfg["processor"]["dump"].get("full_dump", False):
+        if "trim" in cfg["preproc"]["pipe"]:
+            cfg["preproc"]["pipe"].remove("trim")
+
+        cfg["preproc"]["pipe"] = [
+            item for item in cfg["preproc"]["pipe"] if "norm" not in item
+        ]
+        cfg["preproc"]["pipe"] = [
+            item for item in cfg["preproc"]["pipe"] if "aug" not in item
+        ]
 
     cfg["singleton_handlers"]["handlers"] = [
         item
@@ -120,9 +124,7 @@ def update_config(cfg: Config, n_processes: int, n_gpus: int) -> Config:
     cfg["collate"]["type"] = cfg["collate"]["type"].replace("WithPrompt", "")
     cfg["data_server"]["n_processes"] = n_processes
     cfg["data_server"]["n_gpus"] = n_gpus
-
-    if "dump" in cfg["processor"]:
-        cfg["processor"]["dump"]["skip_samples_without_dump"] = False
+    cfg["processor"]["dump"]["skip_samples_without_dump"] = False
 
     for item in cfg["preproc"]["pipe_cfg"].values():
         if item.get("type") == "VoiceBiometricProcessor":
@@ -284,9 +286,6 @@ def main(
         cfg["preproc"]["pipe"].remove("contours")
     else:
         contours_clustering = False
-
-    if "trim" in cfg["preproc"]["pipe"]:
-        cfg["preproc"]["pipe"].remove("trim")
 
     if attributes == [""]:
         attributes = []

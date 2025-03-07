@@ -2,7 +2,7 @@
 
 dirs:
   data_root: &data_root ../../../examples/simple_datasets/speech/SEGS
-  dump_folder: &dump_folder dump_24KHz_lm_ssl
+  dump_folder: &dump_folder dump_24KHz
 
 file_search:
   ext: .TextGridStage3
@@ -10,7 +10,7 @@ file_search:
 
 data_server:
   n_processes: { default: 8, debug: 1 }
-  n_gpus: { default: 1, debug: 0 }
+  # n_gpus: { default: 1, debug: 0 }
 
 dataset:
   subsets: [train, test]
@@ -25,14 +25,14 @@ parser:
   type: TTSDSParser
   dump:
     default: !join [*data_root, *dump_folder]  # fast dataset load
-    debug: ~
+    # debug: ~
   pipe: [audio_strip, split_by_phrases, check_phoneme_length, get_simple_intonation_type]
   pipe_cfg:
     audio_strip:
       pad: 0.25
       add_fade: true
     split_by_phrases:
-      max_duration: 15  # 10, 12, 15
+      max_duration: 10  # 10, 12, 15
     check_phoneme_length:
       max_len: 0.4
     get_simple_intonation_type:
@@ -41,12 +41,11 @@ parser:
 preproc:
   pipe: [load_audio, load_audio_segmentation,
          voice_bio_speechbrain, store_bio_emb, voice_bio_wespeaker, mean_bio_embedding,
-         speech_quality, spectrogram, melscale, add_gate_value,
+         speech_quality, ssl,
+         spectrogram, melscale, add_gate_value, timedim_interpolation,
          pitch, enhancement_energy, enhancement_pitch,
-         add_pauses_from_timestamps, add_service_tokens, text,
-         int_durations, calc_invert_durations, transcription_by_frames, float_durations,
-         curvature_estimate_by_phoneme, average_by_time, norm_1, aggregate_by_phoneme, norm_2,
-         lm, ssl, timedim_interpolation]
+         add_pauses_from_timestamps, add_service_tokens, text, xpbert, lm,
+         calc_durations, average_by_time, norm, aggregate_by_phoneme]
   pipe_cfg:
     load_audio:
       type: SignalProcessor
@@ -57,8 +56,8 @@ preproc:
     voice_bio_speechbrain:
       type: VoiceBiometricProcessor
       model_type: speechbrain
-      max_audio_duration: 5
-      random_crop: true
+      # max_audio_duration: 5
+      # random_crop: true
     store_bio_emb:
       type: store_field
       key: speaker_emb
@@ -66,28 +65,27 @@ preproc:
     voice_bio_wespeaker:
       type: VoiceBiometricProcessor
       model_type: wespeaker
-      max_audio_duration: 5
-      random_crop: true
+      # max_audio_duration: 5
+      # random_crop: true
     speech_quality:
       type: SpeechQualityAssessment
-      max_audio_duration: 5
-      random_crop: true
+      # max_audio_duration: 5
+      # random_crop: true
     spectrogram:
       type: SpectralProcessor
       pipe: [magnitude, energy]
       pipe_cfg:
         magnitude:
           n_fft: 1024
-          hop_len: 320
+          hop_len: 256
           win_len: 1024
+          center: False  # False for BigVGAN
     melscale:
       type: MelProcessor
-      pipe: [linear_to_mel, amp_to_db, normalize]
+      pipe: [linear_to_mel, amp_to_db]  # normalize
       pipe_cfg:
         linear_to_mel:
-          n_mels: 80
-          f_min: 0
-          f_max: 8000
+          n_mels: 100
     pitch:
       type: PitchProcessor
       method: torchcrepe
@@ -103,41 +101,17 @@ preproc:
       step: 0.05
       calc_noise_level: true
     text:
-      type: TextProcessor
-      lang: { default: MULTILANG, ru: RU, en: EN, ml: MULTILANG }
-    norm_1:
-      type: normalize
-      attributes: [energy, pitch]
-      normalize_by: speaker
-    aggregate_by_phoneme:
-      attributes: [energy, pitch]
-      agg: mean
-    curvature_estimate_by_phoneme:
-      attributes: [energy, pitch]
-    norm_2:
-      type: normalize
-      attributes: [durations]
-      normalize_by: speaker
-    average_by_time:
-      attributes: [durations, energy, pitch, rate]
-      use_quantile: true
-    int_durations:
-      type: calc_durations
-      as_int: true
-    calc_invert_durations:
-      token_level: true
-    float_durations:
-      type: calc_durations
-      as_int: False
+      type: TTSTextProcessor
+      lang: MULTILANG
+      # lang: { default: MULTILANG, ru: RU, en: EN, ml: MULTILANG }
+    xpbert:
+      type: XPBertProcessor
     lm:
       type: LMProcessor
       lang: { default: MULTILANG, ru: RU, en: EN }
-      model_dir:
-        default: multilingual_text_parser/data/common/xlm-roberta-large
-        ru: multilingual_text_parser/data/ru/homo_classifier
-        en: multilingual_text_parser/data/en/roberta_large
-        ml: multilingual_text_parser/data/common/xlm-roberta-large
-      model_name: { default: model, ru: ruRoBerta }
+      model_name:
+        default: google-bert/bert-base-multilingual-cased
+        ru: ai-forever/sbert_large_nlu_ru
       by_transcription: False
     ssl:
       type: SSLProcessor
@@ -145,6 +119,16 @@ preproc:
     timedim_interpolation:
       features: [ssl_feat]
       shape_as: mel
+    average_by_time:
+      attributes: [durations, energy, pitch, rate]
+      use_quantile: true
+    norm:
+      type: normalize
+      attributes: [energy, pitch]
+      normalize_by: speaker
+    aggregate_by_phoneme:
+      attributes: [energy, pitch]
+      agg: mean
 
 singleton_handlers:
   handlers: [SpeakerIDSetter, StatisticsRange, MeanBioEmbeddings]
@@ -172,24 +156,23 @@ processor:
       data_root: *data_root
       dump_path: !join [*data_root, *dump_folder]
       fields: [file_path, speaker_name]
-      handlers: [VoiceBiometricProcessor, SpeechQualityAssessment,
-                 PitchProcessor, LMProcessor, SSLProcessor]
+      handlers: [VoiceBiometricProcessor, SpeechQualityAssessment, SSLProcessor,
+                 PitchProcessor, XPBertProcessor, LMProcessor]
       mode: file_path
-      # skip_samples_without_dump: true
-    debug:
-      data_root: *data_root
-      folder_path: !join [*data_root, *dump_folder]
-      mode: file_path
-      full_dump: true
+      skip_samples_without_dump: true
+    # debug:
+    #  data_root: *data_root
+    #  dump_path: !join [*data_root, *dump_folder]
+    #  mode: file_path
+    #  full_dump: true
 
 sampler:
   train:
     type: WeightedSampler
     comb_by_len: true
     epoch_size: 100000
-    fields_to_compute_weight: [lang, speaker_name, intonation_type, uid]
-    # fields_to_compute_weight: [speaker_name, intonation_type]  # for finetune
-    chunks_ratio: [0.3, 0.3, 0.2, 0.2]
+    fields_to_compute_weight: [lang, speaker_name, uid]
+    chunks_ratio: [0.4, 0.4, 0.2]
   test:
     type: SimpleSampler
     comb_by_len: true

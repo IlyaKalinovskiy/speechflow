@@ -74,8 +74,10 @@ class ComponentInput:
     @classmethod
     def copy_from(cls, x: "ComponentInput", deep: bool = False):
         new = cls(
-            content=x.content,
-            content_lengths=x.content_lengths,
+            content=list(x.content) if isinstance(x.content, list) else x.content,
+            content_lengths=list(x.content_lengths)
+            if isinstance(x.content_lengths, list)
+            else x.content_lengths,
             embeddings=x.embeddings,
             model_inputs=x.model_inputs,
             additional_content=x.additional_content,
@@ -83,35 +85,51 @@ class ComponentInput:
         )
         return deepcopy(new) if deep else new
 
-    def get_content(self) -> tp.List[torch.Tensor]:
-        return (
+    def get_content(self, idx: tp.Optional[int] = None) -> tp.List[torch.Tensor]:
+        content = (
             [self.content] if not isinstance(self.content, tp.Sequence) else self.content
         )
+        if idx is not None:
+            return content[idx]
+        else:
+            return content
 
-    def get_content_lengths(self) -> tp.List[torch.Tensor]:
-        return (
+    def get_content_lengths(self, idx: tp.Optional[int] = None) -> tp.List[torch.Tensor]:
+        lens = (
             self.content_lengths
             if isinstance(self.content_lengths, tp.Sequence)
             else [self.content_lengths]
         )
+        if idx is not None:
+            return lens[idx]
+        else:
+            return lens
 
     def get_content_and_mask(
         self, idx: int = 0
     ) -> tp.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        x = self.get_content()[idx]
-        x_lens = self.get_content_lengths()[idx]
+        x = self.get_content(idx)
+        x_lens = self.get_content_lengths(idx)
         x_mask = get_mask_from_lengths(x_lens, max_length=x.shape[1])
         return x, x_lens, x_mask
 
-    def set_content(self, x: Tensor, x_lens: tp.Optional[Tensor] = None, idx: int = 0):
-        if not isinstance(self.content, tp.Sequence):
+    def set_content(
+        self, x: Tensor, x_lens: tp.Optional[Tensor] = None, idx: tp.Optional[int] = None
+    ):
+        if (
+            not isinstance(self.content, tp.Sequence)
+            or isinstance(x, tp.Sequence)
+            or idx is None
+        ):
             self.content = x
             if x_lens is not None:
                 self.content_lengths = x_lens
-        else:
+        elif isinstance(self.content, (list, tuple)) and isinstance(idx, int):
             self.content[idx] = x
             if x_lens is not None:
                 self.content_lengths[idx] = x_lens
+        else:
+            raise NotImplementedError
 
         return self
 

@@ -172,7 +172,7 @@ class VocosLightningEngine(pl.LightningModule):
 
     def on_fit_start(self):
         self.batch_processor.set_device(self.device)
-        for loss in [self.sm_loss, self.wavlm_loss, self.cdpam_loss]:
+        for loss in [self.sm_loss, self.cdpam_loss]:
             if loss is not None:
                 if self.hparams.loss_device == "cpu":
                     loss.set_device(str(self.device))
@@ -188,6 +188,7 @@ class VocosLightningEngine(pl.LightningModule):
             {"params": self.backbone.parameters()},
             {"params": self.head.parameters()},
         ]
+        gen_params = [item for item in gen_params if item["params"]]
 
         opt_disc = torch.optim.AdamW(
             disc_params,
@@ -214,6 +215,10 @@ class VocosLightningEngine(pl.LightningModule):
             state_dict = torch.load(self.hparams.disc_pretrain_path, map_location="cpu")
             try:
                 opt_disc.load_state_dict(state_dict["optim_d"])
+            except Exception as e:
+                LOGGER.error(e)
+            try:
+                opt_gen.load_state_dict(state_dict["optim_g"])
             except Exception as e:
                 LOGGER.error(e)
 
@@ -323,10 +328,10 @@ class VocosLightningEngine(pl.LightningModule):
             self.log("discriminator/multi_period_loss", loss_mp)
             self.log("discriminator/multi_res_loss", loss_mrd)
 
-            if self.training and loss_mp < 1.0e-8:
-                raise RuntimeError(
-                    "Unexpected discriminator/multi_period_loss is zero values"
-                )
+            # if self.training and loss_mp < 1.0e-8:
+            #     raise RuntimeError(
+            #         "Unexpected discriminator/multi_period_loss is zero values"
+            #     )
 
             return loss
 
