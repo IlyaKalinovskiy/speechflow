@@ -1,4 +1,5 @@
 import typing as tp
+import inspect
 
 from pydantic import Field
 from torch import nn
@@ -47,7 +48,10 @@ class WrapperDecoder(Component):
             dec_params.max_input_length = params.max_output_length
 
         self.decoder = dec_cls(dec_params, input_dim)
-        setattr(self.decoder, "hook_update_content", self.hook_update_content)
+
+        for method in inspect.getmembers(self, predicate=inspect.ismethod):
+            if method[0].startswith("hook_"):
+                setattr(self.decoder, method[0], getattr(self, method[0]))
 
         if components == TTS_ENCODERS:
             self.gate_layer = nn.Linear(params.decoder_inner_dim, 1)

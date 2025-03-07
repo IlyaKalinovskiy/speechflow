@@ -534,6 +534,7 @@ class TTSEvaluationInterface:
             lang_id=self.lang_id_map.get(ctx.prosody_reference.default.lang, 0),
             mel=ctx.prosody_reference.default.style_spectrogram,
             speaker_name=ctx.prosody_reference.default.speaker_name,
+            speaker_id=ctx.prosody_reference.default.speaker_id,
             speaker_emb=ctx.prosody_reference.default.speaker_emb,
             speaker_emb_mean=ctx.prosody_reference.default.speaker_emb_mean,
             speech_quality_emb=torch.FloatTensor([[opt.speech_quality] * 4]),

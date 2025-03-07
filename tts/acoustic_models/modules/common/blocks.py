@@ -73,18 +73,27 @@ class Regression(nn.Module):
         activation_fn: str = "Identity",
     ):
         super().__init__()
-        self.linear1 = nn.Linear(in_features=in_dim, out_features=in_dim)
-        self.linear2 = nn.Linear(in_features=in_dim, out_features=out_dim)
-        self.drop = nn.Dropout(p_dropout)
+
+        if in_dim != out_dim:
+            self.fc1 = nn.Linear(in_features=in_dim, out_features=in_dim)
+            self.fc2 = nn.Linear(in_features=in_dim, out_features=out_dim)
+        else:
+            self.fc1 = self.fc2 = None
+
         self.af1 = nn.SiLU()
         self.af2 = getattr(nn, activation_fn)()
+
+        self.drop = nn.Dropout(p_dropout)
 
     def forward(self, x, x_mask=None):
         if x.ndim == 2:
             x = x.unsqueeze(1)
 
-        y = self.af1(self.linear1(x).transpose(2, 1))
-        y = self.af2(self.linear2(self.drop(y.transpose(2, 1))))
+        if self.fc1 is None:
+            y = self.af2(x)
+        else:
+            y = self.af1(self.fc1(x))
+            y = self.af2(self.fc2(self.drop(y)))
 
         if x_mask is not None:
             y = apply_mask(y, x_mask)

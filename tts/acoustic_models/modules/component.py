@@ -132,6 +132,11 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
     ) -> torch.Tensor:
         return x
 
+    def hook_update_condition(
+        self, c: torch.Tensor, inputs: ComponentInput
+    ) -> torch.Tensor:
+        return c
+
     def inference_step(self, inputs: ComponentInput, **kwargs) -> ComponentOutput:
         return self.forward_step(inputs, **kwargs)
 
@@ -213,7 +218,8 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
             g = [t.expand([b] + list(t.shape)[1:]) for t in g]
 
         g = torch.cat(g, dim=-1).squeeze(2)
-        return g
+
+        return self.hook_update_condition(g, inputs)
 
     @staticmethod
     def get_chunk(

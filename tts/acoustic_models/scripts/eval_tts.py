@@ -140,6 +140,7 @@ if __name__ == "__main__":
             voc,
             test["utterances"],
             test["lang"],
+            speaker_name=test["speaker_name"],
             speaker_reference=test["style_reference"],
             style_reference=test["style_reference"],
             seed=get_seed(),

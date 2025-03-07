@@ -98,6 +98,7 @@ model:
     decoder_output_dim: 80
     decoder_params:
       use_prior_decoder: false
+      use_cfg: true
       condition: [speaker_emb]
       condition_dim: 64
       estimator_type: DiTEncoder

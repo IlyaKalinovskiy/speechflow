@@ -48,6 +48,11 @@ class CFMEstimator(WrapperDecoder, BaseEstimator):
     ) -> torch.Tensor:
         return self.time_cond_layer(x, inputs.additional_content["time_emb"])
 
+    def hook_update_condition(
+        self, c: torch.Tensor, inputs: ComponentInput
+    ) -> torch.Tensor:
+        return inputs.additional_content.get("cfg_condition_masked", c)
+
     def forward(
         self,
         x: torch.Tensor,
@@ -72,6 +77,9 @@ class CFMDecoderParams(DecoderParams):
     use_prior_decoder: bool = False
     prior_decoder_type: str = "RNNEncoder"
     prior_decoder_params: dict = Field(default_factory=lambda: {})
+
+    use_cfg: bool = False
+    cfg_p_dropout: float = 0.1
 
     # condition
     condition: tp.Tuple[str, ...] = ()
@@ -110,6 +118,14 @@ class CFMDecoder(Component):
         else:
             self.prior_decoder = Regression(input_dim, params.decoder_output_dim)
 
+        if self.params.use_cfg:
+            self.fake_content = torch.nn.Parameter(
+                torch.zeros(1, 1, params.decoder_output_dim)
+            )
+            self.fake_condition = torch.nn.Parameter(torch.zeros(1, params.condition_dim))
+        else:
+            self.fake_content = self.fake_condition = None
+
     @property
     def output_dim(self):
         return self.params.decoder_output_dim
@@ -123,6 +139,30 @@ class CFMDecoder(Component):
         else:
             mu = self.prior_decoder(x)
 
+        if self.params.use_cfg:
+            # CFG
+            # mask content information for better diversity for flow-matching, separate masking for speaker and content
+
+            cfg_rand = torch.rand(y.shape[0], 1, device=y.device)
+            cfg_mask_mu = (cfg_rand > self.params.cfg_p_dropout * 2) | (
+                cfg_rand < self.params.cfg_p_dropout
+            )
+            cfg_mask_cond = cfg_rand > self.params.cfg_p_dropout
+
+            cfg_mask_mu = cfg_mask_mu.unsqueeze(-1)
+            mu_masked = mu * cfg_mask_mu + ~cfg_mask_mu * self.fake_content.repeat(
+                y.shape[0], y.shape[1], 1
+            )
+
+            c = self.get_condition(inputs, self.params.condition)
+            cfg_mask_cond = cfg_mask_cond.unsqueeze(-1)
+            c_masked = c * cfg_mask_cond + ~cfg_mask_cond * self.fake_condition.repeat(
+                y.shape[0], 1, 1
+            )
+            inputs.additional_content["cfg_condition_masked"] = c_masked
+        else:
+            mu_masked = mu
+
         # pad = 16 - mu.shape[1] % 16
         # if pad != 16:
         #     mu = F.pad(mu.transpose(2, 1), (0, pad), value=-4).transpose(1, 2)
@@ -130,7 +170,7 @@ class CFMDecoder(Component):
         #     y = F.pad(y.transpose(2, 1), (0, pad), value=-4).transpose(1, 2)
 
         cfm_loss, _ = self.decoder.compute_loss(
-            mu=mu,
+            mu=mu_masked,
             mu_mask=x_mask,
             target=y,
             inputs=inputs,

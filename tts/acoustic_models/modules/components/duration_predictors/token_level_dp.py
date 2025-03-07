@@ -29,7 +29,8 @@ class TokenLevelDP(TokenLevelPredictor):
 
     def postprocessing(self, predict):
         if self.params.deterministic:
-            predict = (torch.sigmoid(predict) > 0.5).sum(dim=-1).float()
+            predict[:, :, :-1] = torch.sigmoid(predict[:, :, :-1]) > 0.5
+            predict = predict.sum(dim=-1)
         else:
             if self.params.var_params.log_scale:  # type: ignore
                 predict = torch.expm1(predict)
