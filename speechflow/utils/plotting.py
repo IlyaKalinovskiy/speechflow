@@ -265,7 +265,7 @@ def plot_spectrogram(
         axis="x", which="minor", length=2.0, color=(1.0,) * 4, labelsize="large"
     )
 
-    if signal is not None:
+    if signal:
         if not isinstance(signal, dict):
             signal = {"signal": signal}
 

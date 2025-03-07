@@ -5,7 +5,7 @@ import argparse
 
 from pathlib import Path
 
-from multilingual_text_parser import TextParser
+from multilingual_text_parser.parser import TextParser
 
 from annotator.asr_services import GoogleASR, OpenAIASR, YandexASR
 from speechflow.data_pipeline.dataset_parsers import EasyDSParser

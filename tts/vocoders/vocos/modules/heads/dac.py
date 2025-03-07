@@ -1,11 +1,12 @@
 import typing as tp
 
+from torch import nn
+
 from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing.audio_codecs import (
     DescriptAC,
 )
 from speechflow.io import tp_PATH
 from speechflow.training.base_model import BaseTorchModelParams
-from tts.acoustic_models.modules.common.blocks import Regression
 from tts.vocoders.vocos.modules.heads.base import WaveformGenerator
 
 __all__ = ["DACHead", "DACHeadParams"]
@@ -21,10 +22,8 @@ class DACHead(WaveformGenerator):
 
     def __init__(self, params: DACHeadParams):
         super().__init__(params)
-        self.proj = Regression(
-            params.input_dim, self.dac_model.embedding_dim, hidden_dim=params.input_dim
-        )
         self.dac_model = DescriptAC(pretrain_path=params.pretrain_path)
+        self.proj = nn.Linear(params.input_dim, self.dac_model.embedding_dim)
 
     def forward(self, x, **kwargs):
         z_hat = self.proj(x)

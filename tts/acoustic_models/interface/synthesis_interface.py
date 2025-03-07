@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import multilingual_text_parser
 
-from multilingual_text_parser import Doc, EmptyTextError, Sentence
+from multilingual_text_parser.data_types import Doc, EmptyTextError, Sentence
 
 import speechflow
 

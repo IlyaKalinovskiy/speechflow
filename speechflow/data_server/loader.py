@@ -142,12 +142,12 @@ class DataLoader:
     def _recv_message(
         self,
         client: DataClient,
-        max_num_message: int = 25,
         deserialize: bool = False,
         timeout: int = 1,
+        max_num_message: int = 25,
     ) -> tp.List[tp.Any]:
         with self._lock:
-            return client.recv_multipart(max_num_message, deserialize, timeout)
+            return client.recv_multipart(deserialize, timeout, max_num_message)
 
     def _is_stop_iteration(self):
         if self._stop_event.is_set():
@@ -280,7 +280,7 @@ class DataLoader:
             LOGGER.error(trace(self, e))
 
     def next_batch(self, sleep: float = 0, step: int = 3) -> Batch:
-        if sleep > 60:
+        if sleep > 100:
             raise RuntimeError(
                 f"DataServer stopped responding for {self.subset_name} DataLoader!"
             )

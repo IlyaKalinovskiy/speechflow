@@ -272,19 +272,20 @@ class DataServer(ProcessWorker):
                     break
 
                 batch_list.append(sampler.sampling(batch_size))
-                self._total_batch_in_processing += 1
 
                 if sampler.is_last_batch:
                     queue_info.is_last_batch = True
                     break
 
             message.insert(1, b"")
-            queue_info.num_batch_in_processing += len(batch_list)
 
             for samples in batch_list:
-                self._zmq_server.backend_send_multipart(
+                is_ok = self._zmq_server.backend_send_multipart(
                     message + Serialize.dumps(samples)
                 )
+                if is_ok:
+                    queue_info.num_batch_in_processing += 1
+                    self._total_batch_in_processing += 1
 
         elif request["message"] == DCM.EPOCH_COMPLETE:
             status = self._work_queues[client_uid]

@@ -6,6 +6,7 @@ from pydantic import Field
 
 from speechflow.data_pipeline.collate_functions.tts_collate import LinguisticFeatures
 from speechflow.training.base_model import BaseTorchModelParams
+from tts.acoustic_models.modules.common import CONDITIONAL_TYPES
 
 __all__ = [
     "EncoderParams",
@@ -13,20 +14,21 @@ __all__ = [
     "VariancePredictorParams",
     "VarianceAdaptorParams",
     "DecoderParams",
-    "ModifierParams",
+    "GeneralConditionParams",
     "EmbeddingParams",
     "PostnetParams",
 ]
 
-tp_TEXT_FEATURES = tp.Literal["transcription", "lm_feat"]
+tp_TEXT_FEATURES = tp.Literal["transcription", "xpbert_feat", "lm_feat"]
 tp_AUDIO_FEATURES = tp.Literal["waveform", "spectrogram", "ssl_feat", "ac_feat"]
 tp_BIOMETRIC_MODELS = tp.Literal["resemblyzer", "speechbrain", "wespeaker"]
+tp_INPUT_FEATURES = tp.Union[tp_TEXT_FEATURES, tp_AUDIO_FEATURES]
 
 
 class EmbeddingParams(BaseTorchModelParams):
     """Embedding component parameters."""
 
-    input: tp.Union[tp_TEXT_FEATURES, tp_AUDIO_FEATURES] = "transcription"
+    input: tp.Union[tp_INPUT_FEATURES, tp.List[tp_INPUT_FEATURES]] = "transcription"
     target: tp_AUDIO_FEATURES = "spectrogram"
 
     # Transcription embeddings parameters
@@ -48,11 +50,13 @@ class EmbeddingParams(BaseTorchModelParams):
     num_additional_integer_seqs: int = -1
     num_additional_float_seqs: int = -1
 
+    # XPBert parameters
+    xpbert_feat_dim: int = 768
+    xpbert_feat_proj_dim: int = 768
+
     # LM features parameters
     lm_feat_dim: int = 1024
-    lm_feat_proj_dim: int = 256
-    plbert_feat_dim: int = 768
-    plbert_feat_proj_dim: int = 256
+    lm_feat_proj_dim: int = 1024
 
     # spectrogram parameters
     linear_spectrogram_dim: int = 513
@@ -76,14 +80,14 @@ class EmbeddingParams(BaseTorchModelParams):
     # Speech quality embeddings parameters
     speech_quality_emb_dim: int = 4
 
-    max_input_length: int = 0
-    max_output_length: int = 0
+    max_input_length: tp.Union[int, tp.List[int]] = 512
+    max_output_length: int = 4096
 
     def model_post_init(self, __context: tp.Any):
         super().model_post_init(__context)
 
-        if self.input != "transcription":
-            self.max_input_length = self.max_output_length
+        if not isinstance(self.input, list):
+            self.input = [self.input]
 
         if (
             self.use_onehot_speaker_emb
@@ -164,30 +168,30 @@ class PostnetParams(EmbeddingParams):
     postnet_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
 
 
-class ModifierParams(EmbeddingParams):
-    """Modifier parameters."""
+class GeneralConditionParams(EmbeddingParams):
+    """Level condition parameters."""
 
-    mode_add: tp.Dict[int, tp.List[str]] = Field(default_factory=lambda: {})
-    mode_cat: tp.Dict[int, tp.List[str]] = Field(default_factory=lambda: {})
+    general_condition: tp.Dict[str, tp.List[tp.Dict[str, tp.Any]]] = Field(
+        default_factory=lambda: {}
+    )
 
     def model_post_init(self, __context: tp.Any):
         super().model_post_init(__context)
 
-        from tts.acoustic_models.modules.modifier import ModeStage
+        from tts.acoustic_models.modules.general_condition import ModelLevel
 
-        for att_name in ["mode_add", "mode_cat"]:
-            attr = getattr(self, att_name)
-            if attr is not None:
-                if not isinstance(attr, tp.MutableMapping):
-                    raise ValueError(
-                        f"Invalid modifier parameter. It should be either dict but got {attr} instead."
-                    )
-                mode_stages = {item.value for item in ModeStage}
-                if not mode_stages > set(attr.keys()):
-                    raise ValueError(
-                        f"Invalid stage number in ModifierParams {set(attr.keys())}. "
-                        f"Only integer values from {min(mode_stages)} to {max(mode_stages)} are allowed."
-                    )
+        model_level = [key.name for key in ModelLevel]
+        for level, cond_params in self.general_condition.items():
+
+            if level not in model_level:
+                raise ValueError(
+                    f"Invalid stage number in GeneralConditionParams: {level}. "
+                    f"Only values from {', '.join(model_level)} are allowed."
+                )
+
+            for params in cond_params:
+                if isinstance(params["condition"], str):
+                    params["condition"] = [params["condition"]]
 
 
 class VariancePredictorParams(EmbeddingParams):
@@ -209,7 +213,7 @@ class VarianceParams(BaseTorchModelParams):
     use_target: bool = True
     denormalize: bool = False
     upsample: bool = False
-    cat_to_content: tp.Tuple[int, ...] = (0, 1)
+    cat_to_content: tp.Tuple[int, ...] = (0, 1, 2)
     overwrite_content: tp.Tuple[int, ...] = ()
     as_encoder: bool = False
     as_embedding: bool = False
@@ -232,9 +236,6 @@ class VarianceParams(BaseTorchModelParams):
         self.input_content = tuple(self.input_content)
         self.cat_to_content = tuple(self.cat_to_content)
         self.overwrite_content = tuple(self.overwrite_content)
-
-        if self.overwrite_content and len(self.cat_to_content) == 2:
-            self.cat_to_content = ()
 
         if self.as_encoder:
             self.dim = self.predictor_params.vp_output_dim

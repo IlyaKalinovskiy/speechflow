@@ -6,11 +6,12 @@ from pydantic import Field
 from torch import nn
 from torch.nn import functional as F
 
-from speechflow.utils.tensor_utils import get_mask_from_lengths
+from speechflow.utils.tensor_utils import apply_mask, get_mask_from_lengths
 from tts.acoustic_models.modules.common import SoftLengthRegulator, VarianceEmbedding
 from tts.acoustic_models.modules.common.blocks import Regression
-from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
+from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.components.discriminators import SignalDiscriminator
+from tts.acoustic_models.modules.data_types import MODEL_INPUT_TYPE
 from tts.acoustic_models.modules.params import VarianceParams, VariancePredictorParams
 
 __all__ = [
@@ -29,6 +30,7 @@ class TokenLevelPredictorParams(VariancePredictorParams):
     activation_fn: str = "Identity"
     add_lm_feat: bool = False
     use_mtm: bool = False  # masked token modeling
+    loss_type: str = "smooth_l1_loss"
     var_params: VarianceParams = VarianceParams()
 
 
@@ -60,7 +62,7 @@ class TokenLevelPredictor(Component):
 
         if params.add_lm_feat:
             self.lm_proj = nn.Linear(params.lm_feat_dim, input_dim, bias=False)
-            self.pre_proj = nn.Linear(
+            self.prenet = nn.Linear(
                 input_dim + params.vp_inner_dim, input_dim, bias=False
             )
 
@@ -71,7 +73,7 @@ class TokenLevelPredictor(Component):
 
             self.hard_lr = SoftLengthRegulator(hard=True)
         else:
-            self.pre_proj = nn.Identity()
+            self.prenet = nn.Identity()
 
         if params.use_mtm:
             assert self.params.var_params.as_embedding  # type: ignore
@@ -103,6 +105,23 @@ class TokenLevelPredictor(Component):
     @property
     def output_dim(self):
         return self.params.vp_output_dim
+
+    def postprocessing(self, predict):
+        if self.params.var_params.log_scale:  # type: ignore
+            predict = torch.expm1(predict)
+
+        return predict
+
+    def compute_loss(
+        self, name, predict, target, lengths, global_step: int = 0
+    ) -> tp.Dict[str, torch.Tensor]:
+        if self.params.var_params.log_scale:  # type: ignore
+            target = torch.log1p(target)
+
+        predict = apply_mask(predict, get_mask_from_lengths(lengths))
+
+        loss_fn = getattr(F, self.params.loss_type)
+        return {f"{name}_{self.params.loss_type}_by_tokens": loss_fn(predict, target)}
 
     def forward_step(
         self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs
@@ -153,20 +172,20 @@ class TokenLevelPredictor(Component):
             merger_embs = mtm_target_embs * m.unsqueeze(-1) + mtm_predict_embs * inv_m
             x_by_tokens = torch.cat([x_by_tokens, merger_embs.detach()], dim=-1)
 
-        tk_proj = self.pre_proj(x_by_tokens)
-        _, enc_ctx = self.token_encoder.process_content(
-            tk_proj, model_inputs.input_lengths, model_inputs
+        tk_proj = self.prenet(x_by_tokens)
+        _, enc_ctx = self.token_encoder.process_content(tk_proj, x_lengths, model_inputs)
+        predict = apply_mask(
+            self.token_proj(enc_ctx).squeeze(-1), get_mask_from_lengths(x_lengths)
         )
-        predict = self.token_proj(enc_ctx).squeeze(-1)
 
         if self.training:
-            if self.params.var_params.log_scale:  # type: ignore
-                target_by_tokens = torch.log1p(target_by_tokens)
+            losses.update(
+                self.compute_loss(
+                    name, predict, target_by_tokens, x_lengths, model_inputs.global_step
+                )
+            )
 
-            losses[f"{name}_loss_by_tokens"] = F.smooth_l1_loss(predict, target_by_tokens)
-
-        if self.params.var_params.log_scale:  # type: ignore
-            predict = torch.expm1(predict)
+        predict = self.postprocessing(predict)
 
         return (
             predict,

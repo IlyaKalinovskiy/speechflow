@@ -1,6 +1,6 @@
 from torch import nn
 
-from tts.acoustic_models.modules.common.blocks import CBHG
+from tts.acoustic_models.modules.common.blocks import CBHG, Regression
 from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.data_types import DecoderOutput, PostnetOutput
 from tts.acoustic_models.modules.params import PostnetParams
@@ -12,6 +12,10 @@ class ForwardPostnetParams(PostnetParams):
     highways: int = 5
     n_convolutions: int = 5
     kernel_size: int = 3
+
+    # projection
+    projection_p_dropout: float = 0.1
+    projection_activation_fn: str = "Identity"
 
 
 class ForwardPostnet(Component):
@@ -28,18 +32,23 @@ class ForwardPostnet(Component):
             rnn_bidirectional=True,
             rnn_dim=self.input_dim,
         )
-        self.linear = nn.Linear(params.postnet_inner_dim, params.postnet_output_dim)
+        self.proj = Regression(
+            params.postnet_inner_dim,
+            params.postnet_output_dim,
+            p_dropout=params.projection_p_dropout,
+            activation_fn=params.projection_activation_fn,
+        )
 
     @property
     def output_dim(self):
         return self.params.postnet_output_dim
 
     def forward_step(self, inputs: DecoderOutput) -> PostnetOutput:  # type: ignore
-        content = self.get_content(inputs)
+        content = inputs.get_content()
         x = content[-1]
 
         x = self.cbhg(x)
 
-        x_out = self.linear(x)
+        x_out = self.proj(x)
 
         return PostnetOutput.copy_from(inputs).set_content(x_out)

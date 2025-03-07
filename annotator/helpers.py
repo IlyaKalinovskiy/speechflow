@@ -3,7 +3,7 @@ import json
 from itertools import groupby
 from pathlib import Path
 
-from multilingual_text_parser import Token
+from multilingual_text_parser.data_types import Token
 
 from annotator.asr_services import OpenAIASR
 from annotator.audiobook_spliter import AudiobookSpliter

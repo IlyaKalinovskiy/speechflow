@@ -75,8 +75,8 @@ class LinguisticFeatures(ToTensor, ToNumpy):
 class TTSCollateOutput(SpectrogramCollateOutput, TTSDataSample):
     transcription_lengths: Tensor = None
     ling_feat: LinguisticFeatures = None  # type: ignore
+    xpbert_feat_lengths: Tensor = None
     lm_feat_lengths: Tensor = None
-    plbert_feat_lengths: Tensor = None
     num_words: Tensor = None
     num_synt: Tensor = None
     token_lengths: Tensor = None
@@ -105,6 +105,11 @@ class TTSCollate(SpectrogramCollate):
         pad_token_id = batch[0].pad_token_id
         spec_multiple = self.multiple_values.get("spectrogram")
 
+        collated.transcription_text = [
+            tuple(item.transcription_text)
+            for item in batch
+            if item.transcription_text is not None
+        ]
         collated.transcription_id, collated.transcription_lengths = collate_sequence(
             batch, "transcription_id", pad_token_id
         )
@@ -122,11 +127,12 @@ class TTSCollate(SpectrogramCollate):
             batch, "synt_lengths", pad_token_id
         )
 
+        collated.xpbert_feat, collated.xpbert_feat_lengths = collete_2d(
+            batch, "xpbert_feat", multiple_values=self.multiple_values
+        )
+
         collated.lm_feat, collated.lm_feat_lengths = collete_2d(
             batch, "lm_feat", multiple_values=self.multiple_values
-        )
-        collated.plbert_feat, collated.plbert_feat_lengths = collete_2d(
-            batch, "plbert_feat", multiple_values=self.multiple_values
         )
 
         collated.aggregated = {}
@@ -156,10 +162,9 @@ class TTSCollateWithPrompt(TTSCollate):
         batch_tts_collated_prompt = super().collate(batch_prompt)
         batch_tts_collated_target = super().collate(batch_target)
 
-        collated: TTSCollateOutputWithPrompt = TTSCollateOutputWithPrompt(
+        collated = TTSCollateOutputWithPrompt(
             **vars(batch_tts_collated_target), prompt=batch_tts_collated_prompt
         )
-
         return collated
 
 

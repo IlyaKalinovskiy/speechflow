@@ -14,11 +14,15 @@ from speechflow.utils.tensor_utils import (
     get_mask_from_lengths,
 )
 from tts.acoustic_models.modules.common.length_regulators import SoftLengthRegulator
-from tts.acoustic_models.modules.common.vits.normalizing_flow import (
+from tts.acoustic_models.modules.common.vits_tts.normalizing_flow import (
     ResidualCouplingBlock as VITS2RCBlock,
 )
-from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
-from tts.acoustic_models.modules.data_types import ComponentInput, ComponentOutput
+from tts.acoustic_models.modules.component import Component
+from tts.acoustic_models.modules.data_types import (
+    MODEL_INPUT_TYPE,
+    ComponentInput,
+    ComponentOutput,
+)
 from tts.acoustic_models.modules.params import VarianceParams, VariancePredictorParams
 
 RESYNT = False
@@ -429,7 +433,7 @@ class VITSPredictor(Component):
 
         if "vits_p" not in model_inputs.additional_inputs:
             m_and_logs, content_p, losses_p = self._evaluate_content_encoder(
-                x, x_mask, y_mask, durations, model_inputs
+                x, get_mask_from_lengths(x_lengths), y_mask, durations, model_inputs
             )
             content.update(content_p)
             losses.update(losses_p)

@@ -7,7 +7,7 @@ import torch
 
 from torch import Tensor
 
-from speechflow.utils.tensor_utils import apply_mask
+from speechflow.utils.tensor_utils import apply_mask, get_mask_from_lengths
 from tts.acoustic_models.data_types import (
     TTSForwardInput,
     TTSForwardInputWithPrompt,
@@ -21,6 +21,7 @@ __all__ = [
     "VarianceAdaptorOutput",
     "DecoderOutput",
     "PostnetOutput",
+    "MODEL_INPUT_TYPE",
 ]
 
 MODEL_INPUT_TYPE = tp.Union[
@@ -50,7 +51,7 @@ class ComponentInput:
         if self.model_inputs is not None:
             return self.model_inputs.device
         elif self.content is not None:
-            if isinstance(self.content, list):
+            if isinstance(self.content, tp.Sequence):
                 return self.content[0].device
             else:
                 return self.content.device
@@ -82,14 +83,47 @@ class ComponentInput:
         )
         return deepcopy(new) if deep else new
 
-    def set_content(self, x: Tensor, x_lens: tp.Optional[Tensor] = None):
-        self.content = x
-        if x_lens is not None:
-            self.content_lengths = x_lens
+    def get_content(self) -> tp.List[torch.Tensor]:
+        return (
+            [self.content] if not isinstance(self.content, tp.Sequence) else self.content
+        )
+
+    def get_content_lengths(self) -> tp.List[torch.Tensor]:
+        return (
+            self.content_lengths
+            if isinstance(self.content_lengths, tp.Sequence)
+            else [self.content_lengths]
+        )
+
+    def get_content_and_mask(
+        self, idx: int = 0
+    ) -> tp.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        x = self.get_content()[idx]
+        x_lens = self.get_content_lengths()[idx]
+        x_mask = get_mask_from_lengths(x_lens, max_length=x.shape[1])
+        return x, x_lens, x_mask
+
+    def set_content(self, x: Tensor, x_lens: tp.Optional[Tensor] = None, idx: int = 0):
+        if not isinstance(self.content, tp.Sequence):
+            self.content = x
+            if x_lens is not None:
+                self.content_lengths = x_lens
+        else:
+            self.content[idx] = x
+            if x_lens is not None:
+                self.content_lengths[idx] = x_lens
+
+        return self
+
+    def select_content(self, idx: int = 0):
+        if isinstance(self.content, tp.Sequence):
+            self.content = self.content[idx]
+            self.content_lengths = self.content_lengths[idx]
+
         return self
 
     def copy_content(self, detach: bool = False) -> tp.Union[Tensor, tp.List[Tensor]]:
-        if isinstance(self.content, list):
+        if isinstance(self.content, tp.Sequence):
             if detach:
                 return [t.clone().detach() for t in self.content]
             else:
@@ -101,15 +135,15 @@ class ComponentInput:
                 return self.content.clone()
 
     def cat_content(self, dim: int = 0):
-        if isinstance(self.content, list):
-            return torch.cat(self.content, dim=dim)
+        if isinstance(self.content, tp.Sequence):
+            return torch.cat(list(self.content), dim=dim)
         else:
             return self.content
 
     def stack_content(self):
-        if isinstance(self.content, list):
+        if isinstance(self.content, tp.Sequence):
             try:
-                return torch.stack(self.content)
+                return torch.stack(list(self.content))
             except RuntimeError:
                 return self.content
         else:

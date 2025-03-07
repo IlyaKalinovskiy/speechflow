@@ -6,13 +6,11 @@ import multiprocessing as mp
 from pathlib import Path
 
 import numpy as np
-import torch
 import librosa
 
 from librosa.core import istft, stft
 from librosa.util import fix_length
 from omegaconf import ListConfig
-from psola import vocode
 from scipy.signal import butter, resample, sosfilt
 from torch_audiomentations import AddBackgroundNoise, ApplyImpulseResponse
 
@@ -41,13 +39,6 @@ try:
 except ImportError as e:
     if mp.current_process().name == "MainProcess":
         LOGGER.warning(f"pyworld is not available: {e}")
-
-try:
-    from torchaudio import functional as F
-    from torchaudio import sox_effects, transforms
-except ImportError as e:
-    if mp.current_process().name == "MainProcess":
-        LOGGER.warning(f"torchaudio is not available: {e}")
 
 
 class WaveAugProcessor(BaseDSProcessor):
@@ -121,6 +112,8 @@ class WaveAugProcessor(BaseDSProcessor):
     def _apply_torch_audiomentations(
         ds: AudioDataSample, func: tp.Callable
     ) -> AudioDataSample:
+        import torch
+
         waveform = torch.FloatTensor(ds.audio_chunk.waveform)
         waveform = waveform.unsqueeze(0).unsqueeze(0)
 
@@ -381,7 +374,12 @@ class WaveAugProcessor(BaseDSProcessor):
 
         """
 
-        if self.backend in [ComputeBackend.torchaudio]:
+        if self.backend == ComputeBackend.torchaudio:
+            import torch
+
+            from torchaudio import functional as F
+            from torchaudio import sox_effects
+
             waveform, sample_rate = sox_effects.apply_effects_tensor(
                 torch.from_numpy(ds.audio_chunk.data).unsqueeze(0).to(torch.float32),
                 ds.audio_chunk.sr,
@@ -418,6 +416,8 @@ class WaveAugProcessor(BaseDSProcessor):
         silent_end: float = 0.32,
         p: float = 1.0,
     ) -> AudioDataSample:
+        from psola import vocode
+
         def gen_curve(
             n_segments,
             mode: str = "fsf",

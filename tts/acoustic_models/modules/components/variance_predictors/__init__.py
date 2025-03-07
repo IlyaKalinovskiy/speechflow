@@ -1,5 +1,3 @@
-from .ada_predictor import AdaPredictor, AdaPredictorParams
-from .cnn_predictor import CNNPredictor, CNNPredictorParams
 from .framelevel_predictor import (
     FrameLevelPredictor,
     FrameLevelPredictorParams,

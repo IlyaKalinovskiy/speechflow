@@ -20,7 +20,7 @@ from tts.acoustic_models.modules.additional_modules import (
     AdditionalModules,
     AdditionalModulesParams,
 )
-from tts.acoustic_models.modules.common import SoftLengthRegulator
+from tts.acoustic_models.modules.common import CONDITIONAL_TYPES, SoftLengthRegulator
 from tts.acoustic_models.modules.common.blocks import Regression, VarianceEmbedding
 from tts.acoustic_models.modules.components.encoders import (
     SFEncoderWithClassificationAdaptor,
@@ -67,20 +67,20 @@ class AudioFeaturesParams(BaseTorchModelParams):
     feat_encoder_num_layers: int = 1
     feat_encoder_inner_dim: int = 512
     feat_encoder_use_condition: bool = True
-    feat_condition_type: tp.Literal["cat", "adanorm"] = "cat"
+    feat_condition_type: CONDITIONAL_TYPES = "cat"
     # variance predictor encoder
     vp_encoder_type: str = "RNNEncoder"
     vp_encoder_num_layers: int = 1
     vp_encoder_inner_dim: int = 512
     vp_encoder_use_condition: bool = True
-    vp_condition_type: tp.Literal["cat", "adanorm"] = "cat"
+    vp_condition_type: CONDITIONAL_TYPES = "cat"
     vp_encoder_params: tp.Optional[tp.Dict[str, tp.Any]] = None
     # vq encoder
     vq_encoder_type: str = "RNNEncoder"
     vq_encoder_num_layers: int = 1
     vq_encoder_inner_dim: int = 512
     vq_encoder_use_condition: bool = True
-    vq_condition_type: tp.Literal["cat", "adanorm"] = "cat"
+    vq_condition_type: CONDITIONAL_TYPES = "cat"
     vq_type: tp.Literal["vq", "rvq", "rfsq", "rlfq"] = "rlfq"
     vq_codebook_size: int = 1024
     vq_num_quantizers: int = 1
@@ -89,7 +89,7 @@ class AudioFeaturesParams(BaseTorchModelParams):
     sf_encoder_num_layers: int = 1
     sf_encoder_inner_dim: int = 512
     sf_encoder_use_condition: bool = True
-    sf_condition_type: tp.Literal["cat", "adanorm"] = "cat"
+    sf_condition_type: CONDITIONAL_TYPES = "cat"
     # style encoder
     style_encoder_type: tp.Literal[
         "SimpleStyle", "StyleSpeech", "StyleTTS2"
@@ -116,8 +116,8 @@ class AudioFeaturesParams(BaseTorchModelParams):
     pitch_log_scale: bool = False
     pitch_smooth_l1_beta: float = 1.0
     # Multilingual PL-BERT
-    plbert_emb_dim: int = 768
-    plbert_proj_dim: int = 256
+    xpbert_emb_dim: int = 768
+    xpbert_proj_dim: int = 256
     # flags
     use_lang_emb: bool = False
     use_speaker_emb: bool = False
@@ -125,7 +125,7 @@ class AudioFeaturesParams(BaseTorchModelParams):
     use_style: bool = False
     use_energy: bool = False
     use_pitch: bool = False
-    use_plbert: bool = False
+    use_xpbert: bool = False
     use_ssl_adjustment: bool = False
     use_averages: bool = False
     use_vq: bool = False
@@ -135,6 +135,7 @@ class AudioFeaturesParams(BaseTorchModelParams):
     use_auxiliary_linear_spec_loss: bool = False
     use_auxiliary_mel_spec_loss: bool = False
     use_inverse_grad: bool = False
+    add_noise: bool = False
 
 
 class AudioFeatures(FeatureExtractor):
@@ -299,16 +300,16 @@ class AudioFeatures(FeatureExtractor):
 
         # ----- init prosody feat -----
 
-        if params.use_plbert:
-            prosody_dim = in_dim + params.plbert_proj_dim
+        if params.use_xpbert:
+            prosody_dim = in_dim + params.xpbert_proj_dim
 
-            if params.plbert_emb_dim != params.plbert_proj_dim:
-                self.plbert_proj = nn.Sequential(
-                    nn.Linear(params.plbert_emb_dim, params.plbert_proj_dim),
+            if params.xpbert_emb_dim != params.xpbert_proj_dim:
+                self.xpbert_proj = nn.Sequential(
+                    nn.Linear(params.xpbert_emb_dim, params.xpbert_proj_dim),
                     nn.Dropout2d(0.2),
                 )
             else:
-                self.plbert_proj = nn.Identity()
+                self.xpbert_proj = nn.Identity()
         else:
             prosody_dim = in_dim
 
@@ -516,14 +517,14 @@ class AudioFeatures(FeatureExtractor):
         return style_emb, style_losses
 
     def _get_prosody_feat(self, x, inputs: VocoderForwardInput):
-        plbert_feat = self.plbert_proj(inputs.plbert_feat)
+        xpbert_feat = self.xpbert_proj(inputs.xpbert_feat)
 
-        if x.shape[1] > plbert_feat.shape[1]:
-            plbert_feat = F.pad(plbert_feat, (0, 0, 0, x.shape[1] - plbert_feat.shape[1]))
-        elif x.shape[1] < plbert_feat.shape[1]:
-            plbert_feat = plbert_feat[:, : x.shape[1]]
+        if x.shape[1] > xpbert_feat.shape[1]:
+            xpbert_feat = F.pad(xpbert_feat, (0, 0, 0, x.shape[1] - xpbert_feat.shape[1]))
+        elif x.shape[1] < xpbert_feat.shape[1]:
+            xpbert_feat = xpbert_feat[:, : x.shape[1]]
 
-        return torch.cat([x.detach(), plbert_feat], dim=-1)
+        return torch.cat([x.detach(), xpbert_feat], dim=-1)
 
     def _upsample(self, x, x_lens, inputs: VocoderForwardInput):
         if self.training:
@@ -565,12 +566,18 @@ class AudioFeatures(FeatureExtractor):
         else:
             x = self.input_proj(x)
 
-        if self.params.use_speaker_emb is not None:
+        if self.params.add_noise:
+            x = x + 1e-4 * torch.randn_like(x)
+
+        if self.params.use_speaker_emb:
             condition["speaker_emb"] = self._get_speaker_emb(inputs)
 
-        condition["style_emb"], style_losses = self._get_style(inputs, inputs.global_step)
-        losses.update(style_losses)
-        inputs.additional_inputs.update(condition)
+        style_emb, style_losses = self._get_style(inputs, inputs.global_step)
+
+        if style_emb is not None:
+            condition["style_emb"] = style_emb
+            losses.update(style_losses)
+            inputs.additional_inputs.update(condition)
 
         if self.vq_enc is not None:
             vq_input = ComponentInput(
@@ -588,17 +595,18 @@ class AudioFeatures(FeatureExtractor):
                 }
             )
 
-        embs = torch.cat(list(embeddings.values()), dim=-1)
-        embs = embs.unsqueeze(1).expand(-1, x.shape[1], -1)
-        x = torch.cat([x, embs], dim=-1)
+        if embeddings:
+            embs = torch.cat(list(embeddings.values()), dim=-1)
+            embs = embs.unsqueeze(1).expand(-1, x.shape[1], -1)
+            x = torch.cat([x, embs], dim=-1)
 
         feat_enc_input = ComponentInput(
             content=x, content_lengths=x_lens, model_inputs=inputs
         )
         feat_enc_output = self.feat_encoder(feat_enc_input)
-        x = self.feat_encoder.get_content(feat_enc_output)[0]
+        x = feat_enc_output.get_content()[0]
 
-        if self.params.use_plbert:
+        if self.params.use_xpbert:
             prosody = self._get_prosody_feat(x, inputs)
         else:
             prosody = x.detach()
@@ -665,7 +673,7 @@ class AudioFeatures(FeatureExtractor):
                 content=x, content_lengths=x_lens, model_inputs=inputs
             )
             sf_enc_output = self.sf_encoder(sf_enc_input)
-            x = self.sf_encoder.get_content(sf_enc_output)[0]
+            x = sf_enc_output.get_content()[0]
         else:
             sf_enc_output = feat_enc_output
 
@@ -696,20 +704,29 @@ class AudioFeatures(FeatureExtractor):
             energy = []
             pitch = []
             for i, (a, b) in enumerate(inputs.additional_inputs["spec_chunk"]):
-                if self.params.use_upsample:
-                    chunk.append(x[i, a:b, :])
-                else:
-                    chunk.append(x[i, a // 2 : b // 2, :])
-                energy.append(inputs.energy[i, a:b])
-                pitch.append(inputs.pitch[i, a:b])
+                chunk.append(x[i, a:b, :])
+
+                if inputs.energy is not None:
+                    energy.append(inputs.energy[i, a:b])
+
+                if inputs.pitch is not None:
+                    pitch.append(inputs.pitch[i, a:b])
 
             output = torch.stack(chunk)
-            additional_content["energy"] = torch.stack(energy)
-            additional_content["pitch"] = torch.stack(pitch)
+
+            if energy:
+                additional_content["energy"] = torch.stack(energy)
+
+            if pitch:
+                additional_content["pitch"] = torch.stack(pitch)
         else:
             output = x
             additional_content["energy"] = inputs.energy
             additional_content["pitch"] = inputs.pitch
 
-        additional_content["condition_emb"] = torch.cat(list(condition.values()), dim=-1)
+        if condition:
+            additional_content["condition_emb"] = torch.cat(
+                list(condition.values()), dim=-1
+            )
+
         return output.transpose(1, -1), losses, additional_content

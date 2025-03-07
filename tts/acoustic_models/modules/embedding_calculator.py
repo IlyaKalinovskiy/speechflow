@@ -11,7 +11,6 @@ from speechflow.data_pipeline.datasample_processors.biometric_processors import 
 from speechflow.training.base_model import BaseTorchModel
 from tts.acoustic_models.data_types import TTSForwardInput
 from tts.acoustic_models.modules.common import VarianceEmbedding
-from tts.acoustic_models.modules.common.blocks import Regression
 from tts.acoustic_models.modules.params import EmbeddingParams
 
 __all__ = ["EmbeddingCalculator"]
@@ -105,10 +104,10 @@ class EmbeddingCalculator(BaseTorchModel):
         else:
             self.ling_feat_proj = None
 
-        self.projections = nn.ModuleDict()
+        self.proj_layers = nn.ModuleDict()
         for feat_name in [
+            "xpbert_feat",
             "lm_feat",
-            "plbert_feat",
             "linear_spectrogram",
             "mel_spectrogram",
             "ssl_feat",
@@ -117,7 +116,7 @@ class EmbeddingCalculator(BaseTorchModel):
             feat_dim = getattr(params, f"{feat_name}_dim")
             proj_dim = getattr(params, f"{feat_name}_proj_dim")
             if feat_dim != proj_dim:
-                self.projections[feat_name] = _get_projection_layer(
+                self.proj_layers[feat_name] = _get_projection_layer(
                     feat_dim, proj_dim, False, None
                 )
 
@@ -223,16 +222,16 @@ class EmbeddingCalculator(BaseTorchModel):
 
         feat = getattr(inputs, feat_name)
 
-        if feat_name not in self.projections or feat is None:
+        if feat_name not in self.proj_layers or feat is None:
             return feat
         else:
-            return self.projections[feat_name](feat)
+            return self.proj_layers[feat_name](feat)
+
+    def get_xpbert_feat(self, inputs: TTSForwardInput) -> tp.Optional[torch.Tensor]:
+        return self._get_features(inputs, "xpbert_feat")
 
     def get_lm_feat(self, inputs: TTSForwardInput) -> tp.Optional[torch.Tensor]:
         return self._get_features(inputs, "lm_feat")
-
-    def get_plbert_feat(self, inputs: TTSForwardInput) -> tp.Optional[torch.Tensor]:
-        return self._get_features(inputs, "plbert_feat")
 
     def get_linear_spectrogram(
         self, inputs: TTSForwardInput

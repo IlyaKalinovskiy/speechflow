@@ -100,8 +100,13 @@ class Proxy(ProcessWorker):
                     if request["message"] == DCM.INFO:
                         all_info = []
                         for b in self._zmq_proxy.backends:
-                            info = b.request(message, serialize=False, deserialize=True)
-                            all_info.append(info)
+                            info = b.request(
+                                message,
+                                serialize=False,
+                                deserialize=False,
+                                multipart=True,
+                            )
+                            all_info.append(Serialize.load(info[-1]))
 
                         message[-1] = Serialize.dump(
                             DataPipeline.aggregate_info(all_info)
@@ -112,9 +117,11 @@ class Proxy(ProcessWorker):
 
             for b in self._zmq_proxy.backends:
                 response = b.recv_multipart(
-                    max_num_message=5, deserialize=False, timeout=1
+                    deserialize=False,
+                    timeout=1,
+                    max_num_message=5,
                 )
-                if response is not None:
+                if response:
                     response = self.do_preprocessing(response)
                     self._zmq_proxy.frontend_send_multipart(response)
 

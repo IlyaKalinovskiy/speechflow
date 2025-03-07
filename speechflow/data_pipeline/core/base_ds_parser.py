@@ -21,6 +21,7 @@ from speechflow.data_pipeline.core.parser_types import (
 from speechflow.data_pipeline.core.registry import PipeRegistry
 from speechflow.logging import trace
 from speechflow.logging.logger import create_logger
+from speechflow.utils.checks import is_verbose_logging
 
 __all__ = ["BaseDSParser", "multi_transform"]
 
@@ -248,7 +249,7 @@ class BaseDSParser:
         release_func: tp.Optional[tp.Callable] = None,
     ) -> Dataset:
         memory_bound = memory_bound and n_processes > 1
-        tqdm_disable = len(inputs) == 1 or n_processes == 1
+        tqdm_disable = len(inputs) == 1 or (n_processes == 1 and not is_verbose_logging())
         if chunk_size is None:
             chunk_size = 1 if len(inputs) < 100 else int(math.sqrt(len(inputs)))
 

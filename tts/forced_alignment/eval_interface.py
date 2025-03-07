@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from multilingual_text_parser import Doc
+from multilingual_text_parser.data_types import Doc
 
 from speechflow.data_pipeline.core import Batch, PipelineComponents
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample

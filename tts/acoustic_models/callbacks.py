@@ -122,9 +122,9 @@ class TTSTrainingVisualizer(Callback):
             if ph_target.ndim == 2:
                 ph_target = ph_target[:, 0]
 
-            ph_target = [self._text_parser.to_symbol(int(i)) for i in ph_target]
+            ph_target = [self._text_parser.id_to_symbol(int(i)) for i in ph_target]
             ph_predicted = outputs.additional_content["predicted_phonemes"][random_idx]
-            ph_predicted = [self._text_parser.to_symbol(int(i)) for i in ph_predicted]
+            ph_predicted = [self._text_parser.id_to_symbol(int(i)) for i in ph_predicted]
             pl_module.logger.experiment.add_text(
                 "decoder/ph_target", " ".join(ph_target), trainer.global_step
             )

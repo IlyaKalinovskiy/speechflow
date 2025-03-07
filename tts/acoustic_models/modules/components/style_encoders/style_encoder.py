@@ -7,7 +7,8 @@ from torch import nn
 from torch.nn import functional as F
 from vector_quantize_pytorch import ResidualFSQ
 
-from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
+from tts.acoustic_models.modules.component import Component
+from tts.acoustic_models.modules.data_types import MODEL_INPUT_TYPE
 from tts.acoustic_models.modules.params import EmbeddingParams
 
 __all__ = ["StyleEncoder", "StyleEncoderParams"]
@@ -22,7 +23,7 @@ class StyleEncoderParams(EmbeddingParams):
     source_dim: int = 80
     style_emb_dim: int = 128
     random_chunk: bool = False
-    min_spec_len: int = 128
+    min_spec_len: int = 256
     max_spec_len: int = 512
     use_gmvae: bool = False
     gmvae_n_components: int = 16
@@ -128,7 +129,7 @@ class StyleEncoder(Component):
             if x_lengths is None:
                 x_lengths = torch.LongTensor([x.shape[1]] * x.shape[0]).to(x.device)
 
-        if self.params.random_chunk and x.shape[1] > 1:
+        if self.training and self.params.random_chunk and x.shape[1] > 1:
             chunk, chunk_lengths = self.get_random_chunk(
                 x, x_lengths, self.params.min_spec_len, self.params.max_spec_len
             )

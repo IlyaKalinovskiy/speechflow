@@ -4,7 +4,7 @@ import logging
 from copy import deepcopy as copy
 from dataclasses import dataclass
 
-from multilingual_text_parser import Doc, Sentence, Token
+from multilingual_text_parser.data_types import Doc, Sentence, Token
 from rapidfuzz import fuzz
 
 from annotator.utils.fuzzy_sequence_matcher import best_matches

@@ -4,7 +4,6 @@ import pickle
 import typing as tp
 import hashlib
 import logging
-import itertools
 
 from collections import Counter, defaultdict
 from copy import deepcopy

@@ -100,7 +100,7 @@ class VQEncoder(Component):
         return self.encoder.output_dim
 
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
-        x, x_lens, x_mask = self.get_content_and_mask(inputs)
+        x, x_lens, x_mask = inputs.get_content_and_mask()
 
         x = ComponentInput.copy_from(inputs).set_content(x, x_lens)
         output: ComponentOutput = self.encoder(x)

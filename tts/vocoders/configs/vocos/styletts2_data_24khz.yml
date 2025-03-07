@@ -25,7 +25,7 @@ parser:
   type: TTSDSParser
   dump:
     default: !join [*data_root, *dump_folder]  # fast dataset load
-    debug: ~
+    # debug: ~
   pipe: [audio_strip, split_by_phrases, check_phoneme_length, get_simple_intonation_type]
   pipe_cfg:
     audio_strip:
@@ -43,7 +43,7 @@ preproc:
          voice_bio_speechbrain, store_bio_emb, voice_bio_wespeaker,
          speech_quality, spectrogram, melscale, add_gate_value,
          pitch, enhancement_energy, enhancement_pitch,
-         add_pauses_from_timestamps, add_service_tokens, text,
+         add_pauses_from_timestamps, add_service_tokens, text, xpbert, lm,
          int_durations, calc_invert_durations, transcription_by_frames, float_durations,
          curvature_estimate_by_phoneme, average_by_time, aggregate_by_phoneme,
          trim, mu_law]
@@ -103,8 +103,11 @@ preproc:
       step: 0.05
       calc_noise_level: true
     text:
-      type: TextProcessor
-      lang: { default: MULTILANG, ru: RU, en: EN, ml: MULTILANG }
+      type: TTSTextProcessor
+      lang: MULTILANG
+      # lang: { default: MULTILANG, ru: RU, en: EN, ml: MULTILANG }
+    xpbert:
+      type: XPBertProcessor
     norm_1:
       type: normalize
       attributes: [energy, pitch]
@@ -132,20 +135,15 @@ preproc:
     lm:
       type: LMProcessor
       lang: { default: MULTILANG, ru: RU, en: EN }
-      model_dir:
-        default: multilingual_text_parser/data/common/xlm-roberta-large
-        ru: multilingual_text_parser/data/ru/homo_classifier
-        en: multilingual_text_parser/data/en/roberta_large
-        ml: multilingual_text_parser/data/common/xlm-roberta-large
-      model_name: { default: model, ru: ruRoBerta }
+      model_name:
+        default: google-bert/bert-base-multilingual-cased
+        ru: ai-forever/sbert_large_nlu_ru
       by_transcription: False
     ssl:
       type: SSLProcessor
       ssl_type: { default: Wav2Vec, ml: WavLM }
-    plbert:
-      type: MultilingualPLBert
     timedim_interpolation:
-      features: [ssl_feat, plbert_feat]
+      features: [ssl_feat]
       shape_as: mel
     trim:
       type: SignalProcessor
@@ -186,7 +184,7 @@ processor:
       folder_path: !join [*data_root, *dump_folder]
       fields: [file_path, speaker_name]
       functions: [VoiceBiometricProcessor, SpeechQualityAssessment,
-                  PitchProcessor, LMProcessor, SSLProcessor, MultilingualPLBert]
+                  PitchProcessor, XPBertProcessor, LMProcessor, SSLProcessor]
       mode: file_path
       # skip_samples_without_dump: true
     debug:
@@ -198,12 +196,12 @@ processor:
 
 sampler:
   train:
-    type: WeightedSampler
+    type: SimpleSampler
     comb_by_len: true
-    epoch_size: 100000
-    fields_to_compute_weight: [lang, speaker_name, intonation_type, uid]
-    # fields_to_compute_weight: [speaker_name, intonation_type]  # for finetune
-    chunks_ratio: [0.3, 0.3, 0.2, 0.2]
+#    epoch_size: 100000
+#    fields_to_compute_weight: [lang, speaker_name, intonation_type, uid]
+#    # fields_to_compute_weight: [speaker_name, intonation_type]  # for finetune
+#    chunks_ratio: [0.3, 0.3, 0.2, 0.2]
   test:
     type: SimpleSampler
     comb_by_len: true

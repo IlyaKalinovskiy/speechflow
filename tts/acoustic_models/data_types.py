@@ -19,6 +19,7 @@ __all__ = [
 
 @dataclass
 class TTSTarget(TrainData):
+    symbols: tp.List[tp.Tuple[str, ...]] = None
     transcription: Tensor = None
     spectrogram: Tensor = None
     gate: Tensor = None
@@ -41,14 +42,15 @@ class TTSForwardInput(TrainData):
     speech_quality_emb: Tensor = None
     waveform: Tensor = None
     waveform_lengths: Tensor = None
+    symbols: tp.List[tp.Tuple[str, ...]] = None
     transcription: Tensor = None
     transcription_lengths: Tensor = None
     transcription_by_frames: Tensor = None
     ling_feat: tp.Optional[LinguisticFeatures] = None
+    xpbert_feat: Tensor = None
+    xpbert_feat_lengths: Tensor = None
     lm_feat: Tensor = None
     lm_feat_lengths: Tensor = None
-    plbert_feat: Tensor = None
-    plbert_feat_lengths: Tensor = None
     spectrogram: Tensor = None
     spectrogram_lengths: Tensor = None
     mel_spectrogram: Tensor = None

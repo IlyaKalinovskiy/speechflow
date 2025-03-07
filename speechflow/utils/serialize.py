@@ -82,7 +82,13 @@ class Serialize:
 
 class JsonEncoder(json.JSONEncoder):
     def default(self, obj):
-        from multilingual_text_parser import Doc, Position, Sentence, Syntagma, Token
+        from multilingual_text_parser.data_types import (
+            Doc,
+            Position,
+            Sentence,
+            Syntagma,
+            Token,
+        )
 
         if isinstance(obj, np.ndarray):
             return codecs.encode(pickle.dumps(obj), "base64").decode()

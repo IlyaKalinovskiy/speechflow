@@ -1,0 +1,140 @@
+### Model configuration ###
+
+experiment_name: tts_cfm
+
+dirs:
+  logging: tts_experiments
+
+seed: 1234
+
+batch:
+  type: TTSBatchProcessor
+
+data_loaders:
+  batch_size: { default: 32, debug: 4 }
+  min_batch_size: 4
+  min_prefetch_factor: { default: 50, debug: 1 }
+  max_prefetch_factor: { default: 150, debug: 1 }
+
+trainer:
+  accelerator: { default: gpu, debug: cpu }
+  devices: { default: [auto], debug: 1 }
+  max_epochs: 150
+  gradient_clip_val: 5.0
+  accumulate_grad_batches: 1
+  # resume_from_checkpoint: /path/to/checkpoint
+
+checkpoint:
+  monitor: Epoch
+  mode: max
+  save_top_k: 30
+  every_n_epochs: 5
+  save_last: false
+
+callbacks:
+  TTSTrainingVisualizer: {}
+
+optimizer:
+  method:
+    type: Adam
+    weight_decay: 1.e-6
+  lr_scheduler:
+    type: ConstLR
+    lr_max: 1.e-4
+
+loss:
+  type: TTSLoss
+  Spectral:
+    loss_fn: l2
+
+model:
+  type: ParallelTTSModel
+  params:
+    input: [transcription, transcription]
+
+    token_emb_dim: 256
+
+    use_dnn_speaker_emb: true
+    speaker_biometric_model: wespeaker
+    speaker_emb_dim: 256
+
+    use_average_emb: true
+    averages:
+      rate:
+        interval: [0, 64]
+      energy:
+        interval: [0, 200]
+
+    general_condition:
+      level_1:
+        - condition: [average_energy, speech_quality_emb]
+          condition_type: cat
+          content: [0]
+        - condition: [average_rate]
+          condition_type: cat
+          content: [1]
+
+    encoder_type: ContextEncoder
+    encoder_inner_dim: 512
+    encoder_params:
+      encoder_type:
+        - DiTEncoder
+        - RNNEncoder
+      encoder_params:
+        - encoder_num_layers: 6
+          cnn_n_layers: 3
+          ling_condition_type: cat
+          lm_condition_type: add
+          condition: [speaker_emb]
+          condition_dim: 256
+        - encoder_num_layers: 2
+          cnn_n_layers: 3
+          ling_condition_type: cat
+          lm_condition_type: add
+          condition: [speaker_emb]
+          condition_dim: 256
+          condition_type: AdaNorm
+
+    va_type: HierarchicalVarianceAdaptor
+
+    decoder_type: CFMDecoder
+    decoder_num_layers: 6
+    decoder_inner_dim: 384
+    decoder_output_dim: 80
+    decoder_params:
+      use_prior_decoder: false
+      condition: [speaker_emb]
+      condition_dim: 256
+      estimator_type: DiTEncoder
+      estimator_params:
+        use_lsc: true
+
+    postnet_type: ~
+
+    va_variances:
+      0: [spectrogram_style_encoder]
+      1: [durations]
+    va_variance_params:
+      spectrogram_style_encoder:
+        tag: style_emb
+        as_encoder: true
+        predictor_type: StyleEncoder
+        predictor_params:
+          vp_params:
+            base_encoder_type: StyleSpeech
+            source: spectrogram
+            source_dim: 80
+            random_chunk: true
+            style_emb_dim: 128
+      durations:
+        dim: 50
+        input_content: [1]
+        cat_to_content: [0, 2]
+        predictor_type: TokenLevelDP
+        log_scale: true
+        predictor_params:
+          vp_params:
+            deterministic: true
+            add_noise: true
+            token_encoder_params:
+              use_rnn: false

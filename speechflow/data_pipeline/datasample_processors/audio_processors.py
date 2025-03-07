@@ -6,17 +6,14 @@ import typing as tp
 import logging
 import tempfile
 import subprocess as sp
-import multiprocessing as mp
 
 from pathlib import Path
 
 import numpy as np
 import torch
-import torchaudio
 import numpy.typing as npt
 
 from denoiser import pretrained
-from denoiser.dsp import convert_audio
 from scipy import signal
 from torch.nn.functional import interpolate as torch_interpolate
 
@@ -46,14 +43,6 @@ __all__ = [
 ]
 
 LOGGER = logging.getLogger("root")
-
-
-try:
-    from torchaudio import functional as F
-    from torchaudio import sox_effects, transforms
-except ImportError as e:
-    if mp.current_process().name == "MainProcess":
-        LOGGER.warning(f"torchaudio is not available: {e}")
 
 
 class BaseAudioProcessor(BaseDSProcessor):
@@ -203,15 +192,18 @@ class SignalProcessor(BaseAudioProcessor):
         ds.audio_chunk.astype(dtype, inplace=True)
         return ds
 
-    @staticmethod
-    def resample(ds: AudioDataSample, sample_rate: int, **kwargs) -> AudioDataSample:
-        try:
+    def resample(
+        self, ds: AudioDataSample, sample_rate: int, **kwargs
+    ) -> AudioDataSample:
+        if self.backend == ComputeBackend.torchaudio:
+            from torchaudio import transforms
+
             waveform = ds.audio_chunk.waveform
             sr = ds.audio_chunk.sr
             resample = transforms.Resample(orig_freq=sr, new_freq=sample_rate, **kwargs)
             ds.audio_chunk.data = resample(torch.from_numpy(waveform)).numpy()
             ds.audio_chunk.sr = sample_rate
-        except ModuleNotFoundError:
+        else:
             ds.audio_chunk.resample(sample_rate, inplace=True)
 
         ds.transform_params["sample_rate"] = ds.audio_chunk.sr

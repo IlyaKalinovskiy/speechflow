@@ -4,37 +4,30 @@ import itertools
 
 from collections import Counter, defaultdict
 from copy import deepcopy
-from pathlib import Path
 
 import numpy as np
 import torch
-import numpy.typing as npt
-import torchaudio.functional as F
 
-from multilingual_text_parser import Doc, Sentence, TextParser, Token, TokenUtils
-from multilingual_text_parser.utils.model_loaders import load_transformer_model
-from transformers import AlbertConfig, AlbertModel, AutoTokenizer
+from multilingual_text_parser.data_types import Doc, Sentence, Token, TokenUtils
+from transformers import AutoModel, AutoTokenizer
 
 from speechflow.data_pipeline.core.base_ds_processor import BaseDSProcessor
 from speechflow.data_pipeline.core.registry import PipeRegistry
 from speechflow.data_pipeline.datasample_processors.data_types import (
-    AudioDataSample,
     PausesPredictionDataSample,
     TextDataSample,
 )
-from speechflow.io import AudioSeg, yaml_load_from_file
+from speechflow.io import AudioSeg
 from speechflow.logging import trace
-from speechflow.thirdparty.pl_bert import PLBertTextCleaner
-from speechflow.utils.fs import get_module_dir, get_root_dir
+from speechflow.utils.fs import get_module_dir
 from speechflow.utils.init import lazy_initialization
 from speechflow.utils.profiler import Profiler
 
 __all__ = [
     "load_audio_segmentation",
     "TTSTextProcessor",
-    "TextProcessor",
+    "XPBertProcessor",
     "LMProcessor",
-    "MultilingualPLBert",
 ]
 
 LOGGER = logging.getLogger("root")
@@ -89,10 +82,10 @@ class TTSTextProcessor(BaseDSProcessor):
         words_level: bool = False,
         add_service_tokens: bool = False,
         allow_zero_sil: bool = True,
-        use_xpbert_tokenizer: bool = False,
-        xpbert_model: str = "vinai/xphonebert-base",
         ignore_ling_feat: tp.Optional[tp.List[str]] = None,
     ):
+        from multilingual_text_parser.parser import TextParser
+
         super().__init__()
         self.logging_transform_params(locals())
 
@@ -168,18 +161,13 @@ class TTSTextProcessor(BaseDSProcessor):
 
         self._float_features = ["syntax_importance", "breath_mask"]
 
-        if use_xpbert_tokenizer:
-            assert self.is_ipa_phonemes
-            self._xpbert_tokenizer = AutoTokenizer.from_pretrained(
-                xpbert_model, add_prefix_space=True
-            )
-        else:
-            self._xpbert_tokenizer = None
-
     def _expand_alphabet(self, new_symbols: tp.Tuple[tp.Union[str, int], ...]):
         self.alphabet += new_symbols
 
-    def to_symbol(self, id: int) -> str:
+    def symbol_to_id(self, symbol: str) -> int:
+        return self._symbol_to_id[symbol]
+
+    def id_to_symbol(self, id: int) -> str:
         return self._id_to_symbol[id]
 
     @property
@@ -244,9 +232,6 @@ class TTSTextProcessor(BaseDSProcessor):
             synt_lens,
             ds.sent,
         )
-
-        if self._xpbert_tokenizer is not None:
-            tokens_id = self._apply_xpbert_tokenizer(symbols)
 
         tokens_id, ling_feat_id = self._to_numpy(tokens_id, ling_feat_id)
 
@@ -529,32 +514,6 @@ class TTSTextProcessor(BaseDSProcessor):
 
         return tokens_id, symbols, ling_feat, word_lens, synt_lens
 
-    def _apply_xpbert_tokenizer(
-        self, symbols: tp.Sequence[tp.Union[str, tp.Tuple[str, ...]]]
-    ):
-        seq = []
-        for s in symbols:
-            if self.sil in s:
-                seq.append("▁")
-            elif self.bos in s:
-                continue
-            elif self.eos in s:
-                continue
-            else:
-                if isinstance(s, tuple):
-                    for i in reversed(range(1, len(s) + 1)):
-                        ph = "".join(s[:i])
-                        if ph in self._xpbert_tokenizer.vocab:
-                            seq.append(ph)
-                            break
-                    else:
-                        seq.append("".join(s))
-                else:
-                    seq.append(s)
-
-        result = self._xpbert_tokenizer.encode_plus(seq, is_split_into_words=True)
-        return result.encodings[0].ids
-
     def _symbols_to_sequence(self, symbols: tp.Sequence[str]) -> tp.List[int]:
         return [self._symbol_to_id[self._is_symbol_in_alphabet(s)] for s in symbols]
 
@@ -732,31 +691,34 @@ class TTSTextProcessor(BaseDSProcessor):
 
         return symbols, tokens_id, ling_feat, word_lens, synt_lens, sentence
 
-    def _to_numpy(self, tokens_id, ling_feat_id):
+    def _to_numpy(self, tokens_id, ling_feat_id=None):
         tokens_np = np.asarray(tokens_id, dtype=np.int64)
         if tokens_np.ndim == 2:
             tokens_np = tokens_np.T
 
-        ling_feat_np = {}
-        for key, field in ling_feat_id.items():
-            dtype = (
-                np.float32
-                if (key in self._float_features and key != "prosody")
-                else np.int64
-            )
-            ling_feat_np[key] = np.asarray(field, dtype=dtype)
-            if ling_feat_np[key].ndim == 2:
-                ling_feat_np[key] = ling_feat_np[key].T
+        if ling_feat_id is not None:
+            ling_feat_np = {}
+            for key, field in ling_feat_id.items():
+                dtype = (
+                    np.float32
+                    if (key in self._float_features and key != "prosody")
+                    else np.int64
+                )
+                ling_feat_np[key] = np.asarray(field, dtype=dtype)
+                if ling_feat_np[key].ndim == 2:
+                    ling_feat_np[key] = ling_feat_np[key].T
 
-            # check all features have equal lengths
-            if self._words_level:
-                target_len = ling_feat_np["sil_mask"].shape[0]
-            else:
-                target_len = tokens_np.shape[0]
+                # check all features have equal lengths
+                if self._words_level:
+                    target_len = ling_feat_np["sil_mask"].shape[0]
+                else:
+                    target_len = tokens_np.shape[0]
 
-            assert (
-                target_len == ling_feat_np[key].shape[0]
-            ), "length sequence is mismatch!"
+                assert (
+                    target_len == ling_feat_np[key].shape[0]
+                ), "length sequence is mismatch!"
+        else:
+            ling_feat_np = None
 
         return tokens_np, ling_feat_np
 
@@ -817,9 +779,117 @@ class TTSTextProcessor(BaseDSProcessor):
         ds.aggregated["word_invert_lengths"] = np.array(invert, dtype=np.float32)
 
 
-# TODO: support legacy models
-class TextProcessor(TTSTextProcessor):
-    pass
+class XPBertProcessor(BaseDSProcessor):  # https://github.com/VinAIResearch/XPhoneBERT
+    def __init__(self, device: str = "cpu", model_name: str = "vinai/xphonebert-base"):
+        super().__init__(device=device)
+
+        self.lang = "MULTILANG"
+        self._model_name = model_name
+        self._tokenizer = None
+        self._model = None
+
+    def init(self):
+        super().init()
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            self._model_name, add_prefix_space=True
+        )
+        self._model = AutoModel.from_pretrained(self._model_name)
+        self._model.to(self.device).eval()
+
+    @PipeRegistry.registry(inputs={"sent", "transcription_text"}, outputs={"lm_feat"})
+    @lazy_initialization
+    def process(self, ds: TextDataSample) -> TextDataSample:
+        ds = super().process(ds)
+
+        if not ds.transform_params["TTSTextProcessor"]["ipa_phonemes"]:
+            raise RuntimeError(
+                "Please use multilingual mode in TTS Text Processor for get phonemes in IPA format."
+            )
+
+        text_proc = TTSTextProcessor(lang=self.lang)
+        eotkn_id = text_proc.symbol_to_id(text_proc.eotkn)
+
+        tokens_id, phoneme_emb_pos = self._apply_tokenizer(
+            ds.transcription_text, ds.ling_feat["token_ends"], eotkn_id
+        )
+
+        with torch.inference_mode():
+            embeddings = (
+                self._model(torch.LongTensor(tokens_id).unsqueeze(0).to(self.device))
+                .last_hidden_state[0]
+                .cpu()
+            )
+
+        bos_emb = 0.01 * torch.ones(embeddings.shape[-1])
+        eos_emb = -0.01 * torch.ones(embeddings.shape[-1])
+        sil_emb = 0.1 * torch.ones(embeddings.shape[-1])
+
+        feat = []
+        for s in ds.transcription_text:
+            if s == TTSTextProcessor.bos:
+                feat.append(bos_emb)
+            elif s == TTSTextProcessor.eos:
+                feat.append(eos_emb)
+            elif s == TTSTextProcessor.sil:
+                feat.append(sil_emb)
+            else:
+                feat.append(embeddings[phoneme_emb_pos[0]])
+                phoneme_emb_pos = phoneme_emb_pos[1:]
+
+        assert not phoneme_emb_pos
+
+        ds.xpbert_feat = torch.stack(feat)
+        return ds.to_numpy()
+
+    def _apply_tokenizer(
+        self,
+        symbols: tp.Sequence[tp.Union[str, tp.Tuple[str, ...]]],
+        token_ends: tp.Tuple[str, ...],
+        eotkn_id: int,
+    ):
+        seq = []
+        ph_emb_pos = []
+        for s, end in zip(symbols, token_ends):
+            if TTSTextProcessor.sil in s:
+                if not seq or seq[-1] != "▁":
+                    seq.append("▁")
+                else:
+                    continue
+            elif TTSTextProcessor.bos in s:
+                continue
+            elif TTSTextProcessor.eos in s:
+                continue
+            else:
+                if isinstance(s, tuple):
+                    for i in reversed(range(1, len(s) + 1)):
+                        ph = "".join(s[:i])
+                        if ph in self._tokenizer.vocab:
+                            ph_emb_pos.append(len(seq))
+                            seq.append(ph)
+                            break
+                    else:
+                        ph_emb_pos.append(len(seq))
+                        seq.append("".join(s))
+                else:
+                    ph_emb_pos.append(len(seq))
+                    seq.append(s)
+
+                if end == eotkn_id:
+                    seq.append("▁")
+
+        if seq[0] == "▁":
+            seq = seq[1:]
+            ph_emb_pos = [i - 1 for i in ph_emb_pos]
+            if ph_emb_pos[0] == -1:
+                ph_emb_pos = ph_emb_pos[1:]
+
+        if seq[-1] == "▁":
+            seq = seq[:-1]
+            if ph_emb_pos[-1] == len(seq):
+                ph_emb_pos = ph_emb_pos[:-1]
+
+        result = self._tokenizer.encode_plus(seq, is_split_into_words=True)
+        return result.encodings[0].ids, ph_emb_pos
 
 
 class LMProcessor(BaseDSProcessor):
@@ -827,9 +897,8 @@ class LMProcessor(BaseDSProcessor):
         self,
         lang: str,
         device: str = "cpu",
+        model_name: str = "google-bert/bert-base-multilingual-cased",
         by_transcription: bool = True,
-        model_dir: str = "data/ru/homo_classifier",
-        model_name: str = "ruRoBerta",
     ):
         super().__init__(device=device)
 
@@ -842,31 +911,17 @@ class LMProcessor(BaseDSProcessor):
             TTSTextProcessor.unk,
         )
 
-        if not Path(model_dir).is_absolute():
-            model_dir = model_dir.replace("multilingual_text_parser/", "")
-            model_dir = model_dir.replace(
-                "libs/multilingual_text_parser/multilingual_text_parser/", ""
-            )
-            model_dir = get_module_dir("multilingual_text_parser") / model_dir
-
-        self._model_dir = model_dir
         self._model_name = model_name
         self._by_transcription = by_transcription
-        self._lm_model = None
         self._tokenizer = None
+        self._model = None
         self.logging_transform_params(locals())
 
     def init(self):
         super().init()
-        self._lm_model = load_transformer_model(
-            self._model_dir / self._model_name, output_hidden_states=True
-        )
-        self._lm_model.to(self.device).eval()
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            self._model_dir / "tokenizer",
-            use_fast=True,
-            add_prefix_space=True,
-        )
+        self._tokenizer = AutoTokenizer.from_pretrained(self._model_name)
+        self._model = AutoModel.from_pretrained(self._model_name)
+        self._model.to(self.device).eval()
 
     @PipeRegistry.registry(inputs={"sent", "transcription_text"}, outputs={"lm_feat"})
     @lazy_initialization
@@ -881,6 +936,7 @@ class LMProcessor(BaseDSProcessor):
         word_lens = self._count_word_lens(ds.sent)
         embeddings = self._process_lm(ds.sent)
         assert len(embeddings) == len(word_lens)
+
         if self._by_transcription:
             ds.lm_feat = TTSTextProcessor._assign_tags_to_phoneme(
                 list(zip(embeddings, word_lens))
@@ -912,10 +968,14 @@ class LMProcessor(BaseDSProcessor):
             truncation=True,
             padding=True,
         )
-        pred = self._lm_model(
-            input_ids=inp["input_ids"].to(self.device),
-            attention_mask=inp["attention_mask"].to(self.device),
-        ).last_hidden_state[0]
+        pred = (
+            self._model(
+                input_ids=inp["input_ids"].to(self.device),
+                attention_mask=inp["attention_mask"].to(self.device),
+            )
+            .last_hidden_state[0]
+            .cpu()
+        )
 
         word_ids = inp.word_ids()
         for i, j in enumerate(word_ids):
@@ -936,186 +996,9 @@ class LMProcessor(BaseDSProcessor):
         return embeddings
 
 
-class MultilingualPLBert(BaseDSProcessor):
-    def __init__(self, from_ssl_tokens: bool = False, device: str = "cpu"):
-        super().__init__(device=device)
-        self._from_ssl_tokens = from_ssl_tokens
-        self._model_dir = get_root_dir() / "speechflow/data/multilingual-pl-bert"
-        self._cfg_path = self._model_dir / "config.yml"
-        self._ckpt_path = self._model_dir / "step_1100000.t7"
-        self._pl_bert = None
-        self._preproc = None
-        self.logging_transform_params(locals())
-
-        if not self._ckpt_path.exists():
-            raise FileNotFoundError(
-                f"Download {self._model_dir.name} checkpoint "
-                f"form https://huggingface.co/papercup-ai/multilingual-pl-bert "
-                f"and move to {self._model_dir.as_posix()}"
-            )
-
-    def init(self):
-        super().init()
-
-        cfg_model = yaml_load_from_file(self._cfg_path)
-        cfg_model = AlbertConfig(**cfg_model["model_params"])
-        self._pl_bert = AlbertModel(cfg_model)
-
-        ckpt = torch.load(self._ckpt_path, map_location="cpu")
-        state_dict = dict(ckpt["net"])
-        state_dict = {k.replace("module.encoder.", ""): v for k, v in state_dict.items()}
-
-        self._pl_bert.load_state_dict(state_dict)
-        self._pl_bert.to(self.device)
-
-        self._preproc = PLBertTextCleaner()
-
-    @torch.inference_mode()
-    def _get_from_sentence(self, ds: TextDataSample):
-        if not ds.get_param_val("ipa_phonemes", False):
-            raise RuntimeError("PL-Bert support only IPA phonetic transcription")
-
-        phonemes = ds.transcription_text
-        phonemes = [
-            x
-            for x in phonemes
-            if (
-                x not in [TTSTextProcessor.bos, TTSTextProcessor.eos]
-                and TTSTextProcessor.sil not in x
-            )
-        ]
-
-        num_phonemes = sum(
-            len(tk.phonemes)
-            for tk in ds.sent.tokens
-            if not (tk.is_service or tk.is_punctuation)
-        )
-        assert len(phonemes) == num_phonemes
-
-        phonemes_indexes = []
-        phonemes_with_punct = []
-        for token in ds.sent.tokens:
-            if token.is_service:
-                continue
-            elif token.is_punctuation:
-                phonemes_with_punct.append(token.text)
-            else:
-                if len(phonemes_with_punct) > 0:
-                    phonemes_with_punct.append(" ")
-
-                word = phonemes[: len(token.phonemes)]
-                phonemes = phonemes[len(token.phonemes) :]
-                for ph in word:
-                    phonemes_indexes.append([])
-                    if isinstance(ph, str):
-                        ph = [ph]
-                    for symbol in ph:
-                        phonemes_indexes[-1].append(len(phonemes_with_punct))
-                        phonemes_with_punct.append(symbol)
-
-        assert len(phonemes) == 0
-        phonemes_to_id = torch.LongTensor(self._preproc("".join(phonemes_with_punct))).to(
-            self.device
-        )
-        feat = (
-            self._pl_bert(phonemes_to_id.unsqueeze(0)).last_hidden_state.squeeze(0).cpu()
-        )
-
-        i = 0
-        zeros = torch.zeros((1, feat.shape[-1]))
-        ds.plbert_feat = []
-        for x in ds.transcription_text:
-            if (
-                x in [TTSTextProcessor.bos, TTSTextProcessor.eos]
-                or TTSTextProcessor.sil in x
-            ):
-                ds.plbert_feat.append(zeros)
-            else:
-                ds.plbert_feat.append(feat[phonemes_indexes[i]].sum(0, keepdims=True))
-                i += 1
-
-        ds.plbert_feat = torch.concatenate(ds.plbert_feat, dim=0)
-        assert len(ds.transcription_text) == ds.plbert_feat.shape[0]
-        return ds
-
-    @torch.inference_mode()
-    def _get_from_ssl_tokens(self, ds: tp.Union[TextDataSample, AudioDataSample]):
-        phonemes = ds.ssl_feat.text
-        phonemes_to_id = torch.LongTensor(self._preproc(phonemes)).to(self.device)
-        feat = self._pl_bert(phonemes_to_id.unsqueeze(0)).last_hidden_state
-        feat = feat.squeeze(0).cpu()
-
-        if ds.ssl_feat.logits is not None:
-            tokens_id = ds.ssl_feat.tokens_id
-            tokens_text = ds.ssl_feat.tokens_text
-            if " " in ds.ssl_feat.tokens_text:
-                sil_pos = ds.ssl_feat.tokens_text.index(" ")
-                sil_id = ds.ssl_feat.tokens_id[sil_pos]
-                tokens_id_wo_sil = [t for t in tokens_id if t != sil_id]
-                tokens_text_wo_sil = [t for t in tokens_text if t != " "]
-            else:
-                tokens_id_wo_sil = tokens_id
-                tokens_text_wo_sil = tokens_text
-
-            assert len(tokens_id_wo_sil) == len(tokens_text_wo_sil)
-            id_to_symb = {k: v for k, v in zip(tokens_id_wo_sil, tokens_text_wo_sil)}
-
-            feat_wo_sil = []
-            for idx, s in enumerate(phonemes):
-                if s != " ":
-                    feat_wo_sil.append(feat[idx])
-
-            blank_id = 0
-            logits = torch.from_numpy(ds.ssl_feat.logits).unsqueeze(0)
-            log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
-            targets = torch.tensor([tokens_id_wo_sil], dtype=torch.int32)
-            input_lengths = torch.Tensor([log_probs.shape[1]])
-            target_lengths = torch.Tensor([targets.shape[1]])
-            alignments, _ = F.forced_align(
-                log_probs,
-                targets,
-                input_lengths=input_lengths,
-                target_lengths=target_lengths,
-                blank=blank_id,
-            )
-
-            feat_shape = (ds.ssl_feat.encoder_feat.shape[0], feat.shape[1])
-            feat = torch.zeros(feat_shape)
-            last_emb = torch.zeros(feat_shape[1])
-            prev_t_id = alignments[0][0]
-            symb = ""
-            for i, t_id in enumerate(alignments[0].numpy()):
-                if prev_t_id != t_id and prev_t_id != blank_id:
-                    feat_wo_sil = feat_wo_sil[len(symb) :]
-
-                if t_id != blank_id:
-                    symb = id_to_symb[t_id]
-                    embs = feat_wo_sil[: len(symb)]
-                    last_emb = torch.stack(embs, dim=0).sum(dim=0)
-
-                if i < feat.shape[0]:
-                    feat[i, :] = last_emb
-
-                prev_t_id = t_id
-
-            assert not feat_wo_sil
-
-        ds.plbert_feat = feat
-        return ds
-
-    @PipeRegistry.registry(outputs={"plbert_feat"})
-    @lazy_initialization
-    def process(self, ds: TextDataSample) -> TextDataSample:
-        ds = super().process(ds)
-
-        if self._from_ssl_tokens:
-            ds = self._get_from_ssl_tokens(ds)
-        else:
-            ds = self._get_from_sentence(ds)
-        return ds.to_numpy()
-
-
 if __name__ == "__main__":
+    from multilingual_text_parser.parser import TextParser
+
     utterance = """
 
     Летом Минздрав #России сообщал, что срок действия QR-кода может быть сокращен.
@@ -1156,7 +1039,3 @@ if __name__ == "__main__":
     _lm = LMProcessor(lang="RU", device="cpu")
     _ds = _lm.process(_ds)
     print(_ds.lm_feat.shape)
-
-    _pl_bert = MultilingualPLBert(device="cpu")
-    _ds = _pl_bert.process(_ds)
-    print(_ds.plbert_feat.shape)

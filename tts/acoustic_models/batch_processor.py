@@ -35,7 +35,7 @@ class TTSBatchProcessor(BaseBatchProcessor):
         batch_tag: tp.Optional[str] = None,
         batch_idx: tp.Optional[int] = None,
         global_step: tp.Optional[int] = None,
-    ) -> (TTSForwardInput, TTSTarget, tp.List[DataSample]):
+    ) -> (TTSForwardInput, TTSTarget):
         for name in [
             "word_lengths",
             "word_invert_lengths",
@@ -50,6 +50,7 @@ class TTSBatchProcessor(BaseBatchProcessor):
         )(
             waveform=collated.mu_law_waveform,
             waveform_lengths=collated.mu_law_waveform_lengths,
+            symbols=collated.transcription_text,
             transcription=collated.transcription_id,
             transcription_by_frames=collated.transcription_id_by_frames,
             mel_spectrogram=collated.mel,
@@ -72,6 +73,7 @@ class TTSBatchProcessor(BaseBatchProcessor):
         _target: TTSTarget = init_class_from_config(
             TTSTarget, collated.to_dict(), check_keys=False
         )(
+            symbols=collated.transcription_text,
             transcription=collated.transcription_id,
             input_lengths=collated.transcription_lengths,
             output_lengths=collated.spectrogram_lengths,
@@ -88,7 +90,10 @@ class TTSBatchProcessor(BaseBatchProcessor):
         collated: TTSCollateOutput = batch.collated_samples  # type: ignore
 
         inputs, targets = self.process_collated(
-            collated=collated, batch_tag=batch.tag, batch_idx=batch_idx
+            collated=collated,
+            batch_tag=batch.tag,
+            batch_idx=batch_idx,
+            global_step=global_step,
         )
 
         return inputs, targets, batch.data_samples
@@ -103,12 +108,16 @@ class TTSBatchProcessorWithPrompt(TTSBatchProcessor):
             LOGGER.info(trace(self, message="collated is not TTSCollateOutputWithPrompt"))
 
         _input, _target, data_samples = super().__call__(batch)
-        _prompt, *_ = super().process_collated(
-            collated.prompt, batch_idx=batch_idx, batch_tag=batch.tag
-        )
-
         _input = TTSForwardInputWithPrompt(**_input.to_dict())
-        _input.prompt = _prompt
+
+        if collated.prompt is not None:
+            _prompt, *_ = super().process_collated(
+                collated.prompt,
+                batch_tag=batch.tag,
+                batch_idx=batch_idx,
+                global_step=global_step,
+            )
+            _input.prompt = _prompt
 
         return _input.to(self.device), _target.to(self.device), batch.data_samples
 

@@ -23,7 +23,7 @@ class Timestamps:
             )
 
         min_diff = (self.intervals[:, 1] - self.intervals[:, 0]).min()
-        if min_diff <= 0:
+        if min_diff < 0:
             raise ValueError(f"timestamp interval with {min_diff} duration is found.")
 
         if len(self) > 1:
@@ -129,8 +129,9 @@ class Timestamps:
                     closest_value = abs(x - b)
                 else:
                     break
+
             if closest == previous:
-                closest += 1
+                closest = min(closest + 1, len(frame_stamps) - 1)
                 expand_count += 1
                 succeeding_count += 1
                 assert (
@@ -139,7 +140,10 @@ class Timestamps:
                 ), f"More than {max_expand_count} short phonemes are not allowed, got {succeeding_count} in a row and total {expand_count}! "
             else:
                 succeeding_count = 0
-            assert closest is not None, "error fix timestamp!"
+
+            if closest is None:
+                raise RuntimeError("error fix timestamp!")
+
             previous = closest
             ts_frame.append(closest + 1)
 
@@ -161,7 +165,7 @@ class Timestamps:
         ts_frame = list(zip(ts_frame[:-1], ts_frame[1:]))
         assert len(ts_frame) == len(self)
 
-        return Timestamps(np.asarray(ts_frame, dtype=np.float64))
+        return Timestamps(ts_frame)
 
     def shift(self, index: int, duration: float) -> None:
         if duration == 0.0:

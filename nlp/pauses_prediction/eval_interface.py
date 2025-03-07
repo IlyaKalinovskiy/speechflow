@@ -4,7 +4,8 @@ from pathlib import Path
 
 import torch
 
-from multilingual_text_parser import Doc, TextParser
+from multilingual_text_parser.data_types import Doc
+from multilingual_text_parser.parser import TextParser
 
 from nlp import pauses_prediction
 from nlp.pauses_prediction.data_types import PausesPredictionOutput
@@ -63,6 +64,7 @@ class PausesPredictionInterface:
         self.batch_processor.device = self.device
 
         lang = find_field(cfg_data["preproc"], "lang")
+
         self.text_parser = TextParser(lang=lang)
 
     @staticmethod

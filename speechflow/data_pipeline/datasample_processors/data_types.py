@@ -122,8 +122,8 @@ class TextDataSample(DataSample):
     intonation_type: int = None
     word_lengths: tp_DATA = None
     synt_lengths: tp_DATA = None
+    xpbert_feat: tp_DATA = None
     lm_feat: tp_DATA = None
-    plbert_feat: tp_DATA = None
     pad_token_id: int = 0
     sil_token_id: int = 0
 

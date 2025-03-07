@@ -5,7 +5,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from speechflow.utils.tensor_utils import apply_mask
-from tts.acoustic_models.modules.common import VarianceEmbedding
+from tts.acoustic_models.modules.common import CONDITIONAL_TYPES, VarianceEmbedding
 from tts.acoustic_models.modules.common.layers import Conv
 from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.data_types import (
@@ -31,7 +31,7 @@ class SFEncoderParams(EncoderParams):
     # condition
     condition: tp.Tuple[str, ...] = ()
     condition_dim: int = 0
-    condition_type: tp.Literal["cat", "adanorm"] = "cat"
+    condition_type: tp.Optional[CONDITIONAL_TYPES] = None
 
     # embedding bucketize
     var_as_embedding: tp.Tuple[bool, bool] = (False, False)
@@ -106,7 +106,7 @@ class SFEncoder(Component):
         return self.encoder.output_dim
 
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
-        x, x_lens, x_mask = self.get_content_and_mask(inputs)
+        x, x_lens, x_mask = inputs.get_content_and_mask()
 
         if (
             self.training
@@ -138,21 +138,21 @@ class SFEncoder(Component):
 
         x_src = ComponentInput.copy_from(inputs).set_content(x_src, x_lens)
         output: ComponentOutput = self.source_encoder(x_src)
-        y_src = self.get_content(output)[0]
+        y_src = output.get_content()[0]
 
         x_ftr_e = ComponentInput.copy_from(inputs).set_content(x_ftr_e, x_lens)
         output: ComponentOutput = self.filter_encoder_e(x_ftr_e)
-        y_ftr_e = self.get_content(output)[0]
+        y_ftr_e = output.get_content()[0]
 
         x_ftr_p = ComponentInput.copy_from(inputs).set_content(x_ftr_p, x_lens)
         output: ComponentOutput = self.filter_encoder_p(x_ftr_p)
-        y_ftr_p = self.get_content(output)[0]
+        y_ftr_p = output.get_content()[0]
 
         y = ComponentInput.copy_from(inputs).set_content(
             y_src + y_ftr_e + y_ftr_p, x_lens
         )
         output: ComponentOutput = self.encoder(y)
-        y = self.get_content(output)[0]
+        y = output.get_content()[0]
 
         outputs = EncoderOutput.copy_from(inputs).set_content(y)
         outputs.additional_content[f"{self.__class__.__name__}_{self.id}_src"] = y_src

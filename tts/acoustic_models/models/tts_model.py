@@ -23,14 +23,14 @@ from tts.acoustic_models.modules.additional_modules import (
     AdditionalModulesParams,
 )
 from tts.acoustic_models.modules.embedding import EmbeddingComponent
-from tts.acoustic_models.modules.modifier import Mode, ModeStage
+from tts.acoustic_models.modules.general_condition import GeneralCondition, ModelLevel
 from tts.acoustic_models.modules.params import *
 
 __all__ = ["ParallelTTSModel", "ParallelTTSParams"]
 
 
 class ParallelTTSParams(
-    ModifierParams,
+    GeneralConditionParams,
     EncoderParams,
     VarianceAdaptorParams,
     DecoderParams,
@@ -40,14 +40,7 @@ class ParallelTTSParams(
     """Parallel TTS model parameters."""
 
     def model_post_init(self, __context: tp.Any):
-        super(EmbeddingParams, self).model_post_init(__context)
-        super(ModifierParams, self).model_post_init(__context)
-        super(EncoderParams, self).model_post_init(__context)
-        super(VariancePredictorParams, self).model_post_init(__context)
-        super(VarianceAdaptorParams, self).model_post_init(__context)
-        super(DecoderParams, self).model_post_init(__context)
-        super(PostnetParams, self).model_post_init(__context)
-        super(AdditionalModulesParams, self).model_post_init(__context)
+        super().model_post_init(__context)
 
 
 class ParallelTTSModel(BaseTorchModel):
@@ -63,23 +56,23 @@ class ParallelTTSModel(BaseTorchModel):
 
         self.embedding_component = EmbeddingComponent(params)
 
-        self.mode_0 = Mode(
+        self.cond_module_0 = GeneralCondition(
             params,
             input_dim=self.embedding_component.output_dim,
-            current_pos=ModeStage.s_0,
+            level=ModelLevel.level_0,
         )
 
         cls, params_cls = TTS_ENCODERS[params.encoder_type]
         encoder_params = params_cls.init_from_parent_params(params, params.encoder_params)
-        self.encoder = cls(encoder_params, input_dim=self.mode_0.output_dim)
+        self.encoder = cls(encoder_params, input_dim=self.cond_module_0.output_dim)
 
-        self.mode_1 = Mode(
-            params, input_dim=self.encoder.output_dim, current_pos=ModeStage.s_1  # type: ignore
+        self.cond_module_1 = GeneralCondition(
+            params, input_dim=self.encoder.output_dim, level=ModelLevel.level_1  # type: ignore
         )
 
         self.va = torch.nn.ModuleList()
         va_variances = list(params.va_variances.values())
-        input_dim = self.mode_1.output_dim
+        input_dim = self.cond_module_1.output_dim
         if va_variances:
             for var_names in va_variances:
                 if var_names:
@@ -92,16 +85,16 @@ class ParallelTTSModel(BaseTorchModel):
             adaptor, _ = TTS_VARIANCE_ADAPTORS["DummyVarianceAdaptor"]
             self.va.append(adaptor(params, input_dim=input_dim))
 
-        self.mode_2 = Mode(
-            params, input_dim=self.va[-1].output_dim[0], current_pos=ModeStage.s_2
+        self.cond_module_2 = GeneralCondition(
+            params, input_dim=self.va[-1].output_dim[0], level=ModelLevel.level_2
         )
 
         cls, params_cls = TTS_DECODERS[params.decoder_type]
         decoder_params = params_cls.init_from_parent_params(params, params.decoder_params)
-        self.decoder = cls(decoder_params, input_dim=self.mode_2.output_dim)
+        self.decoder = cls(decoder_params, input_dim=self.cond_module_2.output_dim)
 
-        self.mode_3 = Mode(
-            params, input_dim=self.decoder.output_dim, current_pos=ModeStage.s_3  # type: ignore
+        self.cond_module_3 = GeneralCondition(
+            params, input_dim=self.decoder.output_dim, level=ModelLevel.level_3  # type: ignore
         )
 
         if params.postnet_type is not None:
@@ -109,7 +102,7 @@ class ParallelTTSModel(BaseTorchModel):
             postnet_params = params_cls.init_from_parent_params(
                 params, params.postnet_params
             )
-            self.postnet = cls(postnet_params, input_dim=self.mode_3.output_dim)  # type: ignore
+            self.postnet = cls(postnet_params, input_dim=self.cond_module_3.output_dim)  # type: ignore
             output_dim = self.postnet.output_dim
         else:
             self.postnet = None
@@ -129,16 +122,16 @@ class ParallelTTSModel(BaseTorchModel):
         x = self.embedding_component(inputs)
 
         if inference:
-            x = self.mode_0.inference(x)
+            x = self.cond_module_0.inference(x)
             x = self.encoder.inference(x)  # type: ignore
         else:
-            x = self.mode_0(x)
+            x = self.cond_module_0(x)
             x = self.encoder(x)  # type: ignore
 
         if inference:
-            x = self.mode_1.inference(x)
+            x = self.cond_module_1.inference(x)
         else:
-            x = self.mode_1(x)
+            x = self.cond_module_1(x)
 
         return x
 
@@ -156,21 +149,21 @@ class ParallelTTSModel(BaseTorchModel):
             predictions.update(x.variance_predictions)
             x.model_inputs.additional_inputs.update(x.additional_content)
 
-        return x, predictions
+        return x.select_content(0), predictions
 
     def forward(self, inputs: TTSForwardInput) -> TTSForwardOutput:
         x = self._encode_inputs(inputs)
 
         va_output, variance_predictions = self._predict_variances(x)
 
-        x = self.mode_2(va_output)
+        x = self.cond_module_2(va_output)
         x = self.decoder(x)  # type: ignore
 
         s_all = x.stack_content()
         decoder_output = x
 
         if self.postnet is not None:
-            x = self.mode_3(x)
+            x = self.cond_module_3(x)
             x = self.postnet(x)
             if x.content is not None:
                 s_all = torch.cat([s_all, x.content.unsqueeze(0)], dim=0)
@@ -196,13 +189,13 @@ class ParallelTTSModel(BaseTorchModel):
             x, inference=True, ignored_variance=kwargs.get("ignored_variance")
         )
 
-        x = self.mode_2.inference(va_output)
+        x = self.cond_module_2.inference(va_output)
         x = self.decoder.inference(x)  # type: ignore
 
         decoder_output = x
 
         if self.postnet is not None:
-            x = self.mode_3(x)
+            x = self.cond_module_3(x)
             x = self.postnet.inference(x)
 
         output = TTSForwardOutput(
@@ -233,17 +226,18 @@ class ParallelTTSModel(BaseTorchModel):
     ):
         if self.params.use_learnable_speaker_emb and speaker_id is not None:
             sp_id = torch.LongTensor([speaker_id]).to(self.device)
-            emb = self.embedding_component.emb_calculator.speaker_emb(sp_id)
+            sp_emb = self.embedding_component.emb_calculator.speaker_emb(sp_id)
         elif self.params.use_dnn_speaker_emb and bio_emb is not None:
             sp_emb = torch.from_numpy(bio_emb).to(self.device)
-            emb = self.embedding_component.emb_calculator.speaker_emb_proj(sp_emb)
         elif self.params.use_mean_dnn_speaker_emb and mean_bio_emb is not None:
             sp_emb = torch.from_numpy(mean_bio_emb).to(self.device)
-            emb = self.embedding_component.emb_calculator.speaker_emb_proj(sp_emb)
         else:
             raise NotImplementedError
 
-        return {"speaker": emb}
+        if hasattr(self.embedding_component.emb_calculator, "speaker_emb_proj"):
+            sp_emb = self.embedding_component.emb_calculator.speaker_emb_proj(sp_emb)
+
+        return {"speaker": sp_emb}
 
     def get_style_embedding(
         self,
@@ -258,7 +252,12 @@ class ParallelTTSModel(BaseTorchModel):
             if "ssl" in feat_type:
                 input_feat = self.embedding_component.emb_calculator.ssl_proj(input_feat)
 
-            lens = torch.LongTensor([input_feat.shape[1]]).to(input_feat.device)
+            if input_feat.ndim > 1:
+                lens = torch.LongTensor([input_feat.shape[1]]).to(input_feat.device)
+            else:
+                input_feat = input_feat.unsqueeze(0).unsqueeze(0)
+                lens = None
+
             emb, _, _ = _sampler.encode(input_feat, lens, None)
             return emb.squeeze(1)
 
@@ -272,7 +271,7 @@ class ParallelTTSModel(BaseTorchModel):
             sampler = list(module._modules["predictors"].values())[0]
             if "ssl" in list(module.predictors.values())[0].params.source:
                 return {"style_emb": get_sample(sampler, "ssl_feat", ssl_feat)}
-            elif "bio" in list(module.predictors.values())[0].params.source:
+            elif "emb" in list(module.predictors.values())[0].params.source:
                 return {"style_emb": get_sample(sampler, "bio", bio_embedding)}
             else:
                 return {"style_emb": get_sample(sampler, "spectrogram", spectrogram)}

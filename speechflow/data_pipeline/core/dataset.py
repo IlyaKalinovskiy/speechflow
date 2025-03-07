@@ -253,7 +253,7 @@ class Dataset:
 
 if __name__ == "__main__":
 
-    from multilingual_text_parser import Doc
+    from multilingual_text_parser.data_types import Doc
 
     from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
     from speechflow.logging.logger import create_logger

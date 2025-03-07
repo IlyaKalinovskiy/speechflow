@@ -90,11 +90,13 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
             feat_cfg.init_args.n_symbols_per_token = (
                 text_proc.num_symbols_per_phoneme_token
             )
-            feat_cfg.init_args.n_langs = speaker_id_handler.n_langs
-            feat_cfg.init_args.n_speakers = speaker_id_handler.n_speakers
+            if speaker_id_handler is not None:
+                feat_cfg.init_args.n_langs = speaker_id_handler.n_langs
+                feat_cfg.init_args.n_speakers = speaker_id_handler.n_speakers
         else:
-            feat_cfg.init_args.n_langs = speaker_id_handler.n_langs
-            feat_cfg.init_args.n_speakers = speaker_id_handler.n_speakers
+            if speaker_id_handler is not None:
+                feat_cfg.init_args.n_langs = speaker_id_handler.n_langs
+                feat_cfg.init_args.n_speakers = speaker_id_handler.n_speakers
 
         feat_cls, feat_params_cls = VOCOS_FEATURES[feat_cfg.class_name]
         feat_params = init_class_from_config(feat_params_cls, feat_cfg.init_args)()
@@ -177,8 +179,8 @@ def main(
 if __name__ == "__main__":
     """
     example:
-        python -W ignore train.py -c=configs/vocos/mel_vocoder.yml -cd=configs/vocos/mel_data_24khz.yml
-        python -W ignore train.py -c=configs/vocos/mel_vocoder.yml -cd=configs/vocos/mel_data_24khz.yml -vs debug
+        python -W ignore train.py -c=configs/vocos/mel.yml -cd=configs/vocos/mel_data_24khz.yml
+        python -W ignore train.py -c=configs/vocos/mel.yml -cd=configs/vocos/mel_data_24khz.yml -vs debug
 
         # When training on multiple GPUs you need to set the flag NCCL_P2P_DISABLE:
 

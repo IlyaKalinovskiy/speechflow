@@ -150,7 +150,7 @@ class ExperimentSaver:
         print(f"Load checkpoint from path: {file_path.as_posix()}")
         if file_path.suffix in [".ckpt", ".pt"]:
             with ExperimentSaver.portable_pathlib():
-                return torch.load(file_path, map_location)
+                return torch.load(file_path, map_location, weights_only=False)
         elif file_path.suffix in [".pkl"]:
             with ExperimentSaver.portable_pathlib():
                 return pickle.loads(file_path.read_bytes())

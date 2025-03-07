@@ -1,4 +1,4 @@
-from .modules.simple_style import *
-from .modules.speech_style import *
-from .modules.style_tts2 import *
+from tts.acoustic_models.modules.components.style_encoders.simple_style import *
+from tts.acoustic_models.modules.components.style_encoders.speech_style import *
+
 from .style_encoder import *

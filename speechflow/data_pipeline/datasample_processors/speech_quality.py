@@ -16,7 +16,6 @@ from speechflow.data_pipeline.core import BaseDSProcessor
 from speechflow.data_pipeline.core.registry import PipeRegistry
 from speechflow.data_pipeline.datasample_processors.data_types import AudioDataSample
 from speechflow.io import AudioChunk
-from speechflow.thirdparty.nisqa.NISQA_model import nisqaModel
 from speechflow.utils.init import lazy_initialization
 
 __all__ = ["SpeechQualityAssessment"]
@@ -59,6 +58,8 @@ class SpeechQualityAssessment(BaseDSProcessor):
         self.logging_transform_params(locals())
 
     def init(self):
+        from speechflow.thirdparty.nisqa.NISQA_model import nisqaModel
+
         super().init()
         if self._model_type.startswith("cdpam"):
             self._cdpam = cdpam.CDPAM(dev=self.device)

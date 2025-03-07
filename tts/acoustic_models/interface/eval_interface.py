@@ -13,14 +13,13 @@ import numpy as np
 import torch
 import multilingual_text_parser
 
-from multilingual_text_parser import Doc, Sentence, Syntagma, TextParser, Token
+from multilingual_text_parser.data_types import Doc, Sentence, Syntagma, Token
+from multilingual_text_parser.parser import TextParser
 
 import speechflow
 
 from nlp.prosody_prediction.eval_interface import ProsodyPredictionInterface
-from speechflow.data_pipeline.collate_functions.spectrogram_collate import (
-    SpectrogramCollateOutput,
-)
+from speechflow.data_pipeline.collate_functions.tts_collate import TTSCollateOutput
 from speechflow.data_pipeline.core.components import PipelineComponents
 from speechflow.data_pipeline.datasample_processors import add_pauses_from_text
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
@@ -142,25 +141,24 @@ class TTSEvaluationInterface:
         if "feature_extractor" in cfg_model["model"]:
             cfg_model["model"] = {
                 "type": "ParallelTTSModel",
-                "params": cfg_model["model"]["feature_extractor"]["init_args"]["tts_cfg"],
+                "params": cfg_model["model"]["feature_extractor"]["init_args"],
             }
             tts_ckpt["params"] = cfg_model["model"]["params"]
-
-            tts_ckpt["params"]["n_langs"] = 1
-            tts_ckpt["params"]["n_speakers"] = len(tts_ckpt["speaker_id_map"])
-            tts_ckpt["params"]["alphabet_size"] = 246
 
             sd = tts_ckpt["state_dict"]
             for k in list(sd.keys()):
                 if any(
                     x in k
                     for x in [
+                        "feature_extractor._mel_proj",
                         "backbones",
                         "head",
+                        "sm_loss",
+                        "wavlm_loss",
                         "melspec_loss",
-                        "multiperioddisc",
-                        "multiresddisc",
-                        "feature_extractor._mel_proj",
+                        "multiperiod_disc",
+                        "multiresd_disc",
+                        "additional_modules",
                     ]
                 ):
                     sd.pop(k)
@@ -179,13 +177,6 @@ class TTSEvaluationInterface:
         self.lang_id_map = tts_ckpt.get("lang_id_map", {})
         self.speaker_id_map = tts_ckpt.get("speaker_id_map", {})
         self.device = torch.device(device_model)
-
-        # init model
-        model_cls = getattr(acoustic_models, cfg_model["model"]["type"])
-        self.model = model_cls(tts_ckpt["params"])
-        self.model.eval()
-        self.model.load_state_dict(tts_ckpt["state_dict"], strict=True)
-        self.model.to(self.device)
 
         # update data config
         cfg_data["processor"].pop("dump", None)
@@ -237,7 +228,6 @@ class TTSEvaluationInterface:
         )
 
         # init singleton handlers
-
         singleton_handlers = cfg_data.section("singleton_handlers", mutable=True)
 
         self.speaker_id_setter = singleton_handlers.get("SpeakerIDSetter")
@@ -373,6 +363,21 @@ class TTSEvaluationInterface:
             self.pauses_interface = None
         else:
             self.pauses_interface = None
+
+        # init model
+        tts_ckpt["params"]["n_langs"] = len(self.lang_id_map)
+        tts_ckpt["params"]["n_speakers"] = len(self.speaker_id_map)
+        tts_ckpt["params"]["alphabet_size"] = len(tts_ckpt["alphabet"])
+
+        model_cls = getattr(acoustic_models, cfg_model["model"]["type"])
+        self.model = model_cls(tts_ckpt["params"])
+        self.model.eval()
+        try:
+            self.model.load_state_dict(tts_ckpt["state_dict"], strict=True)
+        except Exception as e:
+            print(e)
+            self.model.load_state_dict(tts_ckpt["state_dict"], strict=False)
+        self.model.to(self.device)
 
     @staticmethod
     def _load_info(ckpt_path: Path) -> tp.Dict[str, tp.Any]:
@@ -726,13 +731,13 @@ class TTSEvaluationInterface:
         )
         ds = TTSDataSample(audio_chunk=audio_chunk)
         batch = self.audio_pipe.datasample_to_batch([ds])
-        collated: SpectrogramCollateOutput = batch.collated_samples  # type: ignore
+        collated: TTSCollateOutput = batch.collated_samples  # type: ignore
 
         if ref_wav_path is not None:
             ref_audio_chunk = AudioChunk(file_path=ref_wav_path).load(sr=self.sample_rate)
             ref_ds = TTSDataSample(audio_chunk=ref_audio_chunk)
             ref_batch = self.audio_pipe.datasample_to_batch([ref_ds])
-            ref_collated: SpectrogramCollateOutput = ref_batch.collated_samples  # type: ignore
+            ref_collated: TTSCollateOutput = ref_batch.collated_samples  # type: ignore
             collated.speaker_emb = ref_collated.speaker_emb
             collated.speaker_emb_mean = ref_collated.speaker_emb_mean
             collated.spectrogram = ref_collated.spectrogram
@@ -746,8 +751,8 @@ class TTSEvaluationInterface:
             spectrogram_lengths=collated.spectrogram_lengths,
             ssl_feat=collated.ssl_feat,
             ssl_feat_lengths=collated.ssl_feat_lengths,
-            plbert_feat=collated.plbert_feat,
-            plbert_feat_lengths=collated.plbert_feat_lengths,
+            xpbert_feat=collated.xpbert_feat,
+            xpbert_feat_lengths=collated.xpbert_feat_lengths,
             speaker_emb=collated.speaker_emb,
             speaker_emb_mean=collated.speaker_emb,
             speech_quality_emb=collated.speech_quality_emb,

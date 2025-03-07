@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from multilingual_text_parser import Doc, Syntagma
+from multilingual_text_parser.data_types import Doc, Syntagma
 from praatio import tgio
 
 from speechflow.data_pipeline.core import BaseDSParser

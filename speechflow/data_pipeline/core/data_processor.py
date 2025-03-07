@@ -72,12 +72,17 @@ class DumpProcessor:
 
         self.data_root = data_root
         self.folder_path = folder_path
+        self.dump_files_path = folder_path / "files"
         self.mode = mode
         self.full_dump = full_dump
         self.track_broken_samples = track_broken_samples
         self.skip_samples_without_dump = skip_samples_without_dump
 
-        (self.folder_path / "files").mkdir(parents=True, exist_ok=True)
+        if not self.dump_files_path.exists():
+            self.dump_files_path.mkdir(parents=True)
+
+        if next(self.dump_files_path.iterdir(), None) is None:
+            self.skip_samples_without_dump = False
 
         if fields is not None:
             self.fields = fields if isinstance(fields, tp.MutableSequence) else [fields]
@@ -133,7 +138,7 @@ class DumpProcessor:
         else:
             raise NotImplementedError
 
-        file_path = self.folder_path / "files" / f"{name}.pkl"
+        file_path = self.dump_files_path / f"{name}.pkl"
         return file_path
 
     @staticmethod
@@ -402,8 +407,6 @@ class DataProcessor(AbstractDataProcessor):
                         )
                     if self._dump_proc:
                         self._dump_proc.skip(sample)
-
-            out_samples = out_samples
         else:
             out_samples = in_samples
 

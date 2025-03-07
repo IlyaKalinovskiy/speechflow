@@ -1,6 +1,6 @@
 import torch
 
-from multilingual_text_parser import Doc, Sentence, TextParser
+from multilingual_text_parser.data_types import Doc, Sentence
 
 from speechflow.data_pipeline.core.registry import PipeRegistry
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
@@ -97,6 +97,8 @@ def add_prosody_modifiers(
 
 
 if __name__ == "__main__":
+    from multilingual_text_parser.parser import TextParser
+
     text = """
     <prosody pitch="120">Заброшенный Невский</prosody> рынок <prosody volume="150">могут,
     снести</prosody> ради строительства моста через Неву.

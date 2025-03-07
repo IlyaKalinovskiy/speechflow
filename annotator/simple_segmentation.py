@@ -6,11 +6,11 @@ from pathlib import Path
 import numpy as np
 import multilingual_text_parser
 
-from multilingual_text_parser import Doc, TextParser, TokenUtils
+from multilingual_text_parser.data_types import Doc, TokenUtils
+from multilingual_text_parser.parser import TextParser
 
 from annotator.audiobook_spliter import AudiobookSpliter
 from speechflow.data_pipeline.core import BaseDSParser, PipeRegistry
-from speechflow.data_pipeline.core.base_ds_parser import multi_transform
 from speechflow.data_pipeline.core.components import (
     init_metadata_preprocessing_from_config,
 )

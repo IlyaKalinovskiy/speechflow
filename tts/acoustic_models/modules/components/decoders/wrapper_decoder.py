@@ -1,13 +1,10 @@
 import typing as tp
 
 from pydantic import Field
+from torch import nn
 
 from tts.acoustic_models.modules.component import Component
-from tts.acoustic_models.modules.data_types import (
-    ComponentOutput,
-    DecoderOutput,
-    VarianceAdaptorOutput,
-)
+from tts.acoustic_models.modules.data_types import DecoderOutput, VarianceAdaptorOutput
 from tts.acoustic_models.modules.params import DecoderParams
 
 __all__ = [
@@ -50,13 +47,29 @@ class WrapperDecoder(Component):
             dec_params.max_input_length = params.max_output_length
 
         self.decoder = dec_cls(dec_params, input_dim)
+        setattr(self.decoder, "hook_update_content", self.hook_update_content)
+
+        if components == TTS_ENCODERS:
+            self.gate_layer = nn.Linear(params.decoder_inner_dim, 1)
+        else:
+            self.gate_layer = None
 
     @property
     def output_dim(self):
         return self.decoder.output_dim
 
     def forward_step(self, inputs: VarianceAdaptorOutput) -> DecoderOutput:  # type: ignore
-        outputs: ComponentOutput = self.decoder(inputs)
+        outputs = self.decoder(inputs)
+
+        if not isinstance(outputs, DecoderOutput):
+            outputs = DecoderOutput.copy_from(outputs).set_hidden_state(
+                outputs.hidden_state
+            )
+
+        if self.gate_layer is not None:
+            outputs.gate = self.gate_layer(outputs.hidden_state)
+
         if isinstance(outputs.content_lengths, list):
             outputs.content_lengths = outputs.content_lengths[0]
-        return DecoderOutput.copy_from(outputs)
+
+        return outputs

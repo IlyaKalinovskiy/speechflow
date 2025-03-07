@@ -35,7 +35,7 @@ class TTSFeatures(FeatureExtractor):
 
         if self.training:
             target_spec = inputs.spectrogram
-            if outputs.spectrogram.ndim == 4:
+            if isinstance(outputs.spectrogram, list) or outputs.spectrogram.ndim == 4:
                 x = outputs.spectrogram[0]
 
                 if x.shape[-1] == target_spec.shape[-1]:
@@ -46,7 +46,7 @@ class TTSFeatures(FeatureExtractor):
                 x = outputs.spectrogram
                 losses["spec_loss"] = F.l1_loss(x, target_spec)
         else:
-            if outputs.spectrogram.ndim == 4:
+            if isinstance(outputs.spectrogram, list) or outputs.spectrogram.ndim == 4:
                 x = outputs.spectrogram[0]
             else:
                 x = outputs.spectrogram
@@ -80,6 +80,6 @@ class TTSFeatures(FeatureExtractor):
 
             additional_content["energy"] = d["energy_postprocessed"].squeeze(-1)
             additional_content["pitch"] = d["pitch_postprocessed"].squeeze(-1)
-            additional_content["condition_emb"] = d["style_emb"].squeeze(1)
+            additional_content["condition_emb"] = d["style_emb"][:, 0, :]
 
         return output.transpose(1, -1), losses, additional_content

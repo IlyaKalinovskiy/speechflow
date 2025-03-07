@@ -234,6 +234,7 @@ class Serialize:
 class DataSample(ToDict, ToTensor, ToNumpy, Serialize):
     file_path: tp_PATH = None
     label: tp.Union[str, int] = ""
+    tag: tp.Optional[str] = None
     index: tp.Optional[tp.Tuple[tp.Any, ...]] = None
     transform_params: tp.Optional[tp.Dict[str, tp.Any]] = None
     additional_fields: tp.Optional[tp.Dict[str, tp.Any]] = None
@@ -298,11 +299,16 @@ class DataSample(ToDict, ToTensor, ToNumpy, Serialize):
         flatten_params = flatten_dict(self.transform_params)
         found = []
         for key, field in flatten_params.items():
-            if key.endswith(name):
+            if key.split(".", 1)[-1].startswith(name):
                 found.append(field)
-        if len(found):
-            return found[0]
-        return def_val
+        if not found:
+            for key, field in flatten_params.items():
+                if key.endswith(name):
+                    found.append(field)
+        if found:
+            return found[-1]
+        else:
+            return def_val
 
     def copy(self):
         new = copy(self)

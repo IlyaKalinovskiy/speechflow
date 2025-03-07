@@ -8,8 +8,9 @@ from torch.nn import functional as F
 from speechflow.utils.tensor_utils import get_mask_from_lengths
 from tts.acoustic_models.modules.common import VarianceEmbedding
 from tts.acoustic_models.modules.common.blocks import Regression
-from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
+from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.components.discriminators import SignalDiscriminator
+from tts.acoustic_models.modules.data_types import MODEL_INPUT_TYPE
 from tts.acoustic_models.modules.params import VarianceParams, VariancePredictorParams
 
 __all__ = [
@@ -24,11 +25,11 @@ class FrameLevelPredictorParams(VariancePredictorParams):
     frame_encoder_type: str = "VarianceEncoder"
     frame_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
     activation_fn: str = "Identity"
-    smooth_l1_beta: float = 1.0
     use_ssl_adjustment: bool = (
         False  # improving the target feature through prediction over SSL model
     )
     use_mtm: bool = False  # masked token modeling
+    loss_type: str = "smooth_l1_loss"
     var_params: VarianceParams = VarianceParams()
 
 
@@ -134,6 +135,8 @@ class FrameLevelPredictor(Component):
         predict = self.frame_proj(enc_ctx).squeeze(-1)
 
         if self.training:
+            loss_fn = getattr(F, self.params.loss_type)
+
             if self.ssl_encoder is not None:
                 _, ssl_ctx = self.ssl_encoder.process_content(
                     model_inputs.ssl_feat, x_lengths, model_inputs
@@ -145,7 +148,7 @@ class FrameLevelPredictor(Component):
                 if self.params.var_params.log_scale:  # type: ignore
                     target_by_frames = torch.log1p(target_by_frames)
 
-                losses[f"{name}_ssl_adjustment_loss_by_frames"] = F.smooth_l1_loss(
+                losses[f"{name}_ssl_adjustment_loss_by_frames"] = loss_fn(
                     var_from_ssl, target_by_frames
                 )
 
@@ -161,8 +164,8 @@ class FrameLevelPredictor(Component):
                 if self.params.var_params.log_scale:  # type: ignore
                     var_by_frames = torch.log1p(var_by_frames)
 
-                losses[f"{name}_loss_by_frames"] = F.smooth_l1_loss(
-                    predict, var_by_frames, beta=self.params.smooth_l1_beta
+                losses[f"{name}_{self.params.loss_type}_by_frames"] = loss_fn(
+                    predict, var_by_frames
                 )
 
         if self.params.var_params.log_scale:  # type: ignore

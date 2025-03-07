@@ -1,9 +1,10 @@
 from torch import nn
 
-from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
+from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.components.style_encoders.style_encoder import (
     StyleEncoderParams,
 )
+from tts.acoustic_models.modules.data_types import MODEL_INPUT_TYPE
 
 __all__ = [
     "SimpleStyle",

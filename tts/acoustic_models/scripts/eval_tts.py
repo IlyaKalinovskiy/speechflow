@@ -25,6 +25,9 @@ def plotting(tts_in: TTSForwardInput, tts_out: TTSForwardOutput, doc, signals=("
 
             signal = {}
             for name in signals:
+                if name not in tts_out.variance_predictions:
+                    continue
+
                 signal[name] = tts_out.variance_predictions[name][0]
 
                 name = f"aggregate_{name}"
@@ -81,12 +84,16 @@ def synthesize(
 
     with Profiler(enable=use_profiler):
         tts_out = tts_interface.evaluate(tts_in, tts_ctx)
-        voc_out = voc_interface.synthesize(
-            tts_in,
-            tts_out,
-            lang=tts_ctx.prosody_reference.default.lang,
-            speaker_name=tts_ctx.prosody_reference.default.speaker_name,
-        )
+
+        if voc_interface is not None:
+            voc_out = voc_interface.synthesize(
+                tts_in,
+                tts_out,
+                lang=tts_ctx.prosody_reference.default.lang,
+                speaker_name=tts_ctx.prosody_reference.default.speaker_name,
+            )
+        else:
+            voc_out = None
 
     plotting(tts_in, tts_out, doc)
     return voc_out.audio_chunk
@@ -95,8 +102,10 @@ def synthesize(
 if __name__ == "__main__":
     device = "cpu"
 
-    tts_model_path = "epoch=24-step=104175.ckpt"
-    voc_model_path = "vocos_checkpoint_epoch=59_step=1500000_val_loss=7.5391.ckpt"
+    tts_model_path = "M:\\Илья\\JustAI\\epoch=29-step=125010.ckpt"
+    voc_model_path = (
+        "M:\\Илья\\JustAI\\vocos_checkpoint_epoch=3_step=141200_val_loss=9.0557.ckpt"
+    )
     prosody_model_path = None
 
     tts = TTSEvaluationInterface(
@@ -115,17 +124,11 @@ if __name__ == "__main__":
     tests = [
         {
             "lang": "RU",
-            "speaker_name": "Natasha",
-            "style_reference": Path("374.wav"),
+            "speaker_name": "Tatiana",
+            "style_reference": Path("M:/Илья/JustAI/30872.wav"),
             "utterances": """
 
-        Директор департамента финансовой стабильности ЦБ - Елизавета Данилова заявила, что в ноябре выдача льготной ипотеки, к примеру, сопоставима по объемам с октябрем, несмотря на действующие ограничения.
-        В таких условиях ЦБ ничего не оставалось как ввести дестимулирующие меры. В документе регулятор пишет, что прибегнул к фактически запретительным мерам.
-        Помимо роста доли закредитованных заемщиков рынок столкнулся с ценовым расслоением — разрыв цен на первичном и вторичном рынках недвижимости достиг 42%.
-        Однако на фоне повышения ключевой ставки, ипотечное кредитование на вторичном рынке замедляется, что будет приводить к сокращению спроса и на первичном рынке.
-        ЦБ не раз указывал на риски, связанные с перегревом рынка ипотечного кредитования, а также выступал с критикой льготных ипотечных программ, которые, по его мнению, «уместны только как антикризисная мера».
-        Также именно с ипотекой регулятор связывал один из дисбалансов в экономике, так как «она накачана льготными и псевдольготными программами».
-        В 2023 году Банк России всерьез взялся за охлаждение рынка ипотеки: регулятор повысил макронадбавки по ипотеке с низким первоначальным взносом и высокой долговой нагрузкой заемщиков.
+            Россия три года назад «зашла слишком далеко», но сейчас это сделала Украина, заявил Маск. По его мнению, у тех, кто поддерживает «бесконечные смерти в окопах», нет ни эмпатии, ни мозгов.
 
             """,
         },
@@ -137,7 +140,7 @@ if __name__ == "__main__":
             voc,
             test["utterances"],
             test["lang"],
-            speaker_name=test["speaker_name"],
+            speaker_reference=test["style_reference"],
             style_reference=test["style_reference"],
             seed=get_seed(),
         )

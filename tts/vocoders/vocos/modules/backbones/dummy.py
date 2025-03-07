@@ -19,7 +19,7 @@ class DummyBackbone(Backbone):
     def __init__(self, params: DummyBackboneParams):
         super().__init__(params)
         if params.input_dim != params.inner_dim:
-            self.proj = nn.Linear(params.input_dim, params.inner_dim)
+            self.proj = nn.Conv1d(params.input_dim, params.inner_dim, 1)
         else:
             self.proj = None
 

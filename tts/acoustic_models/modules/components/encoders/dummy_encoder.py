@@ -1,5 +1,6 @@
 from torch import nn
 
+from speechflow.utils.tensor_utils import apply_mask, get_mask_from_lengths
 from tts.acoustic_models.modules.common.blocks import Regression
 from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.data_types import ComponentInput, EncoderOutput
@@ -33,7 +34,7 @@ class DummyEncoder(Component):
                 raise RuntimeError(
                     "Dimension of output shape must match dimension of input shape"
                 )
-            self.proj = nn.Identity()
+            self.proj = apply_mask
 
     @property
     def output_dim(self):
@@ -42,9 +43,12 @@ class DummyEncoder(Component):
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
         out = EncoderOutput.copy_from(inputs)
 
-        content = self.get_content(inputs)
+        content = inputs.get_content()
+        content_lengths = inputs.get_content_lengths()
 
         for idx in range(len(content)):
-            content[idx] = self.proj(content[idx])
+            content[idx] = self.proj(
+                content[idx], get_mask_from_lengths(content_lengths[idx])
+            )
 
         return out.set_content(content)

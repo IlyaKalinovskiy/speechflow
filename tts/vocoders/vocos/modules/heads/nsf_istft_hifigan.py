@@ -29,8 +29,8 @@ class NSFiSTFTHiFiGANHeadParams(BaseTorchModelParams):
     upsample_kernel_sizes: tp.Tuple[int, ...] = (20, 8, 4)
     resblock_kernel_sizes: tp.Tuple[int, ...] = (3, 7, 11)
     resblock_dilation_sizes: tp.Tuple[int, ...] = ([1, 3, 5], [1, 3, 5], [1, 3, 5])
-    istft_n_fft: int = 20
-    istft_hop_size: int = 4
+    n_fft: int = 20
+    hop_length: int = 4
     adain_upsample: bool = False
     adain_p_dropout: float = 0
     output_sample_rate: int = 24000
@@ -104,8 +104,8 @@ class NSFiSTFTHiFiGANHead(WaveformGenerator):
             params.resblock_dilation_sizes,
             params.upsample_kernel_sizes,
             params.output_sample_rate,
-            params.istft_n_fft,
-            params.istft_hop_size,
+            params.n_fft,
+            params.hop_length,
         )
 
     def remove_weight_norm(self):
@@ -565,8 +565,8 @@ class Generator(torch.nn.Module):
         resblock_dilation_sizes,
         upsample_kernel_sizes,
         output_sample_rate,
-        istft_n_fft,
-        istft_hop_size,
+        n_fft,
+        hop_length,
     ):
         super().__init__()
 
@@ -576,12 +576,12 @@ class Generator(torch.nn.Module):
 
         self.m_source = SourceModuleHnNSF(
             sampling_rate=output_sample_rate,
-            upsample_scale=np.prod(upsample_rates) * istft_hop_size,
+            upsample_scale=np.prod(upsample_rates) * hop_length,
             harmonic_num=8,
             voiced_threshod=10,
         )
         self.f0_upsamp = torch.nn.Upsample(
-            scale_factor=np.prod(upsample_rates) * istft_hop_size
+            scale_factor=np.prod(upsample_rates) * hop_length
         )
         self.noise_convs = nn.ModuleList()
         self.noise_res = nn.ModuleList()
@@ -615,7 +615,7 @@ class Generator(torch.nn.Module):
                 stride_f0 = np.prod(upsample_rates[i + 1 :])
                 self.noise_convs.append(
                     Conv1d(
-                        istft_n_fft + 2,
+                        n_fft + 2,
                         c_cur,
                         kernel_size=stride_f0 * 2,
                         stride=stride_f0,
@@ -624,18 +624,18 @@ class Generator(torch.nn.Module):
                 )
                 self.noise_res.append(resblock(c_cur, 7, [1, 3, 5], condition_dim))
             else:
-                self.noise_convs.append(Conv1d(istft_n_fft + 2, c_cur, kernel_size=1))
+                self.noise_convs.append(Conv1d(n_fft + 2, c_cur, kernel_size=1))
                 self.noise_res.append(resblock(c_cur, 11, [1, 3, 5], condition_dim))
 
-        self.post_n_fft = istft_n_fft
+        self.post_n_fft = n_fft
         self.conv_post = weight_norm(Conv1d(ch, self.post_n_fft + 2, 7, 1, padding=3))
         self.ups.apply(init_weights)
         self.conv_post.apply(init_weights)
         self.reflection_pad = torch.nn.ReflectionPad1d((1, 0))
         self.stft = TorchSTFT(
-            filter_length=istft_n_fft,
-            hop_length=istft_hop_size,
-            win_length=istft_n_fft,
+            filter_length=n_fft,
+            hop_length=hop_length,
+            win_length=n_fft,
         )
 
     def forward(self, x, s, f0):

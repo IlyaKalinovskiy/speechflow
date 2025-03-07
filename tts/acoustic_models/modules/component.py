@@ -127,6 +127,11 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
         outputs = self.forward_step(inputs)
         return outputs.content, getattr(outputs, "hidden_state")
 
+    def hook_update_content(
+        self, x: torch.Tensor, x_lengths: torch.Tensor, inputs: ComponentInput
+    ) -> torch.Tensor:
+        return x
+
     def inference_step(self, inputs: ComponentInput, **kwargs) -> ComponentOutput:
         return self.forward_step(inputs, **kwargs)
 
@@ -136,45 +141,17 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
         outputs.additional_content[self.name] = outputs.content
         return outputs
 
-    @staticmethod
-    def get_content(
-        inputs: tp.Union[tp.List[torch.Tensor], torch.Tensor, ComponentInput]
-    ) -> tp.List:
-        if isinstance(inputs, ComponentInput):
-            content = inputs.content
-        else:
-            content = inputs
-
-        return [content] if not isinstance(content, list) else content
-
-    @staticmethod
-    def get_content_lengths(
-        inputs: tp.Union[tp.List[torch.Tensor], torch.Tensor, ComponentInput]
-    ):
-        return (
-            inputs.content_lengths
-            if isinstance(inputs.content_lengths, list)
-            else [inputs.content_lengths]
-        )
-
-    @staticmethod
-    def get_content_and_mask(inputs, idx: int = 0):
-        x = Component.get_content(inputs)[idx]
-        x_lens = Component.get_content_lengths(inputs)[idx]
-        x_mask = get_mask_from_lengths(x_lens, max_length=x.shape[1])
-        return x, x_lens, x_mask
-
     def get_condition(
         self,
         inputs: tp.Union[ComponentInput, MODEL_INPUT_TYPE],
-        condition: tp.Union[str, tp.Tuple[str, ...]],
-        average_by_time: bool = True,
+        feat_name: tp.Optional[tp.Union[str, tp.Tuple[str, ...]]] = None,
+        average_by_time: bool = False,
     ):
-        if not condition:
+        if not feat_name:
             return
 
-        if isinstance(condition, str):
-            condition = (condition,)
+        if isinstance(feat_name, str):
+            feat_name = (feat_name,)
 
         if hasattr(inputs, "model_inputs"):
             model_inputs = inputs.model_inputs
@@ -187,7 +164,7 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
             ref = None
 
         g = []
-        for name in condition:
+        for name in feat_name:
             if name.startswith("prompt."):
                 inputs = inputs.prompt
                 name = name.replace("prompt.", "")
@@ -225,9 +202,6 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
 
             if feat.shape[1] > 1 and average_by_time:
                 feat = torch.mean(feat, dim=1, keepdim=True)
-
-            if name == "speaker_emb":
-                feat = F.normalize(feat, dim=-1)
 
             g.append(feat.detach() if detach else feat)
 

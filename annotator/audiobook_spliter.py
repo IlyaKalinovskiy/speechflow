@@ -8,7 +8,8 @@ import numpy as np
 import torch
 import multilingual_text_parser
 
-from multilingual_text_parser import PUNCTUATION_ALL, Doc, TextParser, Token, TokenUtils
+from multilingual_text_parser import PUNCTUATION_ALL, Doc, Token, TokenUtils
+from multilingual_text_parser.parser import TextParser
 
 from annotator.utils import nmalign
 from speechflow.data_pipeline.core import BaseDSParser, PipeRegistry

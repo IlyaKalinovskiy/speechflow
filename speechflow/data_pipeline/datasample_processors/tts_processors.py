@@ -10,7 +10,7 @@ from copy import deepcopy as copy
 import numpy as np
 
 from annoy import AnnoyIndex
-from multilingual_text_parser import Doc, Syntagma, TextParser, Token, TokenUtils
+from multilingual_text_parser.data_types import Doc, Syntagma, Token, TokenUtils
 from scipy import interpolate, signal
 
 from speechflow.data_pipeline.core.registry import PipeRegistry
@@ -389,12 +389,7 @@ def add_pauses_from_timestamps(
                         new_ts_word[-1] = ds.audio_chunk.duration
                         new_ts_ph[-1][1] = ds.audio_chunk.duration
 
-                        if tokens_processed[-1].is_punctuation:
-                            tokens_processed.insert(-1, pause_token)
-                        else:
-                            tokens_processed.append(pause_token)
-                    else:
-                        tokens_processed.append(pause_token)
+                    tokens_processed.append(pause_token)
 
                     ts_words_processed.append(new_ts_word)
                     ts_phonemes_processed.append(Timestamps(new_ts_ph))
@@ -813,33 +808,41 @@ def add_service_tokens(ds: TTSDataSample):
     synt_begin = ds.sent.syntagmas[0]
     synt_end = ds.sent.syntagmas[-1]
 
-    synt_begin.tokens.insert(0, bos_token)
-    synt_end.tokens.append(eos_token)
-
     hop_len = ds.get_param_val("hop_len")
 
     if ds.word_timestamps and ds.phoneme_timestamps:
-        frame_dura = 0.25 * hop_len / ds.audio_chunk.sr
+        frame_dura = 0.5 * hop_len / ds.audio_chunk.sr
         begin_phoneme_dura = float(np.diff(ds.phoneme_timestamps[0][0]))
         end_phoneme_dura = float(np.diff(ds.phoneme_timestamps[-1][-1]))
-        frame_dura = min(frame_dura, min(begin_phoneme_dura, end_phoneme_dura) / 2)
 
-        ts_end = ds.word_timestamps.end
+        if frame_dura < begin_phoneme_dura / 2:
+            synt_begin.tokens.insert(0, bos_token)
 
-        ds.word_timestamps.append_left([(0.0, frame_dura)])
-        ds.word_timestamps.append([(ts_end - frame_dura, ts_end)])
+            ds.word_timestamps.append_left([(0.0, frame_dura)])
 
-        ds.phoneme_timestamps[0].append_left([(0.0, frame_dura)])
-        ds.phoneme_timestamps.insert(
-            0, Timestamps(np.asarray([ds.phoneme_timestamps[0][0]]))
-        )
-        ds.phoneme_timestamps[1].delete(0)
+            ds.phoneme_timestamps[0].append_left([(0.0, frame_dura)])
+            ds.phoneme_timestamps.insert(
+                0, Timestamps(np.asarray([ds.phoneme_timestamps[0][0]]))
+            )
+            ds.phoneme_timestamps[1].delete(0)
+        else:
+            if synt_begin.tokens[0].text == TTSTextProcessor.sil:
+                synt_begin.tokens[0] = bos_token
 
-        ds.phoneme_timestamps[-1].append([(ts_end - frame_dura, ts_end)])
-        ds.phoneme_timestamps.append(
-            Timestamps(np.asarray([ds.phoneme_timestamps[-1][-1]]))
-        )
-        ds.phoneme_timestamps[-2].delete(-1)
+        if frame_dura < end_phoneme_dura / 2:
+            synt_end.tokens.append(eos_token)
+            ts_end = ds.word_timestamps.end
+
+            ds.word_timestamps.append([(ts_end - frame_dura, ts_end)])
+
+            ds.phoneme_timestamps[-1].append([(ts_end - frame_dura, ts_end)])
+            ds.phoneme_timestamps.append(
+                Timestamps(np.asarray([ds.phoneme_timestamps[-1][-1]]))
+            )
+            ds.phoneme_timestamps[-2].delete(-1)
+        else:
+            if synt_end.tokens[-1].text == TTSTextProcessor.sil:
+                synt_end.tokens[-1] = eos_token
 
     all_tokens = [synt.tokens for synt in ds.sent.syntagmas]
     ds.sent.tokens = list(itertools.chain.from_iterable(all_tokens))
@@ -888,8 +891,8 @@ def reverse(ds: TTSDataSample, p: float = 0.2):
     if ds.ac_feat is not None:
         ds.ac_feat.encoder_feat = np.flipud(ds.ac_feat.encoder_feat).copy()
 
-    if ds.plbert_feat is not None:
-        ds.plbert_feat = np.flipud(ds.plbert_feat).copy()
+    if ds.xpbert_feat is not None:
+        ds.xpbert_feat = np.flipud(ds.xpbert_feat).copy()
 
     if ds.lm_feat is not None:
         ds.lm_feat = np.flipud(ds.lm_feat).copy()
@@ -1036,6 +1039,8 @@ class ContoursExtractor:
 
 
 if __name__ == "__main__":
+    from multilingual_text_parser.parser import TextParser
+
     _lang = "KK"
 
     text_parser = TextParser(lang=_lang)

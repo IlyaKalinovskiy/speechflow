@@ -7,14 +7,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import joblib
-import whisper
-import torchaudio
 import transformers
-
-from speechbrain.pretrained import EncoderClassifier
-from torch.nn import functional as F
-from transformers.tokenization_utils_base import PaddingStrategy
-from whisper.decoding import DecodingTask
 
 from speechflow.data_pipeline.datasample_processors.data_types import SSLFeatures
 from speechflow.io import AudioChunk, check_path, tp_PATH
@@ -82,11 +75,13 @@ class Whisper(BaseSSLModel):
         ] = "large-v2",
         device: str = "cpu",
     ):
+        import whisper
+
         super().__init__(device)
 
         self.model = whisper.load_model(model_name, device)
         self.options = whisper.DecodingOptions(fp16=False)
-        self.dec_task = DecodingTask(self.model, self.options)
+        self.dec_task = whisper.decoding.DecodingTask(self.model, self.options)
         self.pos_emb = self.model.encoder.positional_embedding.clone()
 
         self.model.eval()
@@ -228,7 +223,7 @@ class Wav2Vec(BaseSSLModel):
 
         processed = self.processor(
             data.squeeze(0),
-            padding=PaddingStrategy.DO_NOT_PAD,
+            padding=transformers.tokenization_utils_base.PaddingStrategy.DO_NOT_PAD,
             sampling_rate=self.sample_rate,
             return_tensors="pt",
             return_attention_mask=True,
@@ -296,6 +291,8 @@ class WavLM(BaseSSLModel):
         num_layer: int = 9,
         device: str = "cpu",
     ):
+        import torchaudio
+
         super().__init__(device)
         """
         num_layer: 9 - asr task, base+; -1 asr task large
@@ -338,6 +335,8 @@ class ECAPABiometric(BaseSSLModel):
         model_name: tp.Union[str, Path] = "spkrec-ecapa-voxceleb",
         device: str = "cpu",
     ):
+        from speechbrain.pretrained import EncoderClassifier
+
         super().__init__(device)
 
         self.sample_rate = 16000

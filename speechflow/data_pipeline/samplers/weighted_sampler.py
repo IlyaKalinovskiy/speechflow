@@ -66,7 +66,7 @@ class WeightedSampler(RandomSampler):
             probs = self.compute_probs(self._fields_to_compute_weight)
         except Exception as e:
             LOGGER.warning(trace(self, e, "error initializing weighted sampler!"))
-            probs = np.ones((self._dataset_size, 1)) / self._dataset_size
+            probs = np.ones((1, self._dataset_size)) / self._dataset_size
 
         probs_num = probs.shape[0]
         epoch_size = min(self._epoch_size, self._dataset_size)

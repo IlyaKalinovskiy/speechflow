@@ -181,15 +181,17 @@ class ProsodyReference:
                 audio_chunk = getattr(self, attr_name)
                 ds = AudioDataSample(audio_chunk=audio_chunk)
                 ds = biometric_pipe.preprocessing_datasample([ds])[0]
-                if not ds.additional_fields:
-                    setattr(self, f"{ref_type}_emb", ds.speaker_emb)
-                else:
+                if ds.additional_fields and ref_type == "style":
                     setattr(
                         self,
                         f"{ref_type}_emb",
                         list(ds.additional_fields.values())[0],
                     )
-                continue
+                else:
+                    setattr(self, f"{ref_type}_emb", ds.speaker_emb)
+            else:
+                if ref_type == "speaker" and bio_embeddings is None:
+                    raise RuntimeError("Please set speaker_audio_chunk.")
 
     def set_spectrogram_reference(self, spectrogram_pipe: callable):
         for ref_type in ["speaker", "style"]:
@@ -211,9 +213,9 @@ class ProsodyReference:
 
         self.model_feats.update(
             model.get_style_embedding(
-                self.speaker_emb,
-                self.speaker_spectrogram,
-                self.speaker_ssl_feat,
+                self.style_emb,
+                self.style_spectrogram,
+                self.style_ssl_feat,
             )
         )
 

@@ -4,8 +4,6 @@ import logging
 import torch
 import pytorch_lightning as pl
 
-from clearml import Task
-
 from speechflow.data_pipeline.core import BaseBatchProcessor
 from speechflow.data_pipeline.core.batch import Batch
 from speechflow.logging import log_to_file, trace
@@ -49,6 +47,8 @@ class LightningEngine(pl.LightningModule):
         self.validation_losses = []
 
         if use_clearml_logger:
+            from clearml import Task
+
             LOGGER.info(trace(self, message="Init ClearML task"))
             self.clearml_task = Task.init(
                 task_name=saver.expr_path.name, project_name=saver.expr_path.parent.name

@@ -88,7 +88,7 @@ class XTTSDecoder(Component):
         return _response, _response_lens
 
     def forward_step(self, inputs: VarianceAdaptorOutput) -> DecoderOutput:  # type: ignore
-        x, x_lens, x_mask = self.get_content_and_mask(inputs)
+        x, x_lens, x_mask = inputs.get_content_and_mask()
         x = self.prenet_layer(x.transpose(1, -1)).transpose(1, -1)
 
         _prompt = getattr(inputs.model_inputs, "prompt", None)
@@ -134,7 +134,7 @@ class XTTSDecoder(Component):
         return DecoderOutput.copy_from(inputs).set_content(logits, _response_lens + 1)
 
     def inference_step(self, inputs: VarianceAdaptorOutput, max_steps: int = 1000, **kwargs) -> DecoderOutput:  # type: ignore
-        x, x_lens, x_mask = self.get_content_and_mask(inputs)
+        x, x_lens, x_mask = inputs.get_content_and_mask()
         x = self.prenet_layer(x.transpose(1, -1)).transpose(1, -1)
 
         _prompt_audio = getattr(inputs.model_inputs, self.params.prompt_audio_feat)

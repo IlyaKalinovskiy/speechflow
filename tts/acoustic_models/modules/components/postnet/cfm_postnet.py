@@ -5,7 +5,6 @@ from collections import namedtuple
 from torch.nn import functional as F
 
 from speechflow.utils.tensor_utils import get_mask_from_lengths
-from tts.acoustic_models.modules.common.matcha_tts.flow_matching import CFM
 from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.data_types import DecoderOutput, VarianceAdaptorOutput
 from tts.acoustic_models.modules.params import PostnetParams
@@ -63,8 +62,8 @@ class CFMPostnet(Component):
         return self.params.postnet_output_dim
 
     def forward_step(self, inputs: VarianceAdaptorOutput) -> DecoderOutput:  # type: ignore
-        content = self.get_content(inputs)[0]
-        content_lengths = self.get_content_lengths(inputs)[0]
+        content = inputs.get_content()[0]
+        content_lengths = inputs.get_content_lengths()[0]
         y = getattr(inputs.model_inputs, self.params.target)
         y_mask = get_mask_from_lengths(content_lengths)
 
@@ -94,8 +93,8 @@ class CFMPostnet(Component):
         return outputs
 
     def inference_step(self, inputs: VarianceAdaptorOutput, **kwargs) -> DecoderOutput:  # type: ignore
-        content = self.get_content(inputs)[0]
-        content_lengths = self.get_content_lengths(inputs)[0]
+        content = inputs.get_content()[0]
+        content_lengths = inputs.get_content_lengths()[0]
 
         # TODO: исправить ошибку обработки маски в CFM
         content_mask = get_mask_from_lengths(content_lengths) | True

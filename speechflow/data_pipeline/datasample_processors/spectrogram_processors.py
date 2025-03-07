@@ -63,13 +63,6 @@ __all__ = [
 LOGGER = logging.getLogger("root")
 
 try:
-    from torchaudio import functional as F
-    from torchaudio import sox_effects, transforms
-except ImportError as e:
-    if mp.current_process().name == "MainProcess":
-        LOGGER.warning(f"torchaudio is not available: {e}")
-
-try:
     from nemo.collections.asr.modules import (
         AudioToMelSpectrogramPreprocessor,
         AudioToSpectrogram,
@@ -435,6 +428,9 @@ class MelProcessor(BaseSpectrogramProcessor):
             ds.mel = np.dot(self.mel_basis, ds.magnitude.T).T
 
         elif self.backend == ComputeBackend.torchaudio:
+            from torchaudio import functional as F
+            from torchaudio import transforms
+
             if self.mel_scale is None:
                 n_stft = ds.magnitude.shape[-1]
                 self.mel_scale = transforms.MelScale(

@@ -3,7 +3,8 @@ import random
 import torch
 import pytest
 
-from multilingual_text_parser import Doc, EmptyTextError, TextParser
+from multilingual_text_parser.data_types import Doc
+from multilingual_text_parser.parser import EmptyTextError, TextParser
 
 from speechflow.data_pipeline.datasample_processors.data_types import TextDataSample
 from speechflow.data_pipeline.datasample_processors.tts_text_processors import (

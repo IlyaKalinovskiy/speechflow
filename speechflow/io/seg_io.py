@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from multilingual_text_parser import Doc, Position, Sentence, Syntagma, Token
+from multilingual_text_parser.data_types import Doc, Position, Sentence, Syntagma, Token
 from praatio import tgio
 
 from speechflow.io import AudioChunk, Timestamps

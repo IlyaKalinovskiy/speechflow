@@ -8,9 +8,7 @@ import numpy as np
 import torch
 import numpy.typing as npt
 
-from speechflow.data_pipeline.collate_functions.spectrogram_collate import (
-    SpectrogramCollateOutput,
-)
+from speechflow.data_pipeline.collate_functions.tts_collate import TTSCollateOutput
 from speechflow.data_pipeline.core import PipelineComponents
 from speechflow.data_pipeline.datasample_processors import SignalProcessor
 from speechflow.data_pipeline.datasample_processors.data_types import (
@@ -68,10 +66,16 @@ class VocoderLoader:
 
         self.pipe = self._load_data_pipeline(self.cfg_data)
         self.pipe_for_reference = self.pipe.with_ignored_handlers(
-            ignored_data_handlers={"SSLProcessor", "MultilingualPLBert"}
+            ignored_data_handlers={"SSLProcessor"}
         )
+
         self.lang_id_map = checkpoint.get("lang_id_map", {})
+        if self.lang_id_map is None:
+            self.lang_id_map = {}
+
         self.speaker_id_map = checkpoint.get("speaker_id_map", {})
+        if self.speaker_id_map is None:
+            self.speaker_id_map = {}
 
         cfg_model["model"]["feature_extractor"]["init_args"].n_langs = len(
             self.lang_id_map
@@ -96,7 +100,8 @@ class VocoderLoader:
     @staticmethod
     def _load_data_pipeline(cfg_data: Config) -> PipelineComponents:
         cfg_data["processor"].pop("dump", None)
-        cfg_data["singleton_handlers"]["handlers"] = []
+        if "singleton_handlers" in cfg_data:
+            cfg_data.pop("singleton_handlers")
         pipe = PipelineComponents(Config(cfg_data).trim("ml"), data_subset_name="test")
         return pipe.with_ignored_fields(
             ignored_data_fields={"sent", "phoneme_timestamps"}
@@ -115,13 +120,11 @@ class VocoderLoader:
             for k, v in state_dict.items()
             if "discriminators" not in k and "loss" not in k
         }
-        try:
-            model.load_state_dict(state_dict)
-        except Exception:
-            state_dict = {k.replace("lstms.", "rnns."): v for k, v in state_dict.items()}
-            model.load_state_dict(state_dict)
+        model.load_state_dict(state_dict)
 
-        model.head.remove_weight_norm()
+        if hasattr(model.head, "remove_weight_norm"):
+            model.head.remove_weight_norm()
+
         return model
 
 
@@ -188,9 +191,12 @@ class VocoderEvaluationInterface(VocoderLoader):
         opt: VocoderOptions = VocoderOptions(),
     ) -> VocoderForwardOutput:
         voc_in = VocoderForwardInput.init_from_tts(tts_input, tts_output)
-        voc_in.lang_id = torch.LongTensor([self.lang_id_map.get(lang, 0)])
-        voc_in.speaker_id = torch.LongTensor([self.speaker_id_map.get(speaker_name, 0)])
-        voc_in.to(self.device)
+        if lang is not None:
+            voc_in.lang_id = torch.LongTensor([self.lang_id_map.get(lang, 0)])
+        if speaker_name is not None:
+            voc_in.speaker_id = torch.LongTensor(
+                [self.speaker_id_map.get(speaker_name, 0)]
+            )
         return self.evaluate(voc_in, opt)
 
     @check_path(assert_file_exists=True)
@@ -207,13 +213,13 @@ class VocoderEvaluationInterface(VocoderLoader):
         )
         ds = TTSDataSample(audio_chunk=audio_chunk)
         batch = self.pipe.datasample_to_batch([ds])
-        collated: SpectrogramCollateOutput = batch.collated_samples  # type: ignore
+        collated: TTSCollateOutput = batch.collated_samples  # type: ignore
 
         if ref_wav_path is not None:
             ref_audio_chunk = AudioChunk(file_path=ref_wav_path).load(sr=self.sample_rate)
             ref_ds = TTSDataSample(audio_chunk=ref_audio_chunk)
             ref_batch = self.pipe_for_reference.datasample_to_batch([ref_ds])
-            ref_collated: SpectrogramCollateOutput = ref_batch.collated_samples  # type: ignore
+            ref_collated: TTSCollateOutput = ref_batch.collated_samples  # type: ignore
             collated.speaker_emb = ref_collated.speaker_emb
             collated.speaker_emb_mean = ref_collated.speaker_emb_mean
             collated.spectrogram = ref_collated.spectrogram
@@ -231,8 +237,8 @@ class VocoderEvaluationInterface(VocoderLoader):
                 spectrogram_lengths=collated.spectrogram_lengths,
                 ssl_feat=collated.ssl_feat,
                 ssl_feat_lengths=collated.ssl_feat_lengths,
-                plbert_feat=collated.plbert_feat,
-                plbert_feat_lengths=collated.plbert_feat_lengths,
+                xpbert_feat=collated.xpbert_feat,
+                xpbert_feat_lengths=collated.xpbert_feat_lengths,
                 speaker_emb=collated.speaker_emb,
                 speaker_emb_mean=collated.speaker_emb,
                 speech_quality_emb=collated.speech_quality_emb,
@@ -242,9 +248,9 @@ class VocoderEvaluationInterface(VocoderLoader):
                 # pitch=collated.pitch,
             )
 
-            if lang is not None:
+            if self.lang_id_map and lang is not None:
                 _input.lang_id = torch.LongTensor([self.lang_id_map[lang]])
-            if speaker_name is not None:
+            if self.speaker_id_map and speaker_name is not None:
                 _input.speaker_id = torch.LongTensor([self.speaker_id_map[speaker_name]])
 
             _output = self.evaluate(_input, opt)
@@ -273,16 +279,14 @@ if __name__ == "__main__":
 
         from speechflow.logging import trace
 
-        vocoder_path = (
-            "C:/FluentaAI/vocos_checkpoint_epoch=2_step=60000_val_loss=9.3055.ckpt"
-        )
-        ref_wav_path = "C:/FluentaAI/642111.wav"
+        vocoder_path = "vocos_checkpoint_epoch=2_step=60000_val_loss=9.3055.ckpt"
+        ref_wav_path = "642111.wav"
 
-        test_files = "C:/FluentaAI/eng_spontan/wav_16k"
-        result_path = "C:/FluentaAI/eng_spontan/result"
+        test_files = "wav_16k"
+        result_path = "result"
 
-        hubert_model_path = "C:/FluentaAI/hubert_phoneme_en/epoch=0-step=4500.ckpt"
-        hubert_vocab_path = "C:/FluentaAI/hubert_phoneme_en/vocab.json"
+        hubert_model_path = "hubert_phoneme_en/epoch=0-step=4500.ckpt"
+        hubert_vocab_path = "hubert_phoneme_en/vocab.json"
 
         device = "cpu"
 

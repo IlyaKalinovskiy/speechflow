@@ -1,23 +1,36 @@
 import math
+import typing as tp
 
 import torch
 
 from torch import nn
 from torch.nn import functional as F
 
+from speechflow.utils.tensor_utils import apply_mask
 from tts.acoustic_models.modules.common.blocks import ConvPrenet, Regression
+from tts.acoustic_models.modules.common.conditional_layers import (
+    CONDITIONAL_TYPES,
+    ConditionalLayer,
+)
 from tts.acoustic_models.modules.common.layers import Conv, HighwayNetwork
-from tts.acoustic_models.modules.component import Component
+from tts.acoustic_models.modules.components.encoders.cnn_encoder import (
+    CNNEncoder,
+    CNNEncoderParams,
+)
 from tts.acoustic_models.modules.data_types import ComponentInput, EncoderOutput
-from tts.acoustic_models.modules.params import EncoderParams
 
 __all__ = ["CBHGEncoder", "CBHGEncoderParams"]
 
 
-class CBHGEncoderParams(EncoderParams):
+class CBHGEncoderParams(CNNEncoderParams):
     conv_banks_num: int = 5
     kernel_size: int = 3
     highways_num: int = 1
+
+    # condition
+    condition: tp.Tuple[str, ...] = ()
+    condition_dim: int = 0
+    condition_type: tp.Optional[CONDITIONAL_TYPES] = None
 
     # projection
     use_projection: bool = True
@@ -25,16 +38,21 @@ class CBHGEncoderParams(EncoderParams):
     projection_activation_fn: str = "Identity"
 
 
-class CBHGEncoder(Component):
+class CBHGEncoder(CNNEncoder):
     params: CBHGEncoderParams
 
     def __init__(self, params: CBHGEncoderParams, input_dim):
         super().__init__(params, input_dim)
 
-        in_dim = input_dim
+        in_dim = super().output_dim
         inner_dim = params.encoder_inner_dim
 
         self.prenet = ConvPrenet(in_dim, inner_dim)
+
+        if params.condition:
+            self.cond_layer = ConditionalLayer(
+                params.condition_type, inner_dim, params.condition_dim
+            )
 
         self.bank_kernels = [
             params.kernel_size * (i + 1) for i in range(params.conv_banks_num)
@@ -79,7 +97,7 @@ class CBHGEncoder(Component):
             hn = HighwayNetwork(inner_dim)
             self.highways.append(hn)
 
-        if params.use_projection and inner_dim != params.encoder_output_dim:
+        if params.use_projection:
             self.proj = Regression(
                 inner_dim,
                 params.encoder_output_dim,
@@ -87,7 +105,7 @@ class CBHGEncoder(Component):
                 activation_fn=params.projection_activation_fn,
             )
         else:
-            self.proj = nn.Identity()
+            self.proj = apply_mask
 
     @property
     def output_dim(self):
@@ -97,11 +115,18 @@ class CBHGEncoder(Component):
             return self.params.encoder_inner_dim
 
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
-        x, x_lens, x_mask = self.get_content_and_mask(inputs)
+        inputs = super().forward_step(inputs)
 
-        x = self.prenet(x.transpose(2, 1))
+        x, x_lens, x_mask = inputs.get_content_and_mask()
+
+        x = self.prenet(x.transpose(1, -1)).transpose(1, -1)
+
+        if self.params.condition:
+            c = self.get_condition(inputs, self.params.condition)
+            x = self.cond_layer(x, c, x_mask)
 
         # Save these for later
+        x = x.transpose(1, -1)
         residual = x
         conv_bank = []
 
@@ -126,10 +151,11 @@ class CBHGEncoder(Component):
         x = x + residual
 
         # Through the highways
-        x = x.transpose(1, 2)
+        x = x.transpose(1, -1)
         for h in self.highways:
+            x = self.hook_update_content(x, x_lens, inputs)
             x = h(x)
 
-        y = self.proj(x)
+        y = self.proj(x, x_mask)
 
         return EncoderOutput.copy_from(inputs).set_content(y).set_hidden_state(x)

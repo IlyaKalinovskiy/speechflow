@@ -1,7 +1,9 @@
+import time
 import pickle
 import typing as tp
 
 from dataclasses import dataclass
+from functools import wraps
 
 import zmq
 
@@ -15,6 +17,30 @@ __all__ = [
     "ZMQWorker",
     "ZMQProxy",
 ]
+
+
+def retry(
+    func: tp.Callable,
+) -> tp.Callable:
+    num_retry: int = 5
+
+    @wraps(func)
+    def retry_loop(*args, **kwargs) -> bool:
+
+        for i in range(num_retry):
+            try:
+                func(*args, **kwargs)
+                return True
+            except zmq.error.Again as e:
+                if i + 1 == num_retry:
+                    log_to_file(trace("retry_loop", e))
+                    return False
+                else:
+                    time.sleep(2)
+
+        return func(*args, **kwargs)
+
+    return retry_loop
 
 
 @dataclass
@@ -47,6 +73,7 @@ class ZMQServer:
         if self.backend:
             self.backend.close()
 
+    @retry
     def frontend_send_multipart(self, data: tp.List[tp.Any]):
         if not isinstance(data, list):
             data = [data]
@@ -55,6 +82,7 @@ class ZMQServer:
     def frontend_recv_multipart(self) -> tp.List[tp.Any]:
         return self.frontend.recv_multipart()
 
+    @retry
     def backend_send_multipart(self, data: tp.List[tp.Any]):
         if not isinstance(data, list):
             data = [data]
@@ -73,15 +101,11 @@ class ZMQClient:
     def close(self):
         self.socket.close()
 
+    @retry
     def send(self, data: tp.Any, serialize: bool = True):
         if serialize:
             data = Serialize.dump(data)
-
-        try:
-            self.socket.send(data, flags=self.flags)
-        except zmq.ZMQError as e:
-            if not self.flags:
-                raise e
+        self.socket.send(data, flags=self.flags)
 
     def recv(
         self,
@@ -104,21 +128,17 @@ class ZMQClient:
 
         return msg
 
+    @retry
     def send_multipart(self, data: tp.List[tp.Any], serialize: bool = True):
         if serialize:
             data = Serialize.dumps(data)
-
-        try:
-            self.socket.send_multipart(data, flags=self.flags)
-        except zmq.ZMQError as e:
-            if not self.flags:
-                raise e
+        self.socket.send_multipart(data, flags=self.flags)
 
     def recv_multipart(
         self,
-        max_num_message: tp.Optional[int] = None,
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
+        max_num_message: tp.Optional[int] = None,
     ) -> tp.List[tp.Any]:
         if timeout and self.socket.poll(timeout=timeout) == 0:
             return []
@@ -150,24 +170,28 @@ class ZMQClient:
         serialize: bool = True,
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
+        multipart: bool = False,
     ) -> tp.Optional[tp.Any]:
-        self.send(data, serialize)
+        if multipart:
+            self.send_multipart(data, serialize)
+        else:
+            self.send(data, serialize)
 
         if timeout is None or timeout == -1:
             msg = None
             while msg is None:
-                msg = self.recv(deserialize, timeout=1000)
+                if multipart:
+                    msg = self.recv_multipart(deserialize, 1000)
+                else:
+                    msg = self.recv(deserialize, 1000)
 
             return msg
         else:
             return self.recv(deserialize, timeout)
 
+    @retry
     def send_string(self, data: str):
-        try:
-            self.socket.send_string(data, flags=self.flags)
-        except zmq.ZMQError as e:
-            if not self.flags:
-                raise e
+        self.socket.send_string(data, flags=self.flags)
 
     def recv_string(
         self, timeout: tp.Optional[int] = None
@@ -195,25 +219,17 @@ class ZMQWorker:
     def close(self):
         self.socket.close()
 
+    @retry
     def send(self, data: tp.Any, serialize: bool = True):
-        try:
-            if serialize:
-                data = Serialize.dump(data)
+        if serialize:
+            data = Serialize.dump(data)
+        self.socket.send(data, flags=self.flags)
 
-            self.socket.send(data, flags=self.flags)
-        except zmq.ZMQError as e:
-            if not self.flags:
-                raise e
-
+    @retry
     def send_multipart(self, data: tp.List[tp.Any], serialize: bool = True):
-        try:
-            if serialize:
-                data = Serialize.dumps(data)
-
-            self.socket.send_multipart(data, flags=self.flags)
-        except zmq.ZMQError as e:
-            if not self.flags:
-                raise e
+        if serialize:
+            data = Serialize.dumps(data)
+        self.socket.send_multipart(data, flags=self.flags)
 
     def recv_multipart(
         self,
@@ -259,13 +275,11 @@ class ZMQProxy:
 
         return results
 
+    @retry
     def frontend_send_multipart(self, data: tp.List[tp.Any]):
-        try:
-            if not isinstance(data, list):
-                data = [data]
-            self.frontend.send_multipart(data, flags=self.flags)
-        except zmq.ZMQError:
-            pass
+        if not isinstance(data, list):
+            data = [data]
+        self.frontend.send_multipart(data, flags=self.flags)
 
     def frontend_recv_multipart(self) -> tp.List[tp.Any]:
         try:
@@ -274,11 +288,12 @@ class ZMQProxy:
             return []
 
     def backend_send_multipart(self, data: tp.List[tp.Any]):
+        @retry
+        def send(backend):
+            backend.socket.send_multipart(data, flags=self.flags)
+
         for b in self.backends:
-            try:
-                b.socket.send_multipart(data, flags=self.flags)
-            except zmq.ZMQError:
-                pass
+            send(b)
 
 
 class ZMQPatterns:

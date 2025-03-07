@@ -18,7 +18,6 @@ def prune(checkpoint: tp.Dict[str, tp.Any]) -> tp.Dict[str, tp.Any]:
         "lr_schedulers",
         "scripts",
         "dataset",
-        "files",
     ]
     checkpoint = {k: v for k, v in checkpoint.items() if k not in remove_keys}
 

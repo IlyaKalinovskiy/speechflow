@@ -9,8 +9,6 @@ import torchaudio
 import transformers
 import pytorch_lightning as pl
 
-from clearml import Task
-
 from speechflow.io import AudioChunk, tp_PATH
 from speechflow.logging import trace
 from speechflow.training.saver import ExperimentSaver
@@ -141,6 +139,8 @@ class VocosLightningEngine(pl.LightningModule):
         self.base_mel_coeff = self.mel_loss_coeff = mel_loss_coeff
 
         if use_clearml_logger:
+            from clearml import Task
+
             LOGGER.info(trace(self, message="Init ClearML task"))
             self.clearml_task = Task.init(
                 task_name=saver.expr_path.name, project_name=saver.expr_path.parent.name

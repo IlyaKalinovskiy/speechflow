@@ -5,7 +5,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from speechflow.utils.tensor_utils import apply_mask, masked_fill
-from tts.acoustic_models.modules.common.layers import CondionalLayerNorm
+from tts.acoustic_models.modules.common.conditional_layers import ConditionalLayer
 
 
 class ScaledDotProductAttention(nn.Module):
@@ -22,18 +22,17 @@ class ScaledDotProductAttention(nn.Module):
         attn = attn / self.temperature
 
         if mask is not None:
-            attn = masked_fill(attn, mask, -np.inf)
+            attn = masked_fill(attn, mask, -torch.inf)
 
         attn = self.softmax(attn)
         output = torch.bmm(attn, v)
-
         return output, attn
 
 
 class MultiHeadAttention(nn.Module):
     """Multi-Head Attention module."""
 
-    def __init__(self, n_head, d_model, d_k, d_v, cln=False, dropout=0.1):
+    def __init__(self, n_head, d_model, d_k, d_v, c_dim, dropout=0.1):
         super().__init__()
 
         self.n_head = n_head
@@ -44,21 +43,18 @@ class MultiHeadAttention(nn.Module):
         self.w_ks = nn.Linear(d_model, n_head * d_k)
         self.w_vs = nn.Linear(d_model, n_head * d_v)
 
-        self.attention = ScaledDotProductAttention(temperature=np.power(d_k, 0.5))
+        self.attn = ScaledDotProductAttention(temperature=np.power(d_k, 0.5))
 
-        if cln:
-            self.speaker_emb = True
-            self.layer_norm = CondionalLayerNorm(d_model)
+        if c_dim:
+            self.layer_norm = ConditionalLayer("AdaNorm", d_model, c_dim)
         else:
-            self.speaker_emb = False
             self.layer_norm = nn.LayerNorm(d_model)
 
         self.fc = nn.Linear(n_head * d_v, d_model)
 
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, q, k, v, speaker_emb, mask=None):
-
+    def forward(self, q, k, v, c, mask=None):
         d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
 
         sz_b, len_q, _ = q.size()
@@ -75,7 +71,7 @@ class MultiHeadAttention(nn.Module):
         v = v.permute(2, 0, 1, 3).contiguous().view(-1, len_v, d_v)  # (n*b) x lv x dv
 
         mask = mask.repeat(n_head, 1, 1)  # (n*b) x .. x ..
-        output, attn = self.attention(q, k, v, mask=mask)
+        output, attn_mask = self.attn(q, k, v, mask=mask)
 
         output = output.view(n_head, sz_b, len_q, d_v)
         output = (
@@ -83,18 +79,19 @@ class MultiHeadAttention(nn.Module):
         )  # b x lq x (n*dv)
 
         output = self.dropout(self.fc(output))
-        if self.speaker_emb:
-            output = self.layer_norm(output + residual, speaker_emb)
+
+        if isinstance(self.layer_norm, ConditionalLayer):
+            output = self.layer_norm(output + residual, c)
         else:
             output = self.layer_norm(output + residual)
 
-        return output, attn
+        return output, attn_mask
 
 
 class PositionwiseFeedForward(nn.Module):
     """A two-feed-forward-layer module."""
 
-    def __init__(self, d_in, d_hid, kernel_size, cln=False, dropout=0.1):
+    def __init__(self, d_in, d_hid, kernel_size, c_dim, dropout=0.1):
         super().__init__()
 
         # Use Conv1D
@@ -113,23 +110,22 @@ class PositionwiseFeedForward(nn.Module):
             padding=(kernel_size[1] - 1) // 2,
         )
 
-        if cln:
-            self.speaker_emb = True
-            self.layer_norm = CondionalLayerNorm(d_in)
+        if c_dim:
+            self.layer_norm = ConditionalLayer("AdaNorm", d_in, c_dim)
         else:
-            self.speaker_emb = False
             self.layer_norm = nn.LayerNorm(d_in)
 
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, speaker_emb):
+    def forward(self, x, c):
         residual = x
         output = x.transpose(1, 2)
         output = self.w_2(F.relu(self.w_1(output)))
         output = output.transpose(1, 2)
         output = self.dropout(output)
-        if self.speaker_emb:
-            output = self.layer_norm(output + residual, speaker_emb)
+
+        if isinstance(self.layer_norm, ConditionalLayer):
+            output = self.layer_norm(output + residual, c)
         else:
             output = self.layer_norm(output + residual)
 
@@ -140,23 +136,23 @@ class FFTBlock(torch.nn.Module):
     """FFT Block."""
 
     def __init__(
-        self, d_model, n_head, d_k, d_v, d_inner, kernel_size, cln=False, dropout=0.1
+        self, d_model, n_head, d_k, d_v, d_inner, kernel_size, c_dim, dropout=0.1
     ):
         super().__init__()
         self.slf_attn = MultiHeadAttention(
-            n_head, d_model, d_k, d_v, cln, dropout=dropout
+            n_head, d_model, d_k, d_v, c_dim, dropout=dropout
         )
         self.pos_ffn = PositionwiseFeedForward(
-            d_model, d_inner, kernel_size, cln, dropout=dropout
+            d_model, d_inner, kernel_size, c_dim, dropout=dropout
         )
 
-    def forward(self, enc_input, speaker_emb, mask=None, slf_attn_mask=None):
+    def forward(self, enc_input, cond_emb, mask=None, slf_attn_mask=None):
         enc_output, enc_slf_attn = self.slf_attn(
-            enc_input, enc_input, enc_input, speaker_emb, mask=slf_attn_mask
+            enc_input, enc_input, enc_input, cond_emb, mask=slf_attn_mask
         )
         enc_output = apply_mask(enc_output, mask.unsqueeze(-1))
 
-        enc_output = self.pos_ffn(enc_output, speaker_emb)
+        enc_output = self.pos_ffn(enc_output, cond_emb)
         enc_output = apply_mask(enc_output, mask)
 
         return enc_output, enc_slf_attn

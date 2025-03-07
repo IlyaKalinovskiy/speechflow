@@ -7,19 +7,19 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 from speechflow.utils.tensor_utils import get_mask_from_lengths, masked_fill
-from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
+from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.components.style_encoders.style_encoder import (
     StyleEncoderParams,
 )
+from tts.acoustic_models.modules.data_types import MODEL_INPUT_TYPE
 
 __all__ = ["StyleSpeech", "StyleSpeechParams"]
 
 
 class StyleSpeechParams(StyleEncoderParams):
-    style_kernel_size: int = 5
-    style_head: int = 2
-    dropout: float = 0.1
-    sp_emb_dim: int = 192
+    conv_kernel_size: int = 5
+    n_heads: int = 2
+    p_dropout: float = 0.1
 
 
 class StyleSpeech(Component):
@@ -28,39 +28,33 @@ class StyleSpeech(Component):
     def __init__(self, params: StyleSpeechParams, input_dim: int):
         super().__init__(params, input_dim)
 
-        style_hidden = params.style_emb_dim
-
-        self.in_dim = input_dim
-        self.hidden_dim = style_hidden
-        self.out_dim = style_hidden
-        self.kernel_size = params.style_kernel_size
-        self.n_head = params.style_head
-        self.dropout = params.dropout
+        in_dim = input_dim
+        inner_dim = params.style_emb_dim
+        kernel_size = params.conv_kernel_size
 
         self.spectral = nn.Sequential(
-            LinearNorm(self.in_dim, self.hidden_dim),
+            LinearNorm(in_dim, inner_dim),
             Mish(),
-            nn.Dropout(self.dropout),
-            LinearNorm(self.hidden_dim, self.hidden_dim),
+            nn.Dropout(params.p_dropout),
+            LinearNorm(inner_dim, inner_dim),
             Mish(),
-            nn.Dropout(self.dropout),
+            nn.Dropout(params.p_dropout),
         )
 
         self.temporal = nn.Sequential(
-            Conv1dGLU(self.hidden_dim, self.hidden_dim, self.kernel_size, self.dropout),
-            Conv1dGLU(self.hidden_dim, self.hidden_dim, self.kernel_size, self.dropout),
+            Conv1dGLU(inner_dim, inner_dim, kernel_size, params.p_dropout),
+            Conv1dGLU(inner_dim, inner_dim, kernel_size, params.p_dropout),
         )
 
         self.slf_attn = MultiHeadAttention(
-            self.n_head,
-            self.hidden_dim,
-            self.hidden_dim // self.n_head,
-            self.hidden_dim // self.n_head,
-            self.dropout,
+            params.n_heads,
+            inner_dim,
+            inner_dim // params.n_heads,
+            inner_dim // params.n_heads,
+            params.p_dropout,
         )
 
-        self.fc = LinearNorm(self.hidden_dim, self.out_dim)
-        self.sp_proj = LinearNorm(params.sp_emb_dim, self.out_dim)
+        self.fc = LinearNorm(inner_dim, inner_dim)
 
     @property
     def output_dim(self):
@@ -170,7 +164,7 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, n_head, d_model, d_k, d_v, dropout=0.0, spectral_norm=False):
         super().__init__()
 
-        self.n_head = n_head
+        self.n_heads = n_head
         self.d_k = d_k
         self.d_v = d_v
 
@@ -178,12 +172,12 @@ class MultiHeadAttention(nn.Module):
         self.w_ks = nn.Linear(d_model, n_head * d_k)
         self.w_vs = nn.Linear(d_model, n_head * d_v)
 
-        self.attention = ScaledDotProductAttention(
+        self.attn = ScaledDotProductAttention(
             temperature=np.power(d_model, 0.5), dropout=dropout
         )
 
         self.fc = nn.Linear(n_head * d_v, d_model)
-        self.dropout = nn.Dropout(dropout)
+        self.p_dropout = nn.Dropout(dropout)
 
         if spectral_norm:
             self.w_qs = nn.utils.spectral_norm(self.w_qs)
@@ -192,7 +186,7 @@ class MultiHeadAttention(nn.Module):
             self.fc = nn.utils.spectral_norm(self.fc)
 
     def forward(self, x, mask=None):
-        d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
+        d_k, d_v, n_head = self.d_k, self.d_v, self.n_heads
         sz_b, len_x, _ = x.size()
 
         residual = x
@@ -208,17 +202,16 @@ class MultiHeadAttention(nn.Module):
             slf_mask = mask.repeat(n_head, 1, 1)  # (n*b) x .. x ..
         else:
             slf_mask = None
-        output, attn = self.attention(q, k, v, mask=slf_mask)
+        output, attn_mask = self.attn(q, k, v, mask=slf_mask)
 
         output = output.view(n_head, sz_b, len_x, d_v)
         output = (
             output.permute(1, 2, 0, 3).contiguous().view(sz_b, len_x, -1)
         )  # b x lq x (n*dv)
 
-        output = self.fc(output)
-
-        output = self.dropout(output) + residual
-        return output, attn
+        output = self.p_dropout(self.fc(output))
+        output = output + residual
+        return output, attn_mask
 
 
 class ScaledDotProductAttention(nn.Module):
@@ -228,17 +221,17 @@ class ScaledDotProductAttention(nn.Module):
         super().__init__()
         self.temperature = temperature
         self.softmax = nn.Softmax(dim=2)
-        self.dropout = nn.Dropout(dropout)
+        self.p_dropout = nn.Dropout(dropout)
 
     def forward(self, q, k, v, mask=None):
         attn = torch.bmm(q, k.transpose(1, 2))
         attn = attn / self.temperature
 
         if mask is not None:
-            attn = masked_fill(attn, mask, -np.inf)
+            attn = masked_fill(attn, mask, -torch.inf)
 
         attn = self.softmax(attn)
-        p_attn = self.dropout(attn)
+        p_attn = self.p_dropout(attn)
 
         output = torch.bmm(p_attn, v)
         return output, attn
@@ -255,12 +248,12 @@ class Conv1dGLU(nn.Module):
         super().__init__()
         self.out_channels = out_channels
         self.conv1 = ConvNorm(in_channels, 2 * out_channels, kernel_size=kernel_size)
-        self.dropout = nn.Dropout(dropout)
+        self.p_dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         residual = x
         x = self.conv1(x)
         x1, x2 = torch.split(x, split_size_or_sections=self.out_channels, dim=1)
         x = x1 * torch.sigmoid(x2)
-        x = residual + self.dropout(x)
+        x = residual + self.p_dropout(x)
         return x

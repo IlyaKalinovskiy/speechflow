@@ -6,7 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
-from multilingual_text_parser import Doc, TextParser
+from multilingual_text_parser.data_types import Doc
+from multilingual_text_parser.parser import TextParser
 
 from annotator.align import Aligner, AlignStage
 from speechflow.io import AudioChunk, AudioSeg, Timestamps, check_path, tp_PATH

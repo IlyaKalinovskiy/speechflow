@@ -5,7 +5,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from multilingual_text_parser import Doc, TextParser
+from multilingual_text_parser.data_types import Doc
+from multilingual_text_parser.parser import TextParser
 from transformers import AutoTokenizer
 
 from nlp import prosody_prediction
