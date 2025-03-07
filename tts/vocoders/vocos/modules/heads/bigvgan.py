@@ -156,6 +156,10 @@ class BigVGANHead(WaveformGenerator):
         # Final tanh activation. Defaults to True for backward compatibility
         self.use_tanh_at_final = params.use_tanh_at_final
 
+        if params.pretrain_path is not None:
+            state_dict = torch.load(params.pretrain_path, map_location="cpu")
+            self.load_state_dict(state_dict["generator"])
+
     def forward(self, x, **kwargs):
         # Pre-conv
         x = self.conv_pre(x)

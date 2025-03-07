@@ -57,6 +57,7 @@ engine:
     wavlm_model_name:
       default: /src/wavlm-base-plus
       debug: C:/FluentaAI/wavlm-base-plus
+    # disc_pretrain_path: bigvgan_discriminator_optimizer.pt
 
     # automatic evaluation
     evaluate_utmos: false
@@ -84,4 +85,4 @@ model:
     class_name: BigVGANHead
     init_args:
       input_dim: 100
-      # pretrain_path: weights_24khz_8kbps_0.0.4.pth
+      # pretrain_path: bigvgan_generator.pt

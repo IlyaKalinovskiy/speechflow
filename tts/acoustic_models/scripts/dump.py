@@ -290,7 +290,7 @@ def main(
     if "dump" not in cfg["processor"] or cfg["processor"]["dump"] is None:
         raise ValueError("section 'processor.dump' not configured")
 
-    dump_folder = Path(cfg["processor"]["dump"].get("folder_path"))
+    dump_folder = Path(cfg["processor"]["dump"].get("dump_path"))
     if dump_folder.exists():
         try:
             prev_cfg = Config.create_from_file(

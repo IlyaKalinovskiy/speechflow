@@ -20,6 +20,7 @@ from tts.vocoders.vocos.modules.backbones.base import Backbone
 from tts.vocoders.vocos.modules.discriminators import (
     MultiPeriodDiscriminator,
     MultiResolutionDiscriminator,
+    MultiScaleSubbandCQTDiscriminator,
 )
 from tts.vocoders.vocos.modules.feature_extractors import FeatureExtractor
 from tts.vocoders.vocos.modules.heads.base import WaveformGenerator
@@ -48,6 +49,7 @@ class VocosLightningEngine(pl.LightningModule):
         auxiliary_losses_every: int = 1,
         pretrain_mel_steps: int = 0,
         decay_mel_coeff: bool = False,
+        use_cqtd_disc: bool = False,
         use_sm_loss: bool = False,
         use_wavlm_loss: bool = False,
         use_cdpam_loss: bool = False,
@@ -65,6 +67,7 @@ class VocosLightningEngine(pl.LightningModule):
         evaluate_pesq: bool = False,
         evaluate_periodicty: bool = False,
         use_clearml_logger: bool = False,
+        disc_pretrain_path: tp.Optional[tp_PATH] = None,
     ):
         """
         Args:
@@ -106,7 +109,23 @@ class VocosLightningEngine(pl.LightningModule):
         self.saver = saver
 
         self.multiperiod_disc = MultiPeriodDiscriminator()
-        self.multiresd_disc = MultiResolutionDiscriminator()
+        if use_cqtd_disc:
+            self.multiresd_disc = MultiScaleSubbandCQTDiscriminator(
+                sample_rate=sample_rate
+            )
+        else:
+            self.multiresd_disc = MultiResolutionDiscriminator()
+
+        if disc_pretrain_path is not None:
+            state_dict = torch.load(disc_pretrain_path, map_location="cpu")
+            try:
+                self.multiperiod_disc.load_state_dict(state_dict["mpd"])
+            except Exception as e:
+                LOGGER.error(e)
+            try:
+                self.multiresd_disc.load_state_dict(state_dict["mrd"])
+            except Exception as e:
+                LOGGER.error(e)
 
         self.disc_loss = losses.DiscriminatorLoss()
         self.gen_loss = losses.GeneratorLoss()

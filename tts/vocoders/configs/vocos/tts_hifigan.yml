@@ -1,9 +1,9 @@
 ### Model configuration ###
 
-experiment_name: styletts2_nsf
+experiment_name: tts_hifigan
 
 dirs:
-  logging: styletts2_experiments
+  logging: vocos_experiments
 
 seed: 1234
 
