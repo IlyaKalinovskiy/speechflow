@@ -3,7 +3,7 @@
 experiment_name: prosody_model  # name for current experiment
 
 dirs:
-  logging: experiments
+  logging: prosody_experiments
 
 seed: 1234
 
@@ -91,22 +91,9 @@ model:
     vp_inner_dim: 256
 
     va_variances:
-      0: [spectrogram_style_encoder]
+      0: [biometric_style_encoder]
       1: [aggregate_pitch, durations, prosody]
     va_variance_params:
-      spectrogram_style_encoder:
-        tag: style_emb
-        as_encoder: true
-        predictor_type: StyleEncoder
-        predictor_params:
-          vp_params:
-            base_encoder_type: StyleSpeech
-            source: spectrogram
-            source_dim: 100
-            random_chunk: false
-            style_emb_dim: 128
-            use_gmvae: true
-            gmvae_n_components: 16
       biometric_style_encoder:
         tag: style_emb
         as_encoder: true
@@ -124,7 +111,7 @@ model:
         predictor_type: TokenLevelPredictor
       durations:
         predictor_type: TokenLevelDP
-        log_scale: true
+        # log_scale: true
       prosody:
         dim: 500
         predictor_type: TokenLevelPredictor

@@ -8,6 +8,7 @@ import itertools
 from copy import deepcopy as copy
 
 import numpy as np
+import numpy.typing as npt
 
 from annoy import AnnoyIndex
 from multilingual_text_parser.data_types import Doc, Syntagma, Token, TokenUtils
@@ -974,14 +975,58 @@ def random_chunk(ds: TTSDataSample, min_length: float = 2.0, max_length: float =
 class ContoursExtractor:
     def __init__(
         self,
-        index_filename: str,
-        labels_filename: bool = False,
-        n: int = 100,
+        index_file: str,
+        labels_file: bool = False,
+        contour_length: int = 80,
     ):
-        self.t = AnnoyIndex(n - 20, "euclidean")
-        self.t.load(index_filename)
-        self.labels = np.load(labels_filename)
-        self.n = n
+        self.t = AnnoyIndex(contour_length, "euclidean")
+        self.t.load(index_file)
+        self.labels = np.load(labels_file)
+        self.contour_length = contour_length
+
+    @staticmethod
+    def extract(
+        ds: TTSDataSample, contour_length: int, offset: int = 10
+    ) -> tp.Generator[tp.Tuple[tp.Optional[npt.NDArray], int], None, None]:
+        frame_ts_word = np.concatenate([[0], np.cumsum(ds.word_lengths)]).astype(np.int64)
+        frame_ts = np.around(np.concatenate([[0], np.cumsum(ds.durations)])).astype(
+            np.int64
+        )
+        tokens = [token.text for token in ds.sent.tokens if not token.is_punctuation]
+
+        for idx, (start, end) in enumerate(zip(frame_ts_word[0:-1], frame_ts_word[1:])):
+            if idx < len(tokens):
+                word_len = int(ds.word_lengths[idx])
+                if tokens[idx] not in [
+                    TTSTextProcessor.bos,
+                    TTSTextProcessor.eos,
+                    TTSTextProcessor.sil,
+                ]:
+                    try:
+                        frame = frame_ts[start : end + 1]
+                        first_ind = frame[0]
+                        last_ind = min(frame[-1], ds.pitch.shape[0] - 1)
+                        contour = ds.pitch[first_ind:last_ind]
+                        if contour.shape[0] == 1:
+                            contour = np.concatenate((contour, contour))
+                        x = np.arange(0, contour.shape[0])
+                        f = interpolate.interp1d(x, contour, fill_value="extrapolate")
+                        xnew = np.arange(
+                            0,
+                            contour.shape[0],
+                            contour.shape[0] / (contour_length + 2 * offset),
+                        )
+                        contour = f(xnew)[: contour_length + 2 * offset][offset:-offset]
+                        contour = contour - contour.mean()
+
+                        if np.abs(contour).max() < 1e-6:
+                            yield None, word_len
+                        else:
+                            yield contour, word_len
+                    except:
+                        yield None, word_len
+                else:
+                    yield None, word_len
 
     @PipeRegistry.registry(
         inputs={"durations", "sent", "word_lengths", "pitch"}, outputs={"aggregate"}
@@ -998,36 +1043,14 @@ class ContoursExtractor:
 
         """
 
-        words_length = ds.word_lengths
-        frame_ts_word = np.concatenate([[0], np.cumsum(ds.word_lengths)]).astype(np.int64)
-        frame_ts = np.around(np.concatenate([[0], np.cumsum(ds.durations)])).astype(
-            np.int64
-        )
-        pitch = getattr(ds, "pitch", None)
-        tokens = [token.text for token in ds.sent.tokens if token.pos != "PUNCT"]
-
         indices = []
-
-        for idx, (start, end) in enumerate(zip(frame_ts_word[0:-1], frame_ts_word[1:])):
-            if idx < len(tokens):
-                if tokens[idx] not in ["<BOS>", "<EOS>", "<SIL>"]:
-                    frame = frame_ts[start : end + 1]
-                    first_ind = frame[0]
-                    last_ind = min(frame[-1], pitch.shape[0] - 1)
-                    contour = pitch[first_ind:last_ind]
-                    if contour.shape[0] == 1:
-                        contour = np.concatenate((contour, contour))
-                    x = np.arange(0, contour.shape[0])
-                    f = interpolate.interp1d(x, contour, fill_value="extrapolate")
-                    xnew = np.arange(0, contour.shape[0], contour.shape[0] / self.n)
-                    contour = f(xnew)[: self.n][10:-10]
-                    contour = contour - contour.mean()
-                    indices.extend(
-                        [self.labels[self.t.get_nns_by_vector(contour, 1)][0]]
-                        * words_length[idx]
-                    )
-                else:
-                    indices.extend([-1] * words_length[idx])
+        for contour, words_length in self.extract(ds, self.contour_length):
+            if contour is not None:
+                indices.extend(
+                    [self.labels[self.t.get_nns_by_vector(contour, 1)][0]] * words_length
+                )
+            else:
+                indices.extend([-1] * words_length)
 
         indices = np.array(indices)
         assert (

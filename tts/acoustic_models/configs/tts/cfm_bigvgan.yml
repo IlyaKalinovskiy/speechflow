@@ -57,7 +57,7 @@ loss:
 model:
   type: ParallelTTSModel
   params:
-    input: [transcription, xpbert_feat]
+    input: [transcription, transcription]
 
     token_emb_dim: 256
 
@@ -98,6 +98,8 @@ model:
           condition_dim: 256
         - encoder_num_layers: 6
           cnn_n_layers: 3
+          ling_condition_type: cat
+          xpbert_condition_type: add
           condition: [speaker_emb]
           condition_dim: 256
 
@@ -156,7 +158,7 @@ model:
             gmvae_n_components: 16
       aggregate_energy:
         predictor_type: TokenLevelPredictor
-        input_content: [0, 2]
+        input_content: [0, 1]
         detach_input: [true, false]
         cat_to_content: [0]
         predictor_params:
@@ -169,7 +171,7 @@ model:
         emb_dim: 64
       aggregate_pitch:
         predictor_type: TokenLevelPredictor
-        input_content: [0, 2]
+        input_content: [0, 1]
         detach_input: [true, false]
         cat_to_content: [0]
         predictor_params:
@@ -183,7 +185,7 @@ model:
         emb_dim: 64
       durations:
         dim: 50
-        input_content: [1, 2]
+        input_content: [0, 1]
         detach_input: true
         predictor_type: TokenLevelDP
         log_scale: true

@@ -123,10 +123,14 @@ class VQEncoder(Component):
                 assert not isinstance(vq_output.content, list)
 
                 for k, v in vq_output.additional_content.items():
-                    inputs.additional_content[f"{k}_rvq{idx}_encoder_{self.id}"] = v
+                    inputs.additional_content[
+                        f"{k}_{self.params.vq_type}{idx}_encoder_{self.id}"
+                    ] = v
 
                 for k, v in vq_output.additional_losses.items():
-                    inputs.additional_losses[f"{k}_rvq{idx}_encoder_{self.id}"] = v
+                    inputs.additional_losses[
+                        f"{k}_{self.params.vq_type}{idx}_encoder_{self.id}"
+                    ] = v
 
                 quantized = vq_output.content
                 residual = residual - quantized.detach()
@@ -137,7 +141,9 @@ class VQEncoder(Component):
             z, indices = self.rfsq(z.transpose(1, -1))
         elif self.params.vq_type == "rlfq":
             z, indices, commit_loss = self.rlfq(z.transpose(1, -1))
-            inputs.additional_losses[f"rlfq_encoder_{self.id}"] = commit_loss.sum()
+            inputs.additional_losses[
+                f"{self.params.vq_type}_encoder_{self.id}"
+            ] = commit_loss.sum()
 
         inputs.additional_content["vq_latents"] = y
         inputs.additional_content["vq_codes"] = indices

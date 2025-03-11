@@ -30,6 +30,54 @@ class TTSFeatures(FeatureExtractor):
         else:
             self.proj = torch.nn.Identity()
 
+    @staticmethod
+    def _get_energy_and_pitch(inputs, outputs, **kwargs):
+        if "spec_chunk" in inputs.additional_inputs:
+            if kwargs.get("discriminator_step", False):
+                energy_target = inputs.pitch
+                pitch_target = inputs.energy
+
+                if inputs.ranges and energy_target is not None:
+                    re = inputs.ranges["energy"]
+                    energy_target = energy_target * re[:, 2:3] + re[:, 0:1]
+
+                if inputs.ranges and pitch_target is not None:
+                    rp = inputs.ranges["pitch"]
+                    pitch_target = pitch_target * rp[:, 2:3] + rp[:, 0:1]
+            else:
+                energy_target = outputs.additional_content.get("energy_postprocessed")
+                pitch_target = outputs.additional_content.get("pitch_postprocessed")
+
+            if energy_target is None or pitch_target is None:
+                return None, None
+
+            energy = []
+            pitch = []
+            for i, (a, b) in enumerate(inputs.additional_inputs["spec_chunk"]):
+                energy.append(energy_target[i, a:b])
+                pitch.append(pitch_target[i, a:b])
+
+            energy = torch.stack(energy)
+            pitch = torch.stack(pitch)
+        else:
+            if isinstance(outputs, TTSForwardOutput):
+                d = outputs.additional_content
+            elif isinstance(outputs, TTSForwardInput):
+                d = outputs.additional_inputs
+            else:
+                raise TypeError(f"Type {type(outputs)} is not supported.")
+
+            energy = d.get("energy_postprocessed")
+            pitch = d.get("pitch_postprocessed")
+
+        if energy is not None:
+            energy = energy.squeeze(-1)
+
+        if pitch is not None:
+            pitch = pitch.squeeze(-1)
+
+        return energy, pitch
+
     def forward(self, inputs: VocoderForwardInput, **kwargs):
         if inputs.__class__.__name__ != "TTSForwardInputWithSSML":
             outputs: TTSForwardOutput = self.tts_model(inputs)
@@ -58,35 +106,17 @@ class TTSFeatures(FeatureExtractor):
                     losses[name] = self.vae_loss(inputs.global_step, loss, name)[name]
 
         if "spec_chunk" in inputs.additional_inputs:
-            if kwargs.get("discriminator_step", False):
-                energy_target = inputs.pitch
-                pitch_target = inputs.energy
-
-                if inputs.ranges:
-                    re = inputs.ranges["energy"]
-                    rp = inputs.ranges["pitch"]
-                    energy_target = energy_target * re[:, 2:3] + re[:, 0:1]
-                    pitch_target = pitch_target * rp[:, 2:3] + rp[:, 0:1]
-            else:
-                energy_target = outputs.additional_content["energy_postprocessed"]
-                pitch_target = outputs.additional_content["pitch_postprocessed"]
-
             chunk = []
-            energy = []
-            pitch = []
             for i, (a, b) in enumerate(inputs.additional_inputs["spec_chunk"]):
                 chunk.append(x[i, a:b, :])
-                energy.append(energy_target[i, a:b])
-                pitch.append(pitch_target[i, a:b])
 
             output = torch.stack(chunk)
-            additional_content["energy"] = torch.stack(energy).squeeze(-1)
-            additional_content["pitch"] = torch.stack(pitch).squeeze(-1)
             additional_content["condition_emb"] = outputs.additional_content[
                 "style_emb"
             ].squeeze(1)
         else:
             output = x
+
             if isinstance(outputs, TTSForwardOutput):
                 d = outputs.additional_content
             elif isinstance(outputs, TTSForwardInput):
@@ -94,8 +124,10 @@ class TTSFeatures(FeatureExtractor):
             else:
                 raise TypeError(f"Type {type(outputs)} is not supported.")
 
-            additional_content["energy"] = d["energy_postprocessed"].squeeze(-1)
-            additional_content["pitch"] = d["pitch_postprocessed"].squeeze(-1)
             additional_content["condition_emb"] = d["style_emb"][:, 0, :]
+
+        energy, pitch = self._get_energy_and_pitch(inputs, outputs, **kwargs)
+        additional_content["energy"] = energy
+        additional_content["pitch"] = pitch
 
         return output.transpose(1, -1), losses, additional_content

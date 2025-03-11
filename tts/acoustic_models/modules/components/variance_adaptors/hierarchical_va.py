@@ -44,14 +44,9 @@ class HierarchicalVarianceAdaptor(Component):
         super().__init__(params, input_dim)
 
         if isinstance(input_dim, tp.Sequence):
-            if 1 <= len(input_dim) <= 2:
-                self.input_dim = (input_dim[0], input_dim[0], input_dim[-1])
-            elif len(input_dim) == 3:
-                self.input_dim = input_dim
-            else:
-                raise RuntimeError("unsupported content format")
+            self.input_dim = input_dim
         else:
-            self.input_dim = tuple([input_dim] * 3)
+            self.input_dim = (input_dim,)
 
         self.va_variances: tp.Tuple[str, ...] = params.va_variances  # type: ignore
         self.va_variance_params = params.va_variance_params
@@ -145,11 +140,23 @@ class HierarchicalVarianceAdaptor(Component):
             if var_params.as_embedding:
                 dim = var_params.emb_dim * dim
 
-            for i in var_params.cat_to_content:
-                out_dim[i] += dim
+            if var_params.cat_to_content is not None:
+                cnt_ids = (
+                    var_params.cat_to_content
+                    if var_params.cat_to_content
+                    else range(len(out_dim))
+                )
+                for i in cnt_ids:
+                    out_dim[i] += dim
 
-            for i in var_params.overwrite_content:
-                out_dim[i] = dim
+            if var_params.overwrite_content is not None:
+                cnt_ids = (
+                    var_params.overwrite_content
+                    if var_params.overwrite_content
+                    else range(len(out_dim))
+                )
+                for i in cnt_ids:
+                    out_dim[i] = dim
 
         return tuple(out_dim)
 
@@ -168,59 +175,11 @@ class HierarchicalVarianceAdaptor(Component):
         return self._ssml_length_regulator
 
     @staticmethod
-    def _get_content(
-        inputs: EncoderOutput,
-    ) -> tp.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        content = inputs.content
-
-        if isinstance(content, tp.Sequence):
-            if 1 <= len(content) <= 2:
-                x = content[0]
-                x_duration = content[0]
-                x_adaptor = content[-1]
-            elif len(content) == 3:
-                x = content[0]
-                x_duration = content[1]
-                x_adaptor = content[2]
-            else:
-                raise RuntimeError("unsupported content format")
-        else:
-            x = content
-            x_duration = content
-            x_adaptor = content
-
-        return x, x_duration, x_adaptor
-
-    @staticmethod
-    def _get_content_lengths(
-        inputs: EncoderOutput,
-    ) -> tp.Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        content_lengths = inputs.content_lengths
-
-        if isinstance(content_lengths, tp.Sequence):
-            if 1 <= len(content_lengths) <= 2:
-                x_length = content_lengths[0]
-                x_duration_length = content_lengths[0]
-                x_adaptor_length = content_lengths[-1]
-            elif len(content_lengths) == 3:
-                x_length = content_lengths[0]
-                x_duration_length = content_lengths[1]
-                x_adaptor_length = content_lengths[2]
-            else:
-                raise RuntimeError("unsupported content format")
-        else:
-            x_length = content_lengths
-            x_duration_length = content_lengths
-            x_adaptor_length = content_lengths
-
-        return x_length, x_duration_length, x_adaptor_length
-
-    @staticmethod
     def _get_targets(
         inputs: EncoderOutput, variance_names, variance_params
     ) -> tp.Dict[str, torch.Tensor]:
         targets = {}
-        content = HierarchicalVarianceAdaptor._get_content(inputs)
+        content = inputs.get_content()
         for var_name in variance_names:
             target_name = var_name
             if variance_params[var_name].target is not None:
@@ -251,28 +210,17 @@ class HierarchicalVarianceAdaptor(Component):
 
     @staticmethod
     def _get_input_content(
-        x,
-        x_duration,
-        x_adaptor,
-        x_length,
-        x_duration_length,
-        x_adaptor_length,
+        content,
+        content_length,
         variance_params,
         model_inputs,
     ):
-        content = []
+        cat_content = []
         for name, is_detach in zip(
             variance_params.input_content, variance_params.detach_input
         ):
             if str(name).isdigit():
-                if name == 0:
-                    content.append(x)
-                elif name == 1:
-                    content.append(x_duration)
-                elif name == 2:
-                    content.append(x_adaptor)
-                else:
-                    raise NotImplementedError(f"input_content={name}")
+                cat_content.append(content[name])
             else:
                 feat = model_inputs.additional_inputs.get(name)
                 if feat is None:
@@ -281,51 +229,40 @@ class HierarchicalVarianceAdaptor(Component):
                     if feat.ndim == 2:
                         feat = feat.unsqueeze(1)
                     if feat.shape[1] == 1:
-                        if len(content) > 0:
-                            t_dim = content[-1].shape[1]
+                        if len(cat_content) > 0:
+                            t_dim = cat_content[-1].shape[1]
                         else:
-                            t_dim = x_duration.shape[1]
+                            t_dim = content[0].shape[1]
                         feat = feat.expand(-1, t_dim, -1)
 
-                content.append(feat)
+                cat_content.append(feat)
 
             if is_detach:
-                content[-1] = content[-1].detach()
+                cat_content[-1] = cat_content[-1].detach()
 
-        content = torch.cat(content, dim=-1)
-        content = content.detach() if variance_params.detach_input else content
+        full_content = torch.cat(cat_content, dim=-1)
 
-        if content.shape[1] == x.shape[1]:
-            content_length = x_length
-        elif content.shape[1] == x_duration.shape[1]:
-            content_length = x_duration_length
-        elif content.shape[1] == x_adaptor.shape[1]:
-            content_length = x_adaptor_length
+        for cnt, lens in zip(content, content_length):
+            if full_content.shape[1] == cnt.shape[1]:
+                full_content_length = lens
+                break
         else:
             raise RuntimeError
 
-        return content, content_length
+        return full_content, full_content_length
 
     def _predict_durations(
         self,
-        x,
-        x_duration,
-        x_adaptor,
-        x_length,
-        x_duration_length,
-        x_adaptor_length,
+        content,
+        content_length,
         targets,
         model_inputs,
     ):
         var_params = self.va_variance_params[DP_NAME]
 
         content, content_length = self._get_input_content(
-            x,
-            x_duration,
-            x_adaptor,
-            x_length,
-            x_duration_length,
-            x_adaptor_length,
+            content,
+            content_length,
             var_params,
             model_inputs,
         )
@@ -347,12 +284,8 @@ class HierarchicalVarianceAdaptor(Component):
 
     def _process_durations(
         self,
-        x,
-        x_duration,
-        x_adaptor,
-        x_length,
-        x_duration_length,
-        x_adaptor_length,
+        content,
+        content_length,
         targets,
         model_inputs,
         **kwargs,
@@ -381,12 +314,8 @@ class HierarchicalVarianceAdaptor(Component):
                 durations_content,
                 durations_loss,
             ) = self._predict_durations(
-                x,
-                x_duration,
-                x_adaptor,
-                x_length,
-                x_duration_length,
-                x_adaptor_length,
+                content,
+                content_length,
                 targets,
                 model_inputs,
             )
@@ -421,12 +350,8 @@ class HierarchicalVarianceAdaptor(Component):
     def _predict_variance(
         self,
         name,
-        x,
-        x_duration,
-        x_adaptor,
-        x_length,
-        x_duration_length,
-        x_adaptor_length,
+        content,
+        content_length,
         target,
         model_inputs,
         modifier=None,
@@ -435,12 +360,8 @@ class HierarchicalVarianceAdaptor(Component):
         variance_params = self.va_variance_params[name]
 
         content, content_length = self._get_input_content(
-            x,
-            x_duration,
-            x_adaptor,
-            x_length,
-            x_duration_length,
-            x_adaptor_length,
+            content,
+            content_length,
             variance_params,
             model_inputs,
         )
@@ -466,12 +387,8 @@ class HierarchicalVarianceAdaptor(Component):
 
     def _process_variance(
         self,
-        x,
-        x_duration,
-        x_adaptor,
-        x_length,
-        x_duration_length,
-        x_adaptor_length,
+        content,
+        content_length,
         targets,
         model_inputs,
         **kwargs,
@@ -503,12 +420,8 @@ class HierarchicalVarianceAdaptor(Component):
                 variance_losses[name],
             ) = self._predict_variance(
                 name,
-                x,
-                x_duration,
-                x_adaptor,
-                x_length,
-                x_duration_length,
-                x_adaptor_length,
+                content,
+                content_length,
                 targets.get(name),
                 model_inputs,
                 modifier=getattr(model_inputs, self._get_modifier_name(name), None),
@@ -632,7 +545,12 @@ class HierarchicalVarianceAdaptor(Component):
 
             if name == DP_NAME and durations is not None:
                 lr = self.length_regulators[DP_NAME]
-                for i in var_params[DP_NAME].cat_to_content:
+                cnt_ids = (
+                    var_params[DP_NAME].cat_to_content
+                    if var_params[DP_NAME].cat_to_content
+                    else range(len(content))
+                )
+                for i in cnt_ids:
                     content[i], attention_weights = _tensor_upsampling(content[i], lr)
                     content_lengths[i] = model_inputs.output_lengths
                 continue
@@ -641,30 +559,38 @@ class HierarchicalVarianceAdaptor(Component):
                 lr = self.length_regulators[name]
                 embedding, attention_weights = _tensor_upsampling(embedding, lr)
 
-            for i in var_params[name].cat_to_content:
-                content[i] = _cat_tensors(content[i], embedding)
+            if var_params[name].cat_to_content is not None:
+                cnt_ids = (
+                    var_params[name].cat_to_content
+                    if var_params[name].cat_to_content
+                    else range(len(content))
+                )
+                for i in cnt_ids:
+                    content[i] = _cat_tensors(content[i], embedding)
 
-            for i in var_params[name].overwrite_content:
-                content[i] = embedding
-                if embedding.shape[1] == model_inputs.input_lengths.max():
-                    content_lengths[i] = model_inputs.input_lengths
-                elif embedding.shape[1] == model_inputs.output_lengths.max():
-                    content_lengths[i] = model_inputs.output_lengths
+            if var_params[name].overwrite_content is not None:
+                cnt_ids = (
+                    var_params[name].overwrite_content
+                    if var_params[name].overwrite_content
+                    else range(len(content))
+                )
+                for i in cnt_ids:
+                    content[i] = embedding
+                    if embedding.shape[1] == model_inputs.input_lengths.max():
+                        content_lengths[i] = model_inputs.input_lengths
+                    elif embedding.shape[1] == model_inputs.output_lengths.max():
+                        content_lengths[i] = model_inputs.output_lengths
 
         return content, content_lengths, attention_weights
 
     def forward_step(self, inputs: EncoderOutput, **kwargs) -> VarianceAdaptorOutput:  # type: ignore
-        x, x_duration, x_adaptor = self._get_content(inputs)
-        x_length, x_duration_length, x_adaptor_length = self._get_content_lengths(inputs)
+        content = inputs.get_content()
+        content_length = inputs.get_content_lengths()
         targets = self._get_targets(inputs, self.va_variances, self.va_variance_params)
 
         (durations, dura_prediction, dura_content, dura_loss,) = self._process_durations(
-            x,
-            x_duration,
-            x_adaptor,
-            x_length,
-            x_duration_length,
-            x_adaptor_length,
+            content,
+            content_length,
             targets,
             inputs.model_inputs,
             **kwargs,
@@ -676,12 +602,8 @@ class HierarchicalVarianceAdaptor(Component):
             variance_content,
             variance_losses,
         ) = self._process_variance(
-            x,
-            x_duration,
-            x_adaptor,
-            x_length,
-            x_duration_length,
-            x_adaptor_length,
+            content,
+            content_length,
             targets,
             inputs.model_inputs,
             **kwargs,
@@ -694,8 +616,8 @@ class HierarchicalVarianceAdaptor(Component):
             variance_losses[DP_NAME] = dura_loss
 
         content, content_lengths, attention_weights = self._process_content(
-            [x, x_duration, x_adaptor],
-            [x_length, x_duration_length, x_adaptor_length],
+            content,
+            content_length,
             variance_embeddings,
             durations,
             inputs.model_inputs,

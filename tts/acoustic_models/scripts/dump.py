@@ -4,6 +4,7 @@ import typing as tp
 import logging
 import argparse
 import warnings
+import itertools
 
 from collections import defaultdict
 from pathlib import Path
@@ -23,6 +24,9 @@ from tqdm import tqdm
 from speechflow.data_pipeline.collate_functions.tts_collate import TTSCollateOutput
 from speechflow.data_pipeline.core import Batch
 from speechflow.data_pipeline.datasample_processors import TTSTextProcessor
+from speechflow.data_pipeline.datasample_processors.tts_processors import (
+    ContoursExtractor,
+)
 from speechflow.data_server.helpers import LoaderParams, init_data_loader_from_config
 from speechflow.io import Config, json_dump_to_file
 from speechflow.logging import set_verbose_logging
@@ -81,13 +85,20 @@ def parse_args():
         "--contour_length",
         help="length of the contour",
         type=int,
-        default=100,
+        default=80,
     )
     arguments_parser.add_argument(
         "-ssize", "--subset_size", help="size of subset", type=int, default=10000
     )
     arguments_parser.add_argument(
         "-n_cl", "--n_clusters", help="number of clusters", type=int, default=500
+    )
+    arguments_parser.add_argument(
+        "-max_cnt",
+        "--max_contours_per_speaker",
+        help="number of contours per speaker",
+        type=int,
+        default=500,
     )
     arguments_parser.add_argument(
         "-mean_sp_emb",
@@ -100,7 +111,13 @@ def parse_args():
     return args
 
 
-def update_config(cfg: Config, n_processes: int, n_gpus: int) -> Config:
+def update_config(
+    cfg: Config,
+    n_processes: int,
+    n_gpus: int,
+    remove_normalize: bool = True,
+    remove_augmentation: bool = True,
+) -> Config:
     cfg["dataset"]["subsets"] = [cfg["dataset"]["subsets"][0]]
     cfg["dataset"]["split_ratio"] = {cfg["dataset"]["subsets"][0]: [0, 1]}
 
@@ -108,12 +125,15 @@ def update_config(cfg: Config, n_processes: int, n_gpus: int) -> Config:
         if "trim" in cfg["preproc"]["pipe"]:
             cfg["preproc"]["pipe"].remove("trim")
 
-        cfg["preproc"]["pipe"] = [
-            item for item in cfg["preproc"]["pipe"] if "norm" not in item
-        ]
-        cfg["preproc"]["pipe"] = [
-            item for item in cfg["preproc"]["pipe"] if "aug" not in item
-        ]
+        if remove_normalize:
+            cfg["preproc"]["pipe"] = [
+                item for item in cfg["preproc"]["pipe"] if "norm" not in item
+            ]
+
+        if remove_augmentation:
+            cfg["preproc"]["pipe"] = [
+                item for item in cfg["preproc"]["pipe"] if "aug" not in item
+            ]
 
     cfg["singleton_handlers"]["handlers"] = [
         item
@@ -208,38 +228,17 @@ def clustering(
     return t, labels
 
 
-def contours_gathering(batch: Batch, contours: np.array, contour_length: int) -> np.array:
+def contours_gathering(
+    batch: Batch,
+    contours: np.array,
+    contour_length: int,
+    max_contours_per_speaker: int = 500,
+) -> np.array:
     for ds in batch.data_samples:
-        frame_ts_word = np.concatenate([[0], np.cumsum(ds.word_lengths)]).astype(np.int64)
-        frame_ts = np.around(np.concatenate([[0], np.cumsum(ds.durations)])).astype(
-            np.int64
-        )
-        pitch = getattr(ds, "pitch", None)
-        tokens = [token.text for token in ds.sent.tokens if token.pos != "PUNCT"]
-
-        for idx, (start, end) in enumerate(zip(frame_ts_word[0:-1], frame_ts_word[1:])):
-            if idx < len(tokens):
-                if tokens[idx] not in [
-                    TTSTextProcessor.bos,
-                    TTSTextProcessor.eos,
-                    TTSTextProcessor.sil,
-                ]:
-                    frame = frame_ts[start : end + 1]
-                    first_ind = frame[0]
-                    last_ind = min(frame[-1], pitch.shape[0] - 1)
-                    contour = pitch[first_ind:last_ind]
-                    if contour.shape[0] == 1:
-                        contour = np.concatenate((contour, contour))
-                    x = np.arange(0, contour.shape[0])
-                    f = interpolate.interp1d(x, contour, fill_value="extrapolate")
-                    xnew = np.arange(
-                        0,
-                        contour.shape[0],
-                        contour.shape[0] / contour_length,
-                    )
-                    contour = f(xnew)[:contour_length][10:-10]
-                    contour = contour - contour.mean()
-                    contours.append(contour)
+        if ds is not None and len(contours[ds.speaker_name]) <= max_contours_per_speaker:
+            for contour, words_length in ContoursExtractor.extract(ds, contour_length):
+                if contour is not None:
+                    contours[ds.speaker_name].append(contour)
 
     return contours
 
@@ -286,9 +285,10 @@ def main(
     file_name: str = "ranges.json",
     value_select: tp.Optional[tp.List[str]] = None,
     num_data_servers: int = 1,
-    contour_length: int = 100,
+    contour_length: int = 80,
     subset_size: int = 10000,
     n_clusters: int = 500,
+    max_contours_per_speaker: int = 500,
     speaker_emb_mean: bool = True,
 ):
     cfg = Config.create_from_file(data_config_path, value_select=value_select)
@@ -337,7 +337,9 @@ def main(
 
     config_paths: tp.List[Path] = []
     for idx, device in enumerate(range(num_data_servers)):  # legacy code
-        cfg = update_config(cfg, n_processes, n_gpus)
+        cfg = update_config(
+            cfg, n_processes, n_gpus, remove_normalize=not contours_clustering
+        )
         if idx == 0:
             cfg["tag"] = "main"
 
@@ -355,7 +357,7 @@ def main(
         }
 
     speaker_bio_embeddings: tp.Dict[str, tp.List[npt.NDArray]] = defaultdict(list)
-    contours: tp.List[npt.NDArray] = []
+    contours: tp.Dict[str, tp.List[npt.NDArray]] = defaultdict(list)
 
     with LoggingServer.ctx(dump_folder):
         with init_data_loader_from_config(
@@ -377,11 +379,6 @@ def main(
                     subset_size = len(data_loader)
                 if n_clusters > subset_size:
                     n_clusters = max(subset_size // 10, 2)
-
-                if len(data_loader) > subset_size:
-                    prob = subset_size // len(data_loader)
-                else:
-                    prob = 0
 
                 LOGGER.info(f"dump process: {data_loader.subset_name}")
                 sample_counter = 0
@@ -432,8 +429,10 @@ def main(
                             for idx, sp_name in enumerate(speaker_names):
                                 speaker_bio_embeddings[sp_name].append(sp_embs[idx])
 
-                    if contours_clustering and random.random() > prob:
-                        contours = contours_gathering(batch, contours, contour_length)
+                    if contours_clustering:
+                        contours = contours_gathering(
+                            batch, contours, contour_length, max_contours_per_speaker
+                        )
 
                 if data_loader.subset_name == "train":
                     lang_id_map_path = dump_folder / "lang_id_map.json"
@@ -473,7 +472,9 @@ def main(
                         json_dump_to_file(mean_embeddings_path, mean_embeddings)
 
                     if contours_clustering:
-                        all_contours = np.stack(contours)
+                        all_contours = np.stack(
+                            list(itertools.chain.from_iterable(contours.values()))
+                        )
                         a_index, labels = clustering(
                             all_contours, subset_size=subset_size, n_clusters=n_clusters
                         )

@@ -116,6 +116,11 @@ preproc:
     ssl:
       type: SSLProcessor
       ssl_type: { default: Wav2Vec, ml: WavLM }
+      ssl_params:
+        default:
+          feature_type: partial
+          level: 12  # 23
+        ml: ~
     timedim_interpolation:
       features: [ssl_feat]
       shape_as: mel

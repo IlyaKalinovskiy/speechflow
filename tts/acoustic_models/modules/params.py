@@ -213,8 +213,8 @@ class VarianceParams(BaseTorchModelParams):
     use_target: bool = True
     denormalize: bool = False
     upsample: bool = False
-    cat_to_content: tp.Tuple[int, ...] = (0, 1, 2)
-    overwrite_content: tp.Tuple[int, ...] = ()
+    cat_to_content: tp.Optional[tp.Tuple[int, ...]] = ()
+    overwrite_content: tp.Optional[tp.Tuple[int, ...]] = None
     as_encoder: bool = False
     as_embedding: bool = False
     interval: tp.Tuple[float, float] = (0.0, 1.0)
@@ -232,10 +232,6 @@ class VarianceParams(BaseTorchModelParams):
 
         if self.predictor_params is None:
             self.predictor_params = VariancePredictorParams()
-
-        self.input_content = tuple(self.input_content)
-        self.cat_to_content = tuple(self.cat_to_content)
-        self.overwrite_content = tuple(self.overwrite_content)
 
         if isinstance(self.detach_input, bool):
             self.detach_input = tuple([self.detach_input] * len(self.input_content))

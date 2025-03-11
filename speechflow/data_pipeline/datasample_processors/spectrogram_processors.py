@@ -1116,7 +1116,7 @@ def signal_enhancement(
                         b = ts[1] * ds.audio_chunk.sr / hop_len
                         values[int(a) : int(b)] = 0.0
 
-        setattr(ds, attr, values)
+        setattr(ds, attr, values.astype(np.float32))
 
     # _plot_pitch(old_pitch, values, smoothed, interpolated)
     # PitchProcessor._plot_pitch(ds)

@@ -153,8 +153,8 @@ model:
             gmvae_n_components: 16
       aggregate_energy:
         predictor_type: TokenLevelPredictor
-        input_content: [2]
-        cat_to_content: [2]
+        input_content: [1]
+        cat_to_content: [1]
         predictor_params:
           vp_params:
             activation_fn: SiLU
@@ -164,8 +164,8 @@ model:
         emb_dim: 64
       aggregate_pitch:
         predictor_type: TokenLevelPredictor
-        input_content: [2]
-        cat_to_content: [2]
+        input_content: [1]
+        cat_to_content: [1]
         predictor_params:
           vp_params:
             activation_fn: SiLU
@@ -176,7 +176,7 @@ model:
         emb_dim: 64
       durations:
         dim: 50
-        input_content: [1, 2]
+        input_content: [0, 1]
         detach_input: true
         predictor_type: TokenLevelDP
         log_scale: true
@@ -186,7 +186,7 @@ model:
             add_noise: true
       energy:
         predictor_type: FrameLevelPredictor
-        input_content: [0, 2]
+        input_content: [0, 1]
         detach_input: [true, false]
         cat_to_content: [0]
         predictor_params:
@@ -199,7 +199,7 @@ model:
         emb_dim: 64
       pitch:
         predictor_type: FrameLevelPredictor
-        input_content: [0, 2]
+        input_content: [0, 1]
         detach_input: [true, false]
         cat_to_content: [0]
         predictor_params:

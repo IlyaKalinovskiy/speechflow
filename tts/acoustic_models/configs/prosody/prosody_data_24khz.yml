@@ -90,7 +90,7 @@ preproc:
       ssl_type: Wav2Vec
       ssl_params:
         feature_type: partial
-        level: 13  # 23
+        level: 12  # 23
     timedim_interpolation:
       features: [ssl_feat]
       shape_as: mel
@@ -138,8 +138,8 @@ preproc:
         mode: nearest
     contours:
       type: ContoursExtractor
-      index_filename: !join [*data_root, *dump_folder, index.ann]
-      labels_filename: !join [*data_root, *dump_folder, labels.npy]
+      index_file: !join [*data_root, *dump_folder, index.ann]
+      labels_file: !join [*data_root, *dump_folder, labels.npy]
 
 singleton_handlers:
   handlers: [SpeakerIDSetter, StatisticsRange, MeanBioEmbeddings]
