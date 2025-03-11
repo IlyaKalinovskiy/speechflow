@@ -117,6 +117,7 @@ def update_config(
     n_gpus: int,
     remove_normalize: bool = True,
     remove_augmentation: bool = True,
+    contours_clustering: bool = False,
 ) -> Config:
     cfg["dataset"]["subsets"] = [cfg["dataset"]["subsets"][0]]
     cfg["dataset"]["split_ratio"] = {cfg["dataset"]["subsets"][0]: [0, 1]}
@@ -125,7 +126,7 @@ def update_config(
         if "trim" in cfg["preproc"]["pipe"]:
             cfg["preproc"]["pipe"].remove("trim")
 
-        if remove_normalize:
+        if remove_normalize and not contours_clustering:
             cfg["preproc"]["pipe"] = [
                 item for item in cfg["preproc"]["pipe"] if "norm" not in item
             ]
@@ -141,7 +142,9 @@ def update_config(
         if item not in ["StatisticsRange", "DatasetStatistics"]
     ]
 
-    cfg["sampler"] = {"type": "SimpleSampler"}
+    if not contours_clustering:
+        cfg["sampler"] = {"type": "SimpleSampler"}
+
     cfg["collate"]["type"] = cfg["collate"]["type"].replace("WithPrompt", "")
     cfg["data_server"]["n_processes"] = n_processes
     cfg["data_server"]["n_gpus"] = n_gpus
@@ -338,7 +341,7 @@ def main(
     config_paths: tp.List[Path] = []
     for idx, device in enumerate(range(num_data_servers)):  # legacy code
         cfg = update_config(
-            cfg, n_processes, n_gpus, remove_normalize=not contours_clustering
+            cfg, n_processes, n_gpus, contours_clustering=contours_clustering
         )
         if idx == 0:
             cfg["tag"] = "main"

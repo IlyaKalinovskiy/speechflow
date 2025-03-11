@@ -35,11 +35,11 @@ class WeightedSampler(RandomSampler):
     def __init__(
         self,
         fields_to_compute_weight: tp.List[str],
-        epoch_size: int = 1000,
         comb_by_len: bool = False,
         use_neighbors: bool = False,
         use_dynamic_batch: bool = False,
         max_batch_length: int = 1000,  # in milliseconds for AudioDataSample
+        epoch_size: tp.Optional[int] = None,
         chunks_ratio: tp.Optional[tp.List] = None,
         is_sequence: tp.Optional[tp.List] = None,
         filter_tags: tp.Optional[tp.List] = None,
@@ -61,6 +61,8 @@ class WeightedSampler(RandomSampler):
 
         if self._epoch_size_w:
             self._epoch_size = self._epoch_size_w
+        else:
+            self._epoch_size = len(data)
 
         try:
             probs = self.compute_probs(self._fields_to_compute_weight)

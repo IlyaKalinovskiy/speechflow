@@ -178,9 +178,8 @@ sampler:
   train:
     type: WeightedSampler
     comb_by_len: true
-    epoch_size: 50000
-    fields_to_compute_weight: [uid, intonation_type]
-    chunks_ratio: [0.6, 0.4]
+    fields_to_compute_weight: [uid, speaker_name, intonation_type]
+    chunks_ratio: [0.2, 0.4, 0.4]
   test:
     type: SimpleSampler
     comb_by_len: true
