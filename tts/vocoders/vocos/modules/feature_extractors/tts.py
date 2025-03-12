@@ -27,12 +27,22 @@ class TTSFeatures(FeatureExtractor):
 
         if params.pretrain_path is not None:
             checkpoint = ExperimentSaver.load_checkpoint(params.pretrain_path)
-            checkpoint["params"]["mel_spectrogram_dim"] = params.mel_spectrogram_dim
-            checkpoint["params"]["mel_spectrogram_proj_dim"] = params.mel_spectrogram_dim
-            params = ParallelTTSParams.create(checkpoint["params"])
-            state_dict = {
-                k.replace("model.", ""): v for k, v in checkpoint["state_dict"].items()
-            }
+            if "params" in checkpoint:
+                state_dict = {
+                    k.replace("model.", ""): v
+                    for k, v in checkpoint["state_dict"].items()
+                }
+                checkpoint["params"]["mel_spectrogram_dim"] = params.mel_spectrogram_dim
+                checkpoint["params"][
+                    "mel_spectrogram_proj_dim"
+                ] = params.mel_spectrogram_dim
+                params = ParallelTTSParams.create(checkpoint["params"])
+            else:
+                state_dict = {
+                    k.replace("feature_extractor.tts_model.", ""): v
+                    for k, v in checkpoint["state_dict"].items()
+                    if k.startswith("feature_extractor.tts_model.")
+                }
         else:
             state_dict = None
 

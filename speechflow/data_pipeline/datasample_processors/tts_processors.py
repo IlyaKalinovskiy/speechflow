@@ -47,7 +47,7 @@ REAL_NUMBER_REGEXP = re.compile(r"[0-9]*\.?[0-9]+")
 
 
 def _fp_eq(a, b, eps=1e-5):
-    return np.abs(np.float32(a) - np.float32(b)) < eps
+    return np.abs(np.float64(a) - np.float64(b)) < eps
 
 
 def get_n_tokens(
@@ -413,6 +413,10 @@ def add_pauses_from_timestamps(
                     else:
                         ts_word[0] -= diff
                         ts_ph[0][0] -= diff
+            else:
+                if token.text == TTSTextProcessor.eos:
+                    ts_words_processed[-1][1] = ds.audio_chunk.duration
+                    ts_phonemes_processed[-1][-1][1] = ds.audio_chunk.duration
 
             assert _fp_eq(ts_word[0], ts_ph[0][0]) and _fp_eq(ts_word[1], ts_ph[-1][1])
             if ts_words_processed:
@@ -799,7 +803,7 @@ def add_gate_value(ds: TTSDataSample):
     outputs={"sent"},
     optional={"audio_chunk", "word_timestamps", "phoneme_timestamps"},
 )
-def add_service_tokens(ds: TTSDataSample):
+def add_service_tokens(ds: TTSDataSample, service_token_duration: float = 0.2):
     bos_token = Token(TTSTextProcessor.bos)
     bos_token.phonemes = (TTSTextProcessor.bos,)
 
@@ -812,11 +816,11 @@ def add_service_tokens(ds: TTSDataSample):
     hop_len = ds.get_param_val("hop_len")
 
     if ds.word_timestamps and ds.phoneme_timestamps:
-        frame_dura = 0.5 * hop_len / ds.audio_chunk.sr
+        frame_dura = service_token_duration * hop_len / ds.audio_chunk.sr
         begin_phoneme_dura = float(np.diff(ds.phoneme_timestamps[0][0]))
         end_phoneme_dura = float(np.diff(ds.phoneme_timestamps[-1][-1]))
 
-        if frame_dura < begin_phoneme_dura / 2:
+        if frame_dura < begin_phoneme_dura:
             synt_begin.tokens.insert(0, bos_token)
 
             ds.word_timestamps.append_left([(0.0, frame_dura)])
@@ -830,7 +834,7 @@ def add_service_tokens(ds: TTSDataSample):
             if synt_begin.tokens[0].text == TTSTextProcessor.sil:
                 synt_begin.tokens[0] = bos_token
 
-        if frame_dura < end_phoneme_dura / 2:
+        if frame_dura < end_phoneme_dura:
             synt_end.tokens.append(eos_token)
             ts_end = ds.word_timestamps.end
 

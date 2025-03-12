@@ -48,7 +48,7 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         lang_id_map = None
         speaker_id_map = None
 
-    lang = dl_train.client.find_info("lang")
+    lang = dl_train.client.info["data_config"].preproc.pipe_cfg.text.lang
     if lang:
         text_proc = TTSTextProcessor(lang=lang)
         alphabet = text_proc.alphabet
@@ -101,6 +101,12 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         feat_cls, feat_params_cls = VOCOS_FEATURES[feat_cfg.class_name]
         feat_params = init_class_from_config(feat_params_cls, feat_cfg.init_args)()
         feat = feat_cls(feat_params)
+
+        if feat_cfg.class_name == "TTSFeatures":
+            saver.to_save["tts_model_params"] = feat.tts_model.get_params()
+            saver.to_save["tts_model_params_after_init"] = feat.tts_model.get_params(
+                after_init=True
+            )
 
         backbone_cfg = cfg_model["model"].backbone
         backbone_cls, backbone_params_cls = VOCOS_BACKBONES[backbone_cfg.class_name]

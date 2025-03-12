@@ -155,7 +155,7 @@ class BaseTorchModel(torch.nn.Module):
 
         return state_dict
 
-    def generate(self, *args, **kwargs):
+    def inference(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 
 

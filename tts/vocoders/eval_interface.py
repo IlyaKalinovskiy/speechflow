@@ -100,12 +100,15 @@ class VocoderLoader:
         self.device = torch.device(device) if isinstance(device, str) else device
         self.model.to(self.device)
 
-        self.denoiser = Denoiser(
-            self._get_bias_audio(),
-            fft_size=find_field(self.cfg_data, "n_fft"),
-            win_size=find_field(self.cfg_data, "win_len"),
-            hop_size=find_field(self.cfg_data, "hop_len"),
-        ).to(self.device)
+        if not isinstance(self.model.feature_extractor, TTSFeatures):
+            self.denoiser = Denoiser(
+                self._get_bias_audio(),
+                fft_size=find_field(self.cfg_data, "n_fft"),
+                win_size=find_field(self.cfg_data, "win_len"),
+                hop_size=find_field(self.cfg_data, "hop_len"),
+            ).to(self.device)
+        else:
+            self.denoiser = None
 
     @staticmethod
     def _check_vocos_signature(checkpoint: tp.Dict) -> bool:
@@ -191,7 +194,7 @@ class VocoderEvaluationInterface(VocoderLoader):
 
         waveform = torch.cat(waveforms).unsqueeze(0)
 
-        if opt.denoiser_strength > 0:
+        if self.denoiser is not None and opt.denoiser_strength > 0:
             waveform = self.denoiser(
                 waveform,
                 strength=opt.denoiser_strength,

@@ -71,16 +71,14 @@ class VisualizerCallback(Callback):
             T = inputs.ssl_feat_lengths[random_idx]
             self._log_2d("target/ssl_feat", inputs.ssl_feat[random_idx][:T], pl_module)
 
-        for name in ["energy", "pitch"]:
+        for name in ["energy", "pitch", "durations"]:
             try:
                 T = inputs.output_lengths[random_idx]
                 target_signal = getattr(targets, name)
                 if target_signal is not None:
                     target_signal = target_signal[random_idx][:T]
-                    if f"{name}_postprocessed" in ft_additional:
-                        predict = ft_additional[f"{name}_postprocessed"].squeeze(-1)
-                    elif f"{name}_predict" in ft_additional:
-                        predict = ft_additional[f"{name}_predict"]
+                    if f"{name}_vp_predict" in ft_additional:
+                        predict = ft_additional[f"{name}_vp_predict"]
                     else:
                         predict = ft_additional[name].squeeze(-1)
                     data = torch.stack([target_signal, predict[random_idx][:T]])
