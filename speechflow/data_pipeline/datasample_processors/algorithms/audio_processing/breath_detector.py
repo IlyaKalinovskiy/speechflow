@@ -7,6 +7,8 @@ import librosa
 import numpy.typing as npt
 import librosa.filters
 
+from speechflow.logging import trace
+
 __all__ = ["magnitude_function", "detect_noise", "detect_breath"]
 
 LOGGER = logging.getLogger("root")
@@ -25,7 +27,7 @@ def detect_breath(
     try:
         return func(wave) > db_cap
     except Exception as e:
-        LOGGER.exception(e)
+        LOGGER.error(trace("detect_breath", e))
         return False
 
 
@@ -37,7 +39,7 @@ def detect_noise(
     try:
         return func(wave) / scale
     except Exception as e:
-        LOGGER.exception(e)
+        LOGGER.error(trace("detect_noise", e))
         return -100.0 / scale
 
 

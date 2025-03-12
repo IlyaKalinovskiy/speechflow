@@ -44,23 +44,23 @@ class ProsodyEncoder(Component):
         return self.text_encoder.output_dim + self.vq_encoder.output_dim
 
     def forward_step(self, x: ComponentOutput) -> EncoderOutput:
-        audio_emb = x.model_inputs.ssl_feat
-        text_emb = x.model_inputs.lm_feat.transpose(0, 1)
+        audio_embs = x.model_inputs.ssl_feat
+        lm_embs = x.model_inputs.lm_feat.transpose(0, 1)
 
         invert_durations = x.model_inputs.additional_inputs["word_invert_durations"]
         durations = x.model_inputs.additional_inputs["word_durations"]
-        audio_emb, _ = self.soft_lr(audio_emb, invert_durations, durations.shape[1])
+        audio_embs, _ = self.soft_lr(audio_embs, invert_durations, durations.shape[1])
 
         bimodal_embs = self.multimodal_transformer(
-            audio_emb.transpose(0, 1), text_emb, text_emb
+            audio_embs.transpose(0, 1), lm_embs, lm_embs
         ).transpose(0, 1)
+
         x.set_content(bimodal_embs, get_lengths_from_durations(invert_durations))
+        encoder_output = self.vq_encoder(x)
 
         text = x.embeddings["transcription"]
         text_lens = x.model_inputs.transcription_lengths
         text_embs, _ = self.text_encoder.process_content(text, text_lens, x.model_inputs)
-
-        encoder_output = self.vq_encoder(x)
 
         quant = encoder_output.content
         dura = x.model_inputs.word_lengths

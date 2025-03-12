@@ -4,7 +4,9 @@ import torch
 
 from torch.nn import functional as F
 
+from speechflow.io import tp_PATH
 from speechflow.training.losses.vae_loss import VAELoss
+from speechflow.training.saver import ExperimentSaver
 from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
 from tts.acoustic_models.models.tts_model import ParallelTTSModel, ParallelTTSParams
 from tts.acoustic_models.modules.common.blocks import Regression
@@ -15,20 +17,43 @@ __all__ = ["TTSFeatures", "TTSFeaturesParams"]
 
 
 class TTSFeaturesParams(ParallelTTSParams):
-    pass
+    pretrain_path: tp.Optional[tp_PATH] = None
+    freeze: bool = False
 
 
 class TTSFeatures(FeatureExtractor):
     def __init__(self, params: tp.Union[tp.MutableMapping, TTSFeaturesParams]):
+        self.freeze = params.freeze
+
+        if params.pretrain_path is not None:
+            checkpoint = ExperimentSaver.load_checkpoint(params.pretrain_path)
+            checkpoint["params"]["mel_spectrogram_dim"] = params.mel_spectrogram_dim
+            checkpoint["params"]["mel_spectrogram_proj_dim"] = params.mel_spectrogram_dim
+            params = ParallelTTSParams.create(checkpoint["params"])
+            state_dict = {
+                k.replace("model.", ""): v for k, v in checkpoint["state_dict"].items()
+            }
+        else:
+            state_dict = None
+
         super().__init__(params)
+
         self.tts_model = ParallelTTSModel(params)
+
         self.vae_loss = VAELoss(
             scale=0.00002, every_iter=1, begin_iter=1000, end_anneal_iter=10000
         )
+
         if params.decoder_output_dim != params.mel_spectrogram_dim:
             self.proj = Regression(params.decoder_output_dim, params.mel_spectrogram_dim)
         else:
             self.proj = torch.nn.Identity()
+
+        if state_dict is not None:
+            self.tts_model.load_state_dict(state_dict)
+            if self.freeze:
+                for param in self.tts_model.parameters():
+                    param.requires_grad = False
 
     @staticmethod
     def _get_energy_and_pitch(inputs, outputs, **kwargs):
@@ -79,21 +104,30 @@ class TTSFeatures(FeatureExtractor):
         return energy, pitch
 
     def forward(self, inputs: VocoderForwardInput, **kwargs):
+        losses = {}
+        additional_content = {}
+
         if inputs.__class__.__name__ != "TTSForwardInputWithSSML":
-            outputs: TTSForwardOutput = self.tts_model(inputs)
-            losses = outputs.additional_losses
+
+            if self.freeze:
+                with torch.no_grad():
+                    outputs: TTSForwardOutput = self.tts_model(inputs)
+            else:
+                outputs: TTSForwardOutput = self.tts_model(inputs)
+                losses = outputs.additional_losses
+
             additional_content = outputs.additional_content
         else:
             outputs = inputs  # type: ignore
-            losses = {}
-            additional_content = {}
 
         if isinstance(outputs.spectrogram, list) or outputs.spectrogram.ndim == 4:
             x = outputs.spectrogram[-1]
         else:
             x = outputs.spectrogram
 
-        if self.training:
+        if self.training and (
+            not self.freeze or not isinstance(self.proj, torch.nn.Identity)
+        ):
             spec_loss = 0
             target_spec = inputs.spectrogram
             for predict in outputs.spectrogram:
@@ -101,6 +135,7 @@ class TTSFeatures(FeatureExtractor):
 
             losses["spectral_l1_loss"] = spec_loss
 
+        if self.training and not self.freeze:
             for name, loss in losses.items():
                 if "kl_loss" in name:
                     losses[name] = self.vae_loss(inputs.global_step, loss, name)[name]

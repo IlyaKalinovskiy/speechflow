@@ -17,9 +17,10 @@ data_loaders:
   max_prefetch_factor: { default: 150, debug: 1 }
 
 trainer:
-  accelerator: { default: gpu, debug: gpu }
-  devices: { default: [auto], debug: [auto] }
+  accelerator: { default: gpu, debug: cpu }
+  devices: { default: [auto], debug: 1 }
   max_steps: 8000000
+  gradient_clip_val: 100
   accumulate_grad_batches: 4
   limit_val_batches: 100
   log_every_n_steps: 100
