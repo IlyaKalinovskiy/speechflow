@@ -122,7 +122,7 @@ preproc:
           level: 12  # 23
         ml: ~
     timedim_interpolation:
-      features: [ssl_feat]
+      features: [energy, pitch, ssl_feat]
       shape_as: mel
     average_by_time:
       attributes: [durations, energy, pitch, rate]

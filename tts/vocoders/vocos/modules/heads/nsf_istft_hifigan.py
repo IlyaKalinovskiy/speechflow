@@ -31,8 +31,8 @@ class NSFiSTFTHiFiGANHeadParams(BaseTorchModelParams):
     resblock_dilation_sizes: tp.Tuple[int, ...] = ([1, 3, 5], [1, 3, 5], [1, 3, 5])
     n_fft: int = 20
     hop_length: int = 4
-    adain_upsample: bool = False
-    adain_p_dropout: float = 0
+    decode_upsample: bool = False
+    decode_p_dropout: float = 0
     output_sample_rate: int = 24000
 
 
@@ -43,7 +43,8 @@ class NSFiSTFTHiFiGANHead(WaveformGenerator):
         super().__init__(params)
         res_dim = params.inner_dim // 16 - 2
 
-        stride = 2 if params.adain_upsample else 1
+        stride = 1
+        # stride = 2 if params.decode_upsample else 1
         self.energy_conv = weight_norm(
             nn.Conv1d(1, 1, kernel_size=3, stride=stride, padding=1)
         )
@@ -52,11 +53,16 @@ class NSFiSTFTHiFiGANHead(WaveformGenerator):
         )
         self.res_proj = weight_norm(nn.Conv1d(params.input_dim, res_dim, kernel_size=1))
 
+        if params.decode_upsample:
+            self.pitch_upsample = nn.Upsample(scale_factor=2, mode="linear")
+        else:
+            self.pitch_upsample = nn.Identity()
+
         self.encode = AdainResBlk1d(
             params.input_dim + 2,
             params.inner_dim,
             params.condition_dim,
-            dropout_p=params.adain_p_dropout,
+            dropout_p=params.decode_p_dropout,
         )
 
         self.decode = nn.ModuleList()
@@ -65,7 +71,7 @@ class NSFiSTFTHiFiGANHead(WaveformGenerator):
                 params.inner_dim + res_dim + 2,
                 params.inner_dim,
                 params.condition_dim,
-                dropout_p=params.adain_p_dropout,
+                dropout_p=params.decode_p_dropout,
             )
         )
         self.decode.append(
@@ -73,7 +79,7 @@ class NSFiSTFTHiFiGANHead(WaveformGenerator):
                 params.inner_dim + res_dim + 2,
                 params.inner_dim,
                 params.condition_dim,
-                dropout_p=params.adain_p_dropout,
+                dropout_p=params.decode_p_dropout,
             )
         )
         self.decode.append(
@@ -81,7 +87,7 @@ class NSFiSTFTHiFiGANHead(WaveformGenerator):
                 params.inner_dim + res_dim + 2,
                 params.inner_dim,
                 params.condition_dim,
-                dropout_p=params.adain_p_dropout,
+                dropout_p=params.decode_p_dropout,
             )
         )
         self.decode.append(
@@ -89,8 +95,8 @@ class NSFiSTFTHiFiGANHead(WaveformGenerator):
                 params.inner_dim + res_dim + 2,
                 params.upsample_initial_channel,
                 params.condition_dim,
-                upsample=params.adain_upsample,
-                dropout_p=params.adain_p_dropout,
+                upsample=params.decode_upsample,
+                dropout_p=params.decode_p_dropout,
             )
         )
 
@@ -147,9 +153,12 @@ class NSFiSTFTHiFiGANHead(WaveformGenerator):
         for block in self.decode:
             if res:
                 x = torch.cat([x, y_res, e, p], axis=1)
+
             x = block(x, s)
             if block.upsample_type:
                 res = False
+
+        pitch = self.pitch_upsample(pitch.unsqueeze(1)).squeeze(1)
 
         x = self.generator(x, s, pitch)
         return x.squeeze(1), None, {}

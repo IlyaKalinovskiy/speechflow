@@ -473,16 +473,24 @@ def timedim_interpolation(
     ds: AudioDataSample,
     features: tp.Union[str, tp.List[str]],
     shape_as: str,
-    mode: str = "linear",
-    ratio: float = 1,
+    mode: tp.Literal["nearest", "linear"] = "linear",
+    ratio: float = 1.0,
 ):
     if isinstance(features, str):
         features = [features]
 
     def interpolate(_t, _scale):
+        ndim = _t.ndim
+        if ndim == 1:
+            _t = _t.unsqueeze(-1)
+
         _t = _t.t().unsqueeze(0)
         _t = torch_interpolate(_t, scale_factor=_scale, mode=mode)
         _t = _t.squeeze(0).t()
+
+        if ndim == 1:
+            _t = _t.squeeze(-1)
+
         return _t
 
     for name in features:
@@ -497,7 +505,8 @@ def timedim_interpolation(
         else:
             t = feat
 
-        if isinstance(t, np.ndarray):
+        is_tensor = isinstance(t, torch.Tensor)
+        if not is_tensor:
             t = torch.from_numpy(t)
 
         scale = ratio * attr.shape[0] / t.shape[0]
@@ -505,9 +514,12 @@ def timedim_interpolation(
         if shape < attr.shape[0]:
             scale = ratio * (attr.shape[0] + 1) / t.shape[0]
 
-        t = interpolate(t, scale).numpy()
+        t = interpolate(t, scale)
         t = t[: math.floor(ratio * attr.shape[0])]
         # assert math.floor(t.shape[0] / ratio) == attr.shape[0]
+
+        if not is_tensor:
+            t = t.numpy()
 
         if isinstance(feat, SSLFeatures):
             feat.encoder_feat = t
