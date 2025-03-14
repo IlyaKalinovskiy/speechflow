@@ -42,8 +42,9 @@ preproc:
   pipe: [load_audio, load_audio_segmentation,
          voice_bio_speechbrain, store_bio_emb, voice_bio_wespeaker, mean_bio_embedding,
          speech_quality, ssl,
-         spectrogram, melscale, add_gate_value, timedim_interpolation,
-         pitch, enhancement_energy, enhancement_pitch,
+         spectrogram, melscale, add_gate_value,
+         pitch, timedim_interpolation,
+         enhancement_energy, enhancement_pitch,
          add_pauses_from_timestamps, add_service_tokens, text, xpbert, lm,
          calc_durations, average_by_time, norm, aggregate_by_phoneme,
          trim, mu_law]

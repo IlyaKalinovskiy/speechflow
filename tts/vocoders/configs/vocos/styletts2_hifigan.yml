@@ -49,7 +49,7 @@ engine:
     decay_mel_coeff: false
     num_warmup_steps: 0  # Optimizers warmup steps
     pretrain_mel_steps: 0  # 0 means GAN objective from the first iteration
-    use_cqtd_disc: false
+    use_cqtd_disc: true
     use_sm_loss: true
     use_wavlm_loss: true
     use_cdpam_loss: false
@@ -59,6 +59,7 @@ engine:
     wavlm_model_name:
       default: /src/wavlm-base-plus
       debug: C:/FluentaAI/wavlm-base-plus
+    # disc_pretrain_path: bigvgan_discriminator_optimizer.pt
 
     # automatic evaluation
     evaluate_utmos: false
@@ -241,3 +242,4 @@ model:
     init_args:
       input_dim: 384
       condition_dim: 128
+      decode_upsample: false

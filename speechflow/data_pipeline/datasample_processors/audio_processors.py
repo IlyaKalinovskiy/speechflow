@@ -505,11 +505,14 @@ def timedim_interpolation(
         else:
             t = feat
 
+        scale = ratio * attr.shape[0] / t.shape[0]
+        if scale == 1:
+            continue
+
         is_tensor = isinstance(t, torch.Tensor)
         if not is_tensor:
             t = torch.from_numpy(t)
 
-        scale = ratio * attr.shape[0] / t.shape[0]
         shape = math.floor(t.shape[0] * scale / ratio)
         if shape < attr.shape[0]:
             scale = ratio * (attr.shape[0] + 1) / t.shape[0]
