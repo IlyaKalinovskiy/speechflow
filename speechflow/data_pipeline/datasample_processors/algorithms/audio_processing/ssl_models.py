@@ -83,6 +83,7 @@ class Whisper(BaseSSLModel):
         self.options = whisper.DecodingOptions(fp16=False)
         self.dec_task = whisper.decoding.DecodingTask(self.model, self.options)
         self.pos_emb = self.model.encoder.positional_embedding.clone()
+        self.log_mel_spectrogram = whisper.log_mel_spectrogram
 
         self.model.eval()
         self.embedding_dim = self.model.dims.n_audio_state
@@ -92,7 +93,7 @@ class Whisper(BaseSSLModel):
         ssl_feat = SSLFeatures()
         data = self.preprocessing(audio_chunk)
 
-        mel = whisper.log_mel_spectrogram(data.squeeze(0)).unsqueeze(0)
+        mel = self.log_mel_spectrogram(data.squeeze(0)).unsqueeze(0)
 
         assert mel.shape[-1] <= self.pos_emb.shape[0]
         self.model.encoder.positional_embedding = self.pos_emb[

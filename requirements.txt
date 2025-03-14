@@ -8,7 +8,7 @@ librosa==0.9.2
 numba==0.58.1
 numpy==1.23.0
 openai-whisper==v20231117
-omegaconf==2.3.0
+omegaconf==2.4.0.dev2
 packaging>=20.0
 praatio==4.4.0
 psola==0.0.1
@@ -20,7 +20,7 @@ python-dateutil==2.8.0
 python-Levenshtein==0.12.2
 pytorch-lightning==1.9.5
 pytorch-msssim==1.0.0
-pyworld==0.2.12
+pyworld-prebuilt==0.3.4.4
 pyzmq==25.1.2
 resampy==0.4.2
 scikit-image==0.21.0
@@ -39,7 +39,6 @@ jsonargparse[signatures]>=4.15.2
 pesq==0.0.4
 hydra-core==1.4.0.dev1
 clearml==1.16.4
-denoiser==0.1.5
 monotonic-align==1.0.0
 
 resemblyzer @ git+https://github.com/resemble-ai/Resemblyzer.git@15d828edebe06bc72b9cabc8ef8ca5ab2cb457ce

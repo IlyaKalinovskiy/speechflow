@@ -13,7 +13,6 @@ import numpy as np
 import torch
 import numpy.typing as npt
 
-from denoiser import pretrained
 from scipy import signal
 from torch.nn.functional import interpolate as torch_interpolate
 
@@ -444,6 +443,8 @@ class DenoisingProcessor(BaseAudioProcessor):
         super().init()
 
         if self._model_type == "facebook":
+            from denoiser import pretrained
+
             self._model = pretrained.dns64().to(self.device)
 
     @PipeRegistry.registry(

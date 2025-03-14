@@ -41,8 +41,8 @@ source /ext3/miniconda3/etc/profile.d/conda.sh
 export PATH=/ext3/miniconda3/bin:$PATH
 export PYTHONPATH=/ext3/miniconda3/bin:$PATH
 
-export ENV_NAME=py38
-export PYTHON_VERSION=3.8
+export ENV_NAME=py310
+export PYTHON_VERSION=3.10
 
 conda update -n base conda -y
 conda clean --all --yes

@@ -90,7 +90,7 @@ preproc:
           n_mels: 100
     pitch:
       type: PitchProcessor
-      method: torchcrepe  # pyworld
+      method: torchcrepe  # pyworld, torchcrepe
     enhancement_energy:
       type: signal_enhancement
       attributes: energy

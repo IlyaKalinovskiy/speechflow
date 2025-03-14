@@ -6,22 +6,72 @@ The goal of this project is to provide a comprehensive toolkit to solve the TTS 
 
 ### Installation
 
-1. Clone a repository
+0. Clone a repository
 
 ```
 git clone https://github.com/just-ai/speechflow
 cd speechflow && git submodule update --init --recursive -f
 ```
 
-On Ubuntu:
+#### On Ubuntu:
 
-1. Installation [Singularity](https://docs.sylabs.io/guides/3.11/admin-guide/installation.html) (or run `env/singularity.sh`)
-2. Run `install.sh`
-3. Run singularity container `singularity shell --nv --writable --no-home -B /run/user/:/run/user/,.:/src --pwd /src torch_*.sif`
-4. Activate conda environment `source /ext3/miniconda3/etc/profile.d/conda.sh && conda activate py38`
+1. Installation system packages
 
-On Windows:
-1. Install [Python 3.8](https://repo.anaconda.com/miniconda/Miniconda3-py38_23.11.0-2-Windows-x86_64.exe)
+```bash
+apt-get update
+apt-get install -y libssl1.1
+apt-get install -y g++
+apt-get install -y wget sox ffmpeg
+```
+
+2. Installation Python 3.10 with conda environment
+
+```bash
+conda create -n py310 python=3.10
+conda activate py310
+# source /opt/conda/etc/profile.d/conda.sh && conda activate py310
+```
+
+3. Installation [PyTorch](https://pytorch.org/) and python requirements
+
+```bash
+pip install torch torchvision torchaudio
+pip install -r requirements.txt
+```
+
+4. Installation requirements for [multilingual frontend](https://github.com/just-ai/multilingual-text-parser) 
+
+```bash
+# install dotnet
+wget https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
+dpkg -i packages-microsoft-prod.deb
+rm packages-microsoft-prod.deb
+
+apt-get install -y apt-transport-https && apt-get update
+apt-get install -y dotnet-sdk-5.0
+apt-get install -y aspnetcore-runtime-5.0
+apt-get install -y dotnet-runtime-5.0
+apt-get install -y nuget
+
+# install eSpeak
+apt-get install -y espeak-ng
+```
+
+5. Installation submodules
+
+```bash
+sh libs/install.sh
+```
+
+6. Run tests
+
+```bash
+pytest tests
+```
+
+#### On Windows:
+
+1. Install [Python 3.10](https://repo.anaconda.com/miniconda/Miniconda3-py310_24.5.0-0-Windows-x86_64.exe)
 2. Installations additional dependencies:
 [.NET 5.0](https://dotnet.microsoft.com/en-us/download/dotnet/5.0),
 [C++ Build Tools](https://visualstudio.microsoft.com/ru/visual-cpp-build-tools/) or
@@ -31,7 +81,12 @@ On Windows:
 3. Install additional packages `pip install -r requirements.txt`
 4. Install submodules  `libs/install.sh`
 
-*For other systems see `env/Singularityfile`*
+#### Alternative installation with [Singularity](https://docs.sylabs.io/guides/main/user-guide/#)
+
+1. Installation [Singularity](https://docs.sylabs.io/guides/3.11/admin-guide/installation.html) (or run `env/singularity.sh`)
+2. Run `install.sh`
+3. Run singularity container `singularity shell --nv --writable --no-home -B /run/user/:/run/user/,.:/src --pwd /src torch_*.sif`
+4. Activate conda environment `source /ext3/miniconda3/etc/profile.d/conda.sh && conda activate py310`
 
 
 ### Data Annotation

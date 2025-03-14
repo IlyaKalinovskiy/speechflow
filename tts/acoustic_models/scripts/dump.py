@@ -16,14 +16,12 @@ import numpy.typing as npt
 
 from annoy import AnnoyIndex
 from numpy.random import default_rng
-from scipy import interpolate
 from sklearn.cluster import FeatureAgglomeration
 from sklearn.metrics import pairwise_distances
 from tqdm import tqdm
 
 from speechflow.data_pipeline.collate_functions.tts_collate import TTSCollateOutput
 from speechflow.data_pipeline.core import Batch
-from speechflow.data_pipeline.datasample_processors import TTSTextProcessor
 from speechflow.data_pipeline.datasample_processors.tts_processors import (
     ContoursExtractor,
 )
