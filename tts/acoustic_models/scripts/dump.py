@@ -86,7 +86,7 @@ def parse_args():
         default=80,
     )
     arguments_parser.add_argument(
-        "-ssize", "--subset_size", help="size of subset", type=int, default=10000
+        "-ssize", "--subset_size", help="size of subset", type=int, default=100000
     )
     arguments_parser.add_argument(
         "-n_cl", "--n_clusters", help="number of clusters", type=int, default=500

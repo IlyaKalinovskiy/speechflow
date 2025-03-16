@@ -32,6 +32,7 @@ checkpoint:
 
 callbacks:
   TTSTrainingVisualizer: {}
+  ProsodyTrainingVisualizer: {}
 
 optimizer:
   method:
@@ -72,11 +73,12 @@ model:
           condition_type: cat
 
     encoder_type: ProsodyEncoder
-    encoder_inner_dim: 256
+    encoder_inner_dim: 1024
     encoder_params:
       mt_embed_dim: 1024
-      mt_num_heads: 1
-      mt_layers: 1
+      mt_num_heads: 2
+      mt_layers: 4
+      vq_type: rlfq
       vq_codebook_size: 1024
 
     va_type: HierarchicalVarianceAdaptor
@@ -88,7 +90,7 @@ model:
       StyleEncoder_0: ~
 
     vp_num_layers: 2
-    vp_inner_dim: 256
+    vp_inner_dim: 512
 
     va_variances:
       0: [biometric_style_encoder]
@@ -118,3 +120,6 @@ model:
         predictor_params:
           vp_params:
             loss_type: cross_entropy
+
+# finetune:
+#   ckpt_path: /path/to/checkpoint

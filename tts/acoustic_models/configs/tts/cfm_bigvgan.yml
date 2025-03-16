@@ -193,3 +193,6 @@ model:
           vp_params:
             deterministic: true
             add_noise: true
+
+# finetune:
+#   ckpt_path: /path/to/checkpoint

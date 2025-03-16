@@ -1,6 +1,10 @@
 import torch
 
-from speechflow.utils.tensor_utils import get_lengths_from_durations
+from speechflow.utils.tensor_utils import (
+    apply_mask,
+    get_lengths_from_durations,
+    get_mask_from_lengths,
+)
 from tts.acoustic_models.modules.common.length_regulators import (
     LengthRegulator,
     SoftLengthRegulator,
@@ -66,5 +70,6 @@ class ProsodyEncoder(Component):
         dura = x.model_inputs.word_lengths
         quant, _ = self.hard_lr(quant, dura, text_embs.shape[1])
         context = torch.cat([quant, text_embs], dim=-1)
+        context = apply_mask(context, get_mask_from_lengths(text_lens))
 
         return EncoderOutput.copy_from(x).set_content(context, text_lens)

@@ -39,7 +39,7 @@ pip install torch torchvision torchaudio
 pip install -r requirements.txt
 ```
 
-4. Installation requirements for [multilingual frontend](https://github.com/just-ai/multilingual-text-parser) 
+4. Installation requirements for [multilingual frontend](https://github.com/just-ai/multilingual-text-parser)
 
 ```bash
 # install dotnet

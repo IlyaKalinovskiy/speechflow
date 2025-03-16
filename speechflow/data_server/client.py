@@ -50,17 +50,38 @@ class DataClient:
         if section is None:
             flatten_info = flatten_dict(self.info)
         else:
-            flatten_info = flatten_dict(self.info["singleton_handlers"])
+            flatten_info = flatten_dict(self.info[section])
 
         found = []
         for key, field in flatten_info.items():
             if key.endswith(name):
                 if field not in [None, {}]:
                     found.append(field)
+
         if len(found):
             return found[0]
         else:
             return default
+
+    def find_section(self, name_or_value: str, default: tp.Any = None):
+        if name_or_value in self.info:
+            return self.info[name_or_value]
+        else:
+            section_path = None
+            flatten_info = flatten_dict(self.info)
+            for key, field in flatten_info.items():
+                if name_or_value in key:
+                    section_path = key.split(".")[1:]
+                if isinstance(field, str) and name_or_value == field:
+                    section_path = key.split(".")[1:-1]
+
+        if section_path:
+            section = self.info
+            for name in section_path:
+                section = section[name]
+            return section
+
+        return default
 
     def request(
         self,

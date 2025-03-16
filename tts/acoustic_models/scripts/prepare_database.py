@@ -331,7 +331,7 @@ def main(
         mapping = np.load(mapping_file.as_posix())
     else:
         print("Run codebook clustering")
-        codebook = model.encoder.encoder.vq._embedding.weight
+        codebook = model.encoder.encoder.vq.codebook.weight
         embeddings = codebook.cpu().detach()
         if codebook_file:
             torch.save(embeddings, codebook_file)

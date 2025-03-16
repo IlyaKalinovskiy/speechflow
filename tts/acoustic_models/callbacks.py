@@ -13,11 +13,14 @@ import torch
 import numpy.typing as npt
 import pytorch_lightning as pl
 
+from matplotlib import pyplot as plt
 from pytorch_lightning import Callback
+from sklearn.manifold import TSNE
 
 from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
     TTSTextProcessor,
 )
+from speechflow.logging import log_to_file, trace
 from speechflow.utils.plotting import figure_to_ndarray, plot_1d, plot_spectrogram
 from tts.acoustic_models.interface.test_utterances_ru import UTTERANCE
 
@@ -286,3 +289,74 @@ class TTSAudioSynthesizer(Callback):
     def _extract_step(text):
         """Regular expression extracting number of steps from checkpoint filename."""
         return int(re.split(r"(epoch=)(\d+)(-step)", text)[2])
+
+
+class ProsodyTrainingVisualizer(Callback):
+    def __init__(
+        self,
+        eps: int = 6,
+    ):
+        self.eps = eps
+
+    def on_validation_batch_end(
+        self,
+        trainer: pl.Trainer,
+        pl_module: pl.LightningModule,
+        outputs,
+        batch,
+        batch_idx,
+        dataloader_idx=0,
+    ):
+        if batch_idx != 0:
+            return
+
+        vq_enc = pl_module.model.encoder.vq_encoder
+        if hasattr(vq_enc, "vq"):
+            codebook = vq_enc.vq.codebook.weight
+        elif hasattr(vq_enc, "rlfq"):
+            codebook = vq_enc.rlfq.codebooks[0]
+        else:
+            raise NotImplementedError
+
+        embeddings = codebook.cpu().detach().numpy()
+        mapping = self.clustering(embeddings=embeddings, eps=self.eps)
+
+        if len(mapping) > 0:
+            pl_module.logger.experiment.add_image(
+                "vq_clusters",
+                mapping,
+                trainer.global_step,
+                dataformats="CHW",
+            )
+
+    @staticmethod
+    def clustering(embeddings: np.array, eps: int = 6):
+        from sklearn.cluster import DBSCAN
+        from sklearn.mixture import GaussianMixture
+
+        """
+        Function for clustering of embeddings from the codebook
+        1. Outliers are obtained by DBSCAN
+        2. Outliers are clustered by GaussianMixture clustering
+        3. Indices from the codebook are mapped with the corresponding classes
+        """
+
+        classes = DBSCAN(eps=eps, min_samples=2).fit_predict(embeddings)
+
+        tsne_ak_2d = TSNE(n_components=2, init="pca", n_iter=3000, random_state=32)
+        projections = tsne_ak_2d.fit_transform(embeddings)
+
+        fig = plt.figure(figsize=(16, 9))
+
+        unique = list(set(classes))
+        colors = [plt.cm.jet(float(i + 1) / (max(unique) + 1)) for i in unique]
+        for i, u in enumerate(unique):
+            points = projections[np.where(classes == u)]
+            plt.scatter(points[:, 0], points[:, 1], c=colors[i], label=str(u))
+
+        plt.legend()
+        fig.canvas.draw()
+        array = figure_to_ndarray(fig)
+        plt.close()
+
+        return array

@@ -12,10 +12,12 @@ from speechflow.utils.init import init_class_from_config
 
 LOGGER = logging.getLogger("root")
 
-__all__ = ["prepare_warmstart", "prepare_finetuning"]
+__all__ = ["prepare_model_for_warmstart", "prepare_model_for_finetune"]
 
 
-def prepare_warmstart(model: BaseTorchModel, warmstart_config: Config) -> BaseTorchModel:
+def prepare_model_for_warmstart(
+    model: BaseTorchModel, warmstart_config: Config
+) -> BaseTorchModel:
     ckpt_path = warmstart_config.get("checkpoint")
     include_layers = warmstart_config.get("include_layers")
     exclude_layers = warmstart_config.get("exclude_layers")
@@ -61,8 +63,8 @@ def prepare_warmstart(model: BaseTorchModel, warmstart_config: Config) -> BaseTo
     return model
 
 
-def prepare_finetuning(
-    model_cls: tp.Callable, finetuning_config: Config, model_params: Config = None
+def prepare_model_for_finetune(
+    model_cls: tp.Callable, cfg_finetune: Config, model_params: Config = None
 ) -> BaseTorchModel:
     # TODO: Move to model utils
     """
@@ -74,41 +76,34 @@ def prepare_finetuning(
             decoder:
     <config>
     """
-    ckpt_path = finetuning_config.get("checkpoint")
+    ckpt_path = cfg_finetune.get("ckpt_path")
     if ckpt_path is not None:
         ckpt = ExperimentSaver.load_checkpoint(ckpt_path)
 
         if model_params is None:
             model_params = ckpt["params"]
         else:
-            model_params["n_languages"] = ckpt["params"]["n_languages"]
+            model_params["n_langs"] = ckpt["params"]["n_langs"]
             model_params["n_speakers"] = ckpt["params"]["n_speakers"]
             model_params["max_input_length"] = ckpt["params"].get("max_input_length")
             model_params["max_output_length"] = ckpt["params"].get("max_output_length")
-            try:
-                init_class_from_config(model_cls, model_params)()
-            except:
-                model_params = ckpt["params"]
 
-        model_params.update(finetuning_config.get("params", {}))
         model = init_class_from_config(model_cls, model_params)()
         model.eval()
-        model.load_state_dict(
-            ckpt["state_dict"], strict="Enhancement" not in model.__class__.__name__
-        )
+        model.load_state_dict(ckpt["state_dict"], strict=cfg_finetune.get("strict", True))
     else:
         raise AttributeError(
             "Checkpoint for finetuning is not provided. "
             "Turn off finetuning mode removing `finetuning` key from config or pass ckpt path."
         )
 
-    if finetuning_config.get("modules") is None:
+    if cfg_finetune.get("modules") is None:
         return model
 
     for param in model.parameters():
         param.requires_grad = False
 
-    modules_to_unfreeze: tp.Dict[str, tp.Dict] = finetuning_config["modules"]
+    modules_to_unfreeze: tp.Dict[str, tp.Dict] = cfg_finetune["modules"]
     for module_name, settings in modules_to_unfreeze.items():
         reinitialize = settings.get("reinitialize", False)
         include_submodules = settings.get("include", [])

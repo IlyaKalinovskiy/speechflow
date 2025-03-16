@@ -321,12 +321,12 @@ def plot_spectrogram(
 
     fig.tight_layout()
 
-    plt.show()
-
     if not kwargs.get("dont_close", False):
         fig.canvas.draw()
         plt.close(fig)
         return fig
+    else:
+        plt.show()
 
     return None
 

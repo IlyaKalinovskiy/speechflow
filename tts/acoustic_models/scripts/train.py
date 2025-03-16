@@ -22,7 +22,10 @@ from speechflow.training.lightning_engine import LightningEngine
 from speechflow.training.optimizer import Optimizer
 from speechflow.training.saver import ExperimentSaver
 from speechflow.training.utils.config_prepare import model_config_prepare, train_arguments
-from speechflow.training.utils.finetuning import prepare_finetuning, prepare_warmstart
+from speechflow.training.utils.finetuning import (
+    prepare_model_for_finetune,
+    prepare_model_for_warmstart,
+)
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.profiler import Profiler
 from tts import acoustic_models
@@ -31,8 +34,8 @@ LOGGER = logging.getLogger("root")
 
 
 def update_model_config(cfg: Config, dl: DataLoader):
-    lang = dl.client.find_info("lang", "RU")
-    text_proc = TTSTextProcessor(lang=lang)
+    section = dl.client.find_section("TTSTextProcessor")
+    text_proc = TTSTextProcessor(lang=section["lang"])
     cfg["model"]["params"].alphabet_size = text_proc.alphabet_size
     cfg["model"]["params"].n_symbols_per_token = text_proc.num_symbols_per_phoneme_token
 
@@ -83,14 +86,14 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         )
 
     if cfg_model.get("finetune") is not None:
-        model = prepare_finetuning(
+        model = prepare_model_for_finetune(
             model_cls, cfg_model["finetune"], cfg_model["model"]["params"]
         )
     else:
         model = init_class_from_config(model_cls, cfg_model["model"]["params"])()
 
     if cfg_model.get("warmstart") is not None:
-        model = prepare_warmstart(model, cfg_model["warmstart"])
+        model = prepare_model_for_warmstart(model, cfg_model["warmstart"])
 
     criterion_cls = getattr(acoustic_models, cfg_model["loss"]["type"])
     criterion = init_class_from_config(criterion_cls, cfg_model["loss"])()

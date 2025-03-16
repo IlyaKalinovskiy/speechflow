@@ -32,7 +32,7 @@ class VQEncoderParams(EncoderParams):
     vq_type: tp.Literal["vq", "rvq", "rfsq", "rlfq"] = "vq"
     vq_encoder_type: str = "RNNEncoder"
     vq_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
-    vq_num_quantizers: int = 4
+    vq_num_quantizers: int = 1
     vq_codebook_size: int = 256
     vq_by_phonemes: bool = False
 
