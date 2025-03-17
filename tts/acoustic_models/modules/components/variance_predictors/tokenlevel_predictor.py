@@ -32,8 +32,8 @@ class TokenLevelPredictorParams(VariancePredictorParams):
     activation_fn: str = "Identity"
     add_lm_feat: bool = False
     use_mtm: bool = False  # masked token modeling
-    loss_type: str = "smooth_l1_loss"
-    var_params: VarianceParams = VarianceParams()
+    loss_type: str = "l1_loss"
+    variance_params: VarianceParams = VarianceParams()
 
 
 class TokenLevelPredictor(Component):
@@ -79,12 +79,12 @@ class TokenLevelPredictor(Component):
             self.prenet = nn.Identity()
 
         if params.use_mtm:
-            assert self.params.var_params.as_embedding  # type: ignore
-            emb_dim = params.var_params.emb_dim  # type: ignore
+            assert self.params.variance_params.as_embedding  # type: ignore
+            emb_dim = params.variance_params.emb_dim  # type: ignore
             self.mtm_embeddings = VarianceEmbedding(
-                interval=params.var_params.interval,  # type: ignore
-                n_bins=params.var_params.n_bins,  # type: ignore
-                log_scale=params.var_params.log_scale,  # type: ignore
+                interval=params.variance_params.interval,  # type: ignore
+                n_bins=params.variance_params.n_bins,  # type: ignore
+                log_scale=params.variance_params.log_scale,  # type: ignore
                 emb_dim=emb_dim,  # type: ignore
             )
             self.mtm_pre_proj = Regression(input_dim, emb_dim)
@@ -107,7 +107,7 @@ class TokenLevelPredictor(Component):
         return self.params.vp_output_dim
 
     def postprocessing(self, predict):
-        if self.params.var_params.log_scale:  # type: ignore
+        if self.params.variance_params.log_scale:  # type: ignore
             predict = torch.expm1(predict)
 
         return predict
@@ -115,9 +115,10 @@ class TokenLevelPredictor(Component):
     def compute_loss(
         self, name, predict, target, lengths, global_step: int = 0
     ) -> tp.Dict[str, torch.Tensor]:
-        if self.params.var_params.log_scale:  # type: ignore
+        if self.params.variance_params.log_scale:  # type: ignore
             target = torch.log1p(target)
 
+        target = apply_mask(target, get_mask_from_lengths(lengths))
         predict = apply_mask(predict, get_mask_from_lengths(lengths))
 
         loss_fn = getattr(F, self.params.loss_type)

@@ -153,43 +153,48 @@ model:
             use_gmvae: true
             gmvae_n_components: 16
       aggregate_energy:
-        predictor_type: TokenLevelPredictor
         input_content: [1]
         cat_to_content: [1]
+        predictor_type: TokenLevelDP
         predictor_params:
+          vp_output_dim: 50
           vp_params:
-            activation_fn: SiLU
+            discrete_scale: 20
+            add_noise: true
+            noise_scale: 0.01
         as_embedding: true
         interval: [0, 2]
         n_bins: 256
         emb_dim: 64
       aggregate_pitch:
-        predictor_type: TokenLevelPredictor
         input_content: [1]
         cat_to_content: [1]
+        predictor_type: TokenLevelDP
         predictor_params:
+          vp_output_dim: 50
           vp_params:
-            activation_fn: SiLU
+            discrete_scale: 20
+            add_noise: true
+            noise_scale: 0.01
         log_scale: false
         as_embedding: true
         interval: [0, 2]
         n_bins: 256
         emb_dim: 64
       durations:
-        dim: 50
         input_content: [0, 1]
         detach_input: true
         predictor_type: TokenLevelDP
-        log_scale: true
         predictor_params:
+          vp_output_dim: 50
           vp_params:
-            deterministic: true
             add_noise: true
+            noise_scale: 0.1
       energy:
-        predictor_type: FrameLevelPredictor
         input_content: [0, 1]
         detach_input: [true, false]
         cat_to_content: [0]
+        predictor_type: FrameLevelPredictor
         predictor_params:
           vp_params:
             activation_fn: SiLU
@@ -199,16 +204,16 @@ model:
         n_bins: 256
         emb_dim: 64
       pitch:
-        predictor_type: FrameLevelPredictor
         input_content: [0, 1]
         detach_input: [true, false]
         cat_to_content: [0]
+        predictor_type: FrameLevelPredictor
         predictor_params:
           vp_params:
             activation_fn: SiLU
             use_ssl_adjustment: false
-        denormalize: true
         log_scale: false
+        denormalize: true
         as_embedding: true
         interval: [0, 880]
         n_bins: 256

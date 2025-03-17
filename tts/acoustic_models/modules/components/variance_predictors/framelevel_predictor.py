@@ -30,7 +30,7 @@ class FrameLevelPredictorParams(VariancePredictorParams):
     )
     use_mtm: bool = False  # masked token modeling
     loss_type: str = "smooth_l1_loss"
-    var_params: VarianceParams = VarianceParams()
+    variance_params: VarianceParams = VarianceParams()
 
 
 class FrameLevelPredictor(Component):
@@ -71,12 +71,12 @@ class FrameLevelPredictor(Component):
             self.ssl_encoder = None
 
         if params.use_mtm:
-            assert self.params.var_params.as_embedding  # type: ignore
-            emb_dim = params.var_params.emb_dim  # type: ignore
+            assert self.params.variance_params.as_embedding  # type: ignore
+            emb_dim = params.variance_params.emb_dim  # type: ignore
             self.mtm_embeddings = VarianceEmbedding(
-                interval=params.var_params.interval,  # type: ignore
-                n_bins=params.var_params.n_bins,  # type: ignore
-                log_scale=params.var_params.log_scale,  # type: ignore
+                interval=params.variance_params.interval,  # type: ignore
+                n_bins=params.variance_params.n_bins,  # type: ignore
+                log_scale=params.variance_params.log_scale,  # type: ignore
                 emb_dim=emb_dim,  # type: ignore
             )
             self.mtm_pre_proj = Regression(input_dim, emb_dim)
@@ -143,14 +143,14 @@ class FrameLevelPredictor(Component):
                     torch.cat([enc_ctx.detach(), ssl_ctx], dim=2)
                 ).squeeze(-1)
 
-                if self.params.var_params.log_scale:  # type: ignore
+                if self.params.variance_params.log_scale:  # type: ignore
                     target_by_frames = torch.log1p(target_by_frames)
 
                 losses[f"{name}_ssl_adjustment_loss_by_frames"] = loss_fn(
                     var_from_ssl, target_by_frames
                 )
 
-                if self.params.var_params.log_scale:  # type: ignore
+                if self.params.variance_params.log_scale:  # type: ignore
                     var_from_ssl = torch.expm1(var_from_ssl)
 
                 var_by_frames = var_from_ssl.detach()
@@ -159,14 +159,14 @@ class FrameLevelPredictor(Component):
                 var_by_frames = target_by_frames
 
             if predict is not None and var_by_frames is not None:
-                if self.params.var_params.log_scale:  # type: ignore
+                if self.params.variance_params.log_scale:  # type: ignore
                     var_by_frames = torch.log1p(var_by_frames)
 
                 losses[f"{name}_{self.params.loss_type}_by_frames"] = loss_fn(
                     predict, var_by_frames
                 )
 
-        if self.params.var_params.log_scale:  # type: ignore
+        if self.params.variance_params.log_scale:  # type: ignore
             predict = torch.expm1(predict)
 
         return (

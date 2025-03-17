@@ -18,22 +18,34 @@ __all__ = [
 
 class TokenLevelDPParams(TokenLevelPredictorParams):
     activation_fn: str = "SiLU"
-    loss_type: str = "l1_loss"
+    loss_type: str = "cross_entropy"
+    discrete_scale: float = 1.0
     add_noise: bool = False
-    deterministic: bool = False
+    noise_scale: float = 0.1
     every_iter: int = 2
 
 
 class TokenLevelDP(TokenLevelPredictor):
     params: TokenLevelDPParams
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        if self.params.loss_type == "cross_entropy":
+            assert self.params.variance_params.dim == 1  # support only 1D variances
+            assert self.params.vp_output_dim > 1
+
+    @property
+    def output_dim(self):
+        return 1  # support only 1D variances
+
     def postprocessing(self, predict):
-        if self.params.deterministic:
+        if self.params.loss_type == "cross_entropy":
             predict[:, :, :-1] = torch.sigmoid(predict[:, :, :-1]) > 0.5
-            predict = predict.sum(dim=-1)
-        else:
-            if self.params.var_params.log_scale:  # type: ignore
-                predict = torch.expm1(predict)
+            predict = predict.sum(dim=-1) / self.params.discrete_scale
+
+        if self.params.variance_params.log_scale:  # type: ignore
+            predict = torch.expm1(predict)
 
         return predict
 
@@ -46,10 +58,20 @@ class TokenLevelDP(TokenLevelPredictor):
         if global_step % self.params.every_iter != 0:
             return losses
 
-        if self.params.add_noise:
-            target = (target + 0.1 * torch.randn_like(target)).clip(min=0.1)
+        if self.params.variance_params.log_scale:  # type: ignore
+            target = torch.log1p(target)
 
-        if self.params.deterministic:
+        if self.params.add_noise:
+            target = (target + self.params.noise_scale * torch.randn_like(target)).clip(
+                min=0
+            )
+
+        target = apply_mask(target, get_mask_from_lengths(lengths))
+        predict = apply_mask(predict, get_mask_from_lengths(lengths))
+
+        if self.params.loss_type == "cross_entropy":
+            target *= self.params.discrete_scale
+
             reg_loss = 0
             ce_loss = 0
             for dur, enc, dlen in zip(target, predict, lengths):
@@ -63,10 +85,7 @@ class TokenLevelDP(TokenLevelPredictor):
                     trg[p, -1] = frac
 
                 dur_pred = torch.sigmoid(enc[:, :-1]).sum(dim=-1)
-                if self.params.var_params.log_scale:
-                    reg = loss_fn(torch.log(dur_pred), torch.log(dur))
-                else:
-                    reg = loss_fn(dur_pred, dur)
+                reg = F.l1_loss(dur_pred, dur)
 
                 reg_loss += reg
                 reg_loss += loss_fn(enc[:, -1], trg[:, -1])
@@ -76,14 +95,10 @@ class TokenLevelDP(TokenLevelPredictor):
                 )
                 ce_loss += ce
 
-            losses[f"{name}_deterministic_loss"] = (
+            losses[f"{name}_cross_entropy_loss"] = (
                 reg_loss + 20 * ce_loss
             ) / predict.shape[0]
         else:
-            if self.params.var_params.log_scale:  # type: ignore
-                mask = get_mask_from_lengths(lengths)
-                target = apply_mask(torch.log(target), mask)
-
             losses[f"{name}_{self.params.loss_type}"] = loss_fn(predict, target)
 
         return losses

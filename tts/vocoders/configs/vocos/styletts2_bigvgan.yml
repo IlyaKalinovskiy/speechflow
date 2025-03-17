@@ -178,42 +178,47 @@ model:
               use_gmvae: true
               gmvae_n_components: 16
         aggregate_energy:
-          predictor_type: TokenLevelPredictor
           input_content: [0, 1]
           detach_input: [true, false]
           cat_to_content: [0]
+          predictor_type: TokenLevelDP
           predictor_params:
+            vp_output_dim: 50
             vp_params:
-              activation_fn: SiLU
+              discrete_scale: 20
+              add_noise: true
+              noise_scale: 0.01
           denormalize: true
           as_embedding: true
           interval: [0, 200]
           n_bins: 256
           emb_dim: 64
         aggregate_pitch:
-          predictor_type: TokenLevelPredictor
           input_content: [0, 1]
           detach_input: [true, false]
           cat_to_content: [0]
+          predictor_type: TokenLevelDP
           predictor_params:
+            vp_output_dim: 50
             vp_params:
-              activation_fn: SiLU
-          denormalize: true
+              discrete_scale: 20
+              add_noise: true
+              noise_scale: 0.01
           log_scale: false
+          denormalize: true
           as_embedding: true
           interval: [0, 880]
           n_bins: 256
           emb_dim: 64
         durations:
-          dim: 50
-          predictor_type: TokenLevelDP
           input_content: [0, 1]
           detach_input: true
-          log_scale: true
+          predictor_type: TokenLevelDP
           predictor_params:
+            vp_output_dim: 50
             vp_params:
-              deterministic: true
               add_noise: true
+              noise_scale: 0.1
 
   backbone:
     class_name: DummyBackbone

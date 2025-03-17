@@ -202,7 +202,7 @@ class VariancePredictorParams(EmbeddingParams):
 
 
 class VarianceParams(BaseTorchModelParams):
-    predictor_type: str = "CNNPredictor"
+    predictor_type: str = "TokenLevelPredictor"
     predictor_params: VariancePredictorParams = None  # type: ignore
     dim: int = 1
     target: str = None
@@ -247,7 +247,8 @@ class VarianceParams(BaseTorchModelParams):
             self.as_embedding = False
             self.use_loss = False
         else:
-            self.predictor_params.vp_output_dim = self.dim
+            if self.dim > self.predictor_params.vp_output_dim:
+                self.predictor_params.vp_output_dim = self.dim
 
 
 class VarianceAdaptorParams(VariancePredictorParams):

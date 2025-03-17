@@ -54,7 +54,6 @@ class VITSPredictorParams(VariancePredictorParams):
     c_kl_content: float = 2.0
     c_kl_audio: float = 0.05
     init_from_checkpoint: str = None
-    var_params: VarianceParams = VarianceParams()
 
     def model_post_init(self, __context: tp.Any):
         if isinstance(self.mode, str):

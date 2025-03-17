@@ -347,7 +347,7 @@ class AudioFeatures(FeatureExtractor):
                 vp_inner_dim=params.vp_encoder_inner_dim,
                 vp_num_layers=params.vp_encoder_num_layers,
                 vp_output_dim=1,
-                var_params=VarianceParams(log_scale=params.energy_log_scale),
+                variance_params=VarianceParams(log_scale=params.energy_log_scale),
                 smooth_l1_beta=params.energy_smooth_l1_beta,
             )
             self.energy_predictor = FrameLevelPredictor(
@@ -364,7 +364,7 @@ class AudioFeatures(FeatureExtractor):
                 vp_inner_channels=params.vp_encoder_inner_dim,
                 vp_num_layers=params.vp_encoder_num_layers,
                 vp_output_dim=1,
-                var_params=VarianceParams(log_scale=params.pitch_log_scale),
+                variance_params=VarianceParams(log_scale=params.pitch_log_scale),
                 use_ssl_adjustment=params.use_ssl_adjustment,
                 ssl_feat_dim=params.ssl_feat_dim,
                 smooth_l1_beta=params.pitch_smooth_l1_beta,
