@@ -23,6 +23,7 @@ class TokenLevelDPParams(TokenLevelPredictorParams):
     add_noise: bool = False
     noise_scale: float = 0.1
     every_iter: int = 2
+    beta: float = 20.0
 
 
 class TokenLevelDP(TokenLevelPredictor):
@@ -75,28 +76,26 @@ class TokenLevelDP(TokenLevelPredictor):
             reg_loss = 0
             ce_loss = 0
             for dur, enc, dlen in zip(target, predict, lengths):
-                enc = enc[:dlen, :]
                 dur = dur[:dlen]
+                enc = enc[:dlen, :]
                 trg = torch.zeros_like(enc)
-                for p in range(trg.shape[0]):
-                    trunc = torch.trunc(dur[p]).long()
-                    frac = torch.frac(dur[p])
-                    trg[p, :trunc] = 1
-                    trg[p, -1] = frac
+
+                trunc = torch.trunc(dur)
+                frac = torch.frac(dur)
+
+                cols = torch.arange(trg.shape[1], device=trg.device)
+                mask = cols < trunc.long().unsqueeze(1)
+
+                trg[mask] = 1
+                trg[:, -1] = frac
 
                 dur_pred = torch.sigmoid(enc[:, :-1]).sum(dim=-1)
-                reg = F.l1_loss(dur_pred, dur)
+                reg_loss += F.l1_loss(dur_pred, trunc) + F.l1_loss(enc[:, -1], frac)
 
-                reg_loss += reg
-                reg_loss += loss_fn(enc[:, -1], trg[:, -1])
-
-                ce = F.binary_cross_entropy_with_logits(
-                    enc[:, :-1].flatten(), trg[:, :-1].flatten()
-                )
-                ce_loss += ce
+                ce_loss += F.binary_cross_entropy_with_logits(enc[:, :-1], trg[:, :-1])
 
             losses[f"{name}_cross_entropy_loss"] = (
-                reg_loss + 20 * ce_loss
+                reg_loss + self.params.beta * ce_loss
             ) / predict.shape[0]
         else:
             losses[f"{name}_{self.params.loss_type}"] = loss_fn(predict, target)

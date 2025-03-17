@@ -121,9 +121,13 @@ class TTSFeatures(FeatureExtractor):
 
             if self.freeze:
                 with torch.no_grad():
-                    outputs: TTSForwardOutput = self.tts_model(inputs)
+                    outputs: TTSForwardOutput = self.tts_model(
+                        inputs, use_target_durations=True
+                    )
             else:
-                outputs: TTSForwardOutput = self.tts_model(inputs)
+                outputs: TTSForwardOutput = self.tts_model(
+                    inputs, use_target_durations=True
+                )
                 losses = outputs.additional_losses
 
             additional_content = outputs.additional_content

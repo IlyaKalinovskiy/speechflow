@@ -196,6 +196,7 @@ model:
         cat_to_content: [0]
         predictor_type: FrameLevelPredictor
         predictor_params:
+          vp_num_layers: 4
           vp_params:
             activation_fn: SiLU
         denormalize: true
@@ -209,6 +210,7 @@ model:
         cat_to_content: [0]
         predictor_type: FrameLevelPredictor
         predictor_params:
+          vp_num_layers: 4
           vp_params:
             activation_fn: SiLU
             use_ssl_adjustment: false

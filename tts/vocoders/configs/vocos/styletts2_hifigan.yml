@@ -50,16 +50,16 @@ engine:
     decay_mel_coeff: false
     num_warmup_steps: 0  # Optimizers warmup steps
     pretrain_mel_steps: 0  # 0 means GAN objective from the first iteration
-    use_cqtd_disc: true
-    use_sm_loss: true
-    use_wavlm_loss: true
+    use_cqtd_disc: false
+    use_sm_loss: false
+    use_wavlm_loss: false
     use_cdpam_loss: false
     biometric_model_name:
       default: wespeaker-voxceleb-resnet34-LM
-      debug: C:/FluentaAI/wespeaker-voxceleb-resnet34-LM
+      debug: C:/wespeaker-voxceleb-resnet34-LM
     wavlm_model_name:
       default: wavlm-base-plus
-      debug: C:/FluentaAI/wavlm-base-plus
+      debug: C:/wavlm-base-plus
     # disc_pretrain_path: bigvgan_discriminator_optimizer.pt
 
     # automatic evaluation
@@ -224,6 +224,7 @@ model:
           cat_to_content: []
           predictor_type: FrameLevelPredictor
           predictor_params:
+            vp_num_layers: 4
             vp_params:
               activation_fn: SiLU
           denormalize: true
@@ -233,6 +234,7 @@ model:
           cat_to_content: []
           predictor_type: FrameLevelPredictor
           predictor_params:
+            vp_num_layers: 4
             vp_params:
               activation_fn: SiLU
               use_ssl_adjustment: false

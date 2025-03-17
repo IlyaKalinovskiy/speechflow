@@ -143,26 +143,20 @@ class ParallelTTSModel(BaseTorchModel):
 
         return x
 
-    def _predict_variances(
-        self, x, inference: bool = False, ignored_variance: tp.Set = None
-    ):
+    def _predict_variances(self, x, inference: bool = False, **kwargs):
         """Utility method that reduces code duplication."""
         predictions = {}
         for va in self.va:
-            x = (
-                va(x)
-                if not inference
-                else va.inference(x, ignored_variance=ignored_variance)
-            )
+            x = va(x, **kwargs) if not inference else va.inference(x, **kwargs)
             predictions.update(x.variance_predictions)
             x.model_inputs.additional_inputs.update(x.additional_content)
 
         return x.select_content(0), predictions
 
-    def forward(self, inputs: TTSForwardInput) -> TTSForwardOutput:
+    def forward(self, inputs: TTSForwardInput, **kwargs) -> TTSForwardOutput:
         x = self._encode_inputs(inputs)
 
-        va_output, variance_predictions = self._predict_variances(x)
+        va_output, variance_predictions = self._predict_variances(x, **kwargs)
 
         if self.decoder is not None:
             x = self.cond_module_2(va_output)
@@ -195,7 +189,7 @@ class ParallelTTSModel(BaseTorchModel):
         x = self._encode_inputs(inputs, inference=True)
 
         va_output, variance_predictions = self._predict_variances(
-            x, inference=True, ignored_variance=kwargs.get("ignored_variance")
+            x, inference=True, **kwargs
         )
 
         x = self.cond_module_2.inference(va_output)

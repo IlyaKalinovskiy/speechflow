@@ -22,7 +22,7 @@ __all__ = [
 
 
 class FrameLevelPredictorParams(VariancePredictorParams):
-    frame_encoder_type: str = "VarianceEncoder"
+    frame_encoder_type: str = "ConformerEncoder"
     frame_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
     activation_fn: str = "Identity"
     use_ssl_adjustment: bool = (

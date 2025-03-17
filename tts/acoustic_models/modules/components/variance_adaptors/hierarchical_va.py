@@ -257,6 +257,7 @@ class HierarchicalVarianceAdaptor(Component):
         content_length,
         targets,
         model_inputs,
+        **kwargs,
     ):
         var_params = self.va_variance_params[DP_NAME]
 
@@ -275,7 +276,10 @@ class HierarchicalVarianceAdaptor(Component):
             name=DP_NAME,
         )
 
-        if self.training and var_params.use_target and targets.get(DP_NAME) is not None:
+        if (
+            (self.training and var_params.use_target)
+            or kwargs.get("use_target_durations", False)
+        ) and targets.get(DP_NAME) is not None:
             durations = targets[DP_NAME]
         else:
             durations = prediction.detach() if var_params.detach_output else prediction
@@ -318,6 +322,7 @@ class HierarchicalVarianceAdaptor(Component):
                 content_length,
                 targets,
                 model_inputs,
+                **kwargs,
             )
         else:
             durations = durations_prediction = targets.get(DP_NAME)
@@ -340,8 +345,14 @@ class HierarchicalVarianceAdaptor(Component):
                 model_inputs.durations = (
                     model_inputs.durations * _range[:, 2:3] + _range[:, 0:1]
                 )
+                _, _length = self._get_input_content(
+                    content,
+                    content_length,
+                    self.va_variance_params[DP_NAME],
+                    model_inputs,
+                )
                 model_inputs.durations = apply_mask(
-                    model_inputs.durations, get_mask_from_lengths(x_duration_length)
+                    model_inputs.durations, get_mask_from_lengths(_length)
                 )
 
         durations_content.update({f"{DP_NAME}_postprocessed": durations})

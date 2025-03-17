@@ -56,10 +56,10 @@ engine:
     use_cdpam_loss: false
     biometric_model_name:
       default: wespeaker-voxceleb-resnet34-LM
-      debug: C:/FluentaAI/wespeaker-voxceleb-resnet34-LM
+      debug: C:/wespeaker-voxceleb-resnet34-LM
     wavlm_model_name:
       default: wavlm-base-plus
-      debug: C:/FluentaAI/wavlm-base-plus
+      debug: C:/wavlm-base-plus
     # disc_pretrain_path: bigvgan_discriminator_optimizer.pt
 
     # automatic evaluation
