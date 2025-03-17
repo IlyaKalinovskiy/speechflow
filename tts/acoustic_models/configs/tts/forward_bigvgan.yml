@@ -19,6 +19,7 @@ data_loaders:
 trainer:
   accelerator: { default: gpu, debug: cpu }
   devices: { default: [auto], debug: 1 }
+  # strategy: ddp_find_unused_parameters_true
   max_epochs: 150
   gradient_clip_val: 5.0
   accumulate_grad_batches: 1

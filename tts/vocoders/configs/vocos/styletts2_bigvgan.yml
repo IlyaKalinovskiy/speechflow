@@ -19,6 +19,7 @@ data_loaders:
 trainer:
   accelerator: { default: gpu, debug: cpu }
   devices: { default: [auto], debug: 1 }
+  # strategy: ddp
   max_steps: 8000000
   accumulate_grad_batches: 8
   gradient_clip_val: 100
@@ -54,10 +55,10 @@ engine:
     use_wavlm_loss: false
     use_cdpam_loss: false
     biometric_model_name:
-      default: /src/wespeaker-voxceleb-resnet34-LM
+      default: wespeaker-voxceleb-resnet34-LM
       debug: C:/FluentaAI/wespeaker-voxceleb-resnet34-LM
     wavlm_model_name:
-      default: /src/wavlm-base-plus
+      default: wavlm-base-plus
       debug: C:/FluentaAI/wavlm-base-plus
     # disc_pretrain_path: bigvgan_discriminator_optimizer.pt
 
