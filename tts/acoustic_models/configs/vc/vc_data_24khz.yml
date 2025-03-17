@@ -24,7 +24,7 @@ dataset:
 
 parser:
   type: TTSDSParser
-  dump:
+  dump_path:
     default: !join [*data_root, *dump_folder]  # fast dataset load
     debug: ~
   pipe: [audio_strip, split_by_phrases, check_phoneme_length, insert_index]

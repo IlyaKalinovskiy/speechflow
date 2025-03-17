@@ -24,7 +24,7 @@ dataset:
 
 parser:
   type: TTSDSParser
-  dump: temp
+  dump_path: temp
   pipe: [audio_strip, split_by_phrases]
   pipe_cfg:
     audio_strip:
@@ -75,7 +75,7 @@ preproc:
       pauses_with_punctuation: true
       # pause_after_short_words: true
     text:
-      type: TextProcessor
+      type: TTSTextProcessor
       lang: MULTILANG
       add_service_tokens: true
       ignore_ling_feat: [breath_mask]
@@ -121,7 +121,7 @@ processor:
     default: ~
     debug:
       data_root: *data_root
-      folder_path: !join [*data_root, *dump_folder]
+      dump_path: !join [*data_root, *dump_folder]
       mode: file_path
       full_dump: true
 

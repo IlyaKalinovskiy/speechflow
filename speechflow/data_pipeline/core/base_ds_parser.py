@@ -59,7 +59,7 @@ class BaseDSParser:
         memory_bound: bool = False,
         chunk_size: tp.Optional[int] = None,
         raise_on_converter_exc: bool = False,
-        dump: tp.Optional[tp.Union[str, Path]] = None,
+        dump_path: tp.Optional[tp.Union[str, Path]] = None,
         release_func: tp.Optional[tp.Callable] = None,
     ):
         """
@@ -68,7 +68,7 @@ class BaseDSParser:
         :param memory_bound: memory used will be limited by the dataset size
         :param chunk_size: chunk size for single worker
         :param raise_on_converter_exc: Raise exception if convert sample with error
-        :param dump: folder for storage cache file
+        :param dump_path: folder for storage cache file
         """
         if preproc_fn and input_fields:
             PipeRegistry.check(preproc_fn, input_fields=input_fields)
@@ -80,8 +80,8 @@ class BaseDSParser:
         self.raise_on_converter_exc = raise_on_converter_exc
         self.release_func = release_func
 
-        if dump:
-            self.cache_folder = Path(dump) / "cache"
+        if dump_path:
+            self.cache_folder = Path(dump_path) / "cache"
             self.cache_folder.mkdir(parents=True, exist_ok=True)
         else:
             self.cache_folder = None  # type: ignore

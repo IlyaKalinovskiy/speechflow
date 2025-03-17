@@ -445,14 +445,14 @@ class DatasetStatistics(metaclass=Singleton):
     def __init__(
         self,
         data_subset_name: str,
-        dump: tp.Optional[tp_PATH] = None,
+        dump_path: tp.Optional[tp_PATH] = None,
         add_dataset_statistics: bool = True,
         add_segmentations: bool = True,
         add_speaker_emb: bool = True,
         **kwargs,
     ):
         self.data_subset_name = data_subset_name
-        self.dump = Path(dump) if dump else None
+        self.dump_path = Path(dump_path) if dump_path else None
         self.add_dataset_statistics = add_dataset_statistics
         self.add_segmentations = add_segmentations
         self.add_speaker_emb = add_speaker_emb
@@ -466,7 +466,7 @@ class DatasetStatistics(metaclass=Singleton):
         self.max_audio_duration: float = 0.0
         self.segmentations: tp.List[tp.Tuple[str, bytes]] = []
         self.speaker_emb: tp.Dict[str, tp.List[tp.Any]] = defaultdict(list)
-        self.cache_folder = self._get_cache_folder(self.dump)
+        self.cache_folder = self._get_cache_folder(self.dump_path)
 
     @staticmethod
     def _get_cache_folder(dump: Path) -> tp.Optional[Path]:
@@ -530,7 +530,7 @@ class DatasetStatistics(metaclass=Singleton):
             self.segmentations.append((path.as_posix(), sega))
 
     def _add_speaker_emb(self):
-        dump_files = self.dump.rglob("*.pkl")
+        dump_files = self.dump_path.rglob("*.pkl")
 
         for file_path in tqdm(dump_files, "Loading speaker embeddings"):
             if "cache" in file_path.as_posix():
@@ -578,7 +578,7 @@ class DatasetStatistics(metaclass=Singleton):
             if self.add_segmentations:
                 self._add_segmentations(data)
 
-            if self.add_speaker_emb and self.dump:
+            if self.add_speaker_emb and self.dump_path:
                 self._add_speaker_emb()
 
         self.pickle()

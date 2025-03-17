@@ -27,7 +27,7 @@ class LibriSpeechDSParser(BaseDSParser):
         memory_bound: bool = False,
         chunk_size: tp.Optional[int] = None,
         raise_on_converter_exc: bool = False,
-        dump: tp.Optional[tp.Union[str, Path]] = None,
+        dump_path: tp.Optional[tp.Union[str, Path]] = None,
     ):
         from speechflow.data_pipeline.dataset_parsers import TTSDSParser
 
@@ -37,7 +37,7 @@ class LibriSpeechDSParser(BaseDSParser):
             memory_bound=memory_bound,
             chunk_size=chunk_size,
             raise_on_converter_exc=raise_on_converter_exc,
-            dump=dump,
+            dump_path=dump_path,
         )
         self.tts_db = TTSDSParser()
 

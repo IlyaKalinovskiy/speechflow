@@ -16,6 +16,7 @@ batch:
 trainer:
   accelerator: { default: gpu, debug: cpu }
   devices: { default: [auto], debug: 1 }
+  # strategy: ddp
   max_epochs: 100
   gradient_clip_val: 5.0
   accumulate_grad_batches: 1

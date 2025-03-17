@@ -23,7 +23,7 @@ dataset:
 
 parser:
   type: TTSDSParser
-  dump:
+  dump_path:
     default: !join [*data_root, *dump_folder]  # fast dataset load
     # debug: ~
   pipe: [audio_strip, split_by_phrases, check_phoneme_length, get_simple_intonation_type]
@@ -152,7 +152,7 @@ singleton_handlers:
   MeanBioEmbeddings:
     mean_embeddings_file: !join [*data_root, *dump_folder, mean_bio_embeddings.json]
   DatasetStatistics:
-    dump: !join [*data_root, *dump_folder]
+    dump_path: !join [*data_root, *dump_folder]
 
 collate:
   type: TTSCollate

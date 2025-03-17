@@ -34,7 +34,7 @@ class ProsodyParser(BaseDSParser):
         preproc_fn: tp.Optional[tp.Sequence[MetadataTransform]] = None,
         memory_bound: bool = False,
         raise_on_converter_exc: bool = False,
-        dump: tp.Optional[tp.Union[str, Path]] = None,
+        dump_path: tp.Optional[tp.Union[str, Path]] = None,
         tokenizer_name: str = None,
     ):
         super().__init__(
@@ -42,7 +42,7 @@ class ProsodyParser(BaseDSParser):
             input_fields={"file_path", "sega", "label"},
             memory_bound=memory_bound,
             raise_on_converter_exc=raise_on_converter_exc,
-            dump=dump,
+            dump_path=dump_path,
         )
 
         if not tokenizer_name:
