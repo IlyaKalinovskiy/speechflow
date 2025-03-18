@@ -11,7 +11,7 @@ batch:
   type: VocoderBatchProcessor
 
 data_loaders:
-  batch_size: { default: 6, debug: 2 }
+  batch_size: { default: 4, debug: 2 }
   min_batch_size: 2
   min_prefetch_factor: { default: 50, debug: 1 }
   max_prefetch_factor: { default: 150, debug: 1 }
@@ -22,7 +22,7 @@ trainer:
   # strategy: ddp
   max_steps: 8000000
   gradient_clip_val: 100
-  accumulate_grad_batches: 4
+  accumulate_grad_batches: 1
   limit_val_batches: 100
   log_every_n_steps: 100
   # resume_from_checkpoint: /path/to/checkpoint
@@ -49,8 +49,8 @@ engine:
     auxiliary_loss_coeff: 1.0
     decay_mel_coeff: false
     num_warmup_steps: 0  # Optimizers warmup steps
-    pretrain_mel_steps: 0  # 0 means GAN objective from the first iteration
-    use_cqtd_disc: false
+    pretrain_mel_steps: 1000  # 0 means GAN objective from the first iteration
+    use_cqtd_disc: true
     use_sm_loss: false
     use_wavlm_loss: false
     use_cdpam_loss: false
@@ -132,7 +132,7 @@ model:
       #   condition_type: AdaNorm
 
       decoder_type: WrapperDecoder
-      decoder_num_layers: 4
+      decoder_num_layers: 6
       decoder_inner_dim: 384
       decoder_output_dim: 384
       decoder_params:
@@ -186,7 +186,7 @@ model:
           predictor_params:
             vp_output_dim: 50
             vp_params:
-              discrete_scale: 20
+              discrete_scale: 25
               add_noise: true
               noise_scale: 0.01
           as_embedding: true
@@ -201,7 +201,7 @@ model:
           predictor_params:
             vp_output_dim: 50
             vp_params:
-              discrete_scale: 20
+              discrete_scale: 25
               add_noise: true
               noise_scale: 0.01
           log_scale: false
@@ -214,8 +214,9 @@ model:
           detach_input: true
           predictor_type: TokenLevelDP
           predictor_params:
-            vp_output_dim: 50
+            vp_output_dim: 25
             vp_params:
+              discrete_scale: 1
               add_noise: true
               noise_scale: 0.1
         energy:
@@ -224,9 +225,9 @@ model:
           cat_to_content: []
           predictor_type: FrameLevelPredictor
           predictor_params:
-            vp_num_layers: 4
             vp_params:
               activation_fn: SiLU
+              loss_alpha: 1000
           denormalize: true
         pitch:
           input_content: [0, 1]
@@ -234,9 +235,9 @@ model:
           cat_to_content: []
           predictor_type: FrameLevelPredictor
           predictor_params:
-            vp_num_layers: 4
             vp_params:
               activation_fn: SiLU
+              loss_alpha: 1000
               use_ssl_adjustment: false
           log_scale: false
           denormalize: true

@@ -165,7 +165,7 @@ model:
         predictor_params:
           vp_output_dim: 50
           vp_params:
-            discrete_scale: 20
+            discrete_scale: 25
             add_noise: true
             noise_scale: 0.01
         denormalize: true
@@ -181,7 +181,7 @@ model:
         predictor_params:
           vp_output_dim: 50
           vp_params:
-            discrete_scale: 20
+            discrete_scale: 25
             add_noise: true
             noise_scale: 0.01
         log_scale: false
@@ -195,8 +195,9 @@ model:
         detach_input: true
         predictor_type: TokenLevelDP
         predictor_params:
-          vp_output_dim: 50
+          vp_output_dim: 25
           vp_params:
+            discrete_scale: 1
             add_noise: true
             noise_scale: 0.1
 

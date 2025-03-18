@@ -296,6 +296,7 @@ class HierarchicalVarianceAdaptor(Component):
     ):
         variance_params = self.va_variance_params.get(DP_NAME)
         ignored_variance = kwargs.get("ignored_variance")
+        current_iter = model_inputs.batch_idx
 
         if (
             DP_NAME in self.predictors
@@ -303,6 +304,7 @@ class HierarchicalVarianceAdaptor(Component):
             and DP_NAME in ignored_variance
         ):
             return model_inputs.durations, model_inputs.durations, {}, {}
+
         if DP_NAME not in targets and DP_NAME not in self.predictors:
             return None, None, {}, {}
 
@@ -330,9 +332,8 @@ class HierarchicalVarianceAdaptor(Component):
             durations_loss = {}
 
         if self.training and not (
-            variance_params.begin_iter
-            <= model_inputs.batch_idx
-            < variance_params.end_iter
+            variance_params.begin_iter <= current_iter < variance_params.end_iter
+            and current_iter % variance_params.every_iter == 0
         ):
             durations = durations_prediction = targets.get(DP_NAME)
             durations_content = {}
@@ -408,22 +409,25 @@ class HierarchicalVarianceAdaptor(Component):
         variance_predictions = {}
         variance_content = {}
         variance_losses = {}
-        current_iter = model_inputs.batch_idx
 
         for name in self.va_variances:
+            variance_params = self.va_variance_params.get(name)
+            current_iter = model_inputs.batch_idx
+
             if name == DP_NAME:
                 continue
 
             if kwargs.get("ignored_variance") and name in kwargs.get("ignored_variance"):
                 continue
 
-            if not (
-                self.va_variance_params[name].begin_iter
-                <= current_iter
-                < self.va_variance_params[name].end_iter
+            if (
+                self.training
+                and variance_params.skip
+                and not (
+                    variance_params.begin_iter <= current_iter < variance_params.end_iter
+                )
             ):
-                if self.training and self.va_variance_params[name].skip:
-                    continue
+                continue
 
             (
                 variance_predictions[name],
@@ -439,13 +443,19 @@ class HierarchicalVarianceAdaptor(Component):
                 **kwargs,
             )
 
-            if not (
-                self.va_variance_params[name].begin_iter
-                <= current_iter
-                < self.va_variance_params[name].end_iter
-            ):
-                variance_losses.pop(name)
-                variance_predictions[name] = variance_predictions[name].detach()
+            if self.training:
+                if not (
+                    variance_params.begin_iter <= current_iter < variance_params.end_iter
+                    and current_iter % variance_params.every_iter == 0
+                ):
+                    variance_losses.pop(name)
+                    variance_predictions[name] = variance_predictions[name].detach()
+                elif variance_params.use_loss:
+                    loss_type = variance_params.loss_type
+                    loss = getattr(F, loss_type)(
+                        variance_predictions[name], targets[name].detach()
+                    )
+                    variance_losses[name].update({f"{name}_{loss_type}": loss})
 
         for name, prediction in variance_predictions.items():
             embeddings, variance = self._postprocessing_variance(
@@ -454,18 +464,9 @@ class HierarchicalVarianceAdaptor(Component):
             variance_embeddings[name] = embeddings
             variance_content[name].update({f"{name}_postprocessed": variance})
 
-            tag = self.va_variance_params[name].tag
-            if tag != "default":
-                variance_content[name].update({f"{tag}": embeddings})
-
-            if (
-                self.training
-                and self.va_variance_params[name].use_loss
-                and name in variance_losses
-            ):
-                loss_type = self.va_variance_params[name].loss_type
-                loss = getattr(F, loss_type)(prediction, targets.get(name).detach())
-                variance_losses[name].update({f"{name}_{loss_type}": loss})
+            variance_params = self.va_variance_params.get(name)
+            if variance_params.tag != "default":
+                variance_content[name].update({f"{variance_params.tag}": embeddings})
 
         return (
             variance_embeddings,

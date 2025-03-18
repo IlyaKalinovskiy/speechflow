@@ -22,7 +22,7 @@ __all__ = [
 
 
 class FrameLevelPredictorParams(VariancePredictorParams):
-    frame_encoder_type: str = "ConformerEncoder"
+    frame_encoder_type: str = "VarianceEncoder"
     frame_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
     activation_fn: str = "Identity"
     use_ssl_adjustment: bool = (
@@ -30,6 +30,7 @@ class FrameLevelPredictorParams(VariancePredictorParams):
     )
     use_mtm: bool = False  # masked token modeling
     loss_type: str = "smooth_l1_loss"
+    loss_alpha: float = 1.0
     variance_params: VarianceParams = VarianceParams()
 
 
@@ -146,9 +147,8 @@ class FrameLevelPredictor(Component):
                 if self.params.variance_params.log_scale:  # type: ignore
                     target_by_frames = torch.log1p(target_by_frames)
 
-                losses[f"{name}_ssl_adjustment_loss_by_frames"] = loss_fn(
-                    var_from_ssl, target_by_frames
-                )
+                loss = self.params.loss_alpha * loss_fn(var_from_ssl, target_by_frames)
+                losses[f"{name}_ssl_adjustment_loss_by_frames"] = loss
 
                 if self.params.variance_params.log_scale:  # type: ignore
                     var_from_ssl = torch.expm1(var_from_ssl)
@@ -162,9 +162,8 @@ class FrameLevelPredictor(Component):
                 if self.params.variance_params.log_scale:  # type: ignore
                     var_by_frames = torch.log1p(var_by_frames)
 
-                losses[f"{name}_{self.params.loss_type}_by_frames"] = loss_fn(
-                    predict, var_by_frames
-                )
+                loss = self.params.loss_alpha * loss_fn(predict, var_by_frames)
+                losses[f"{name}_{self.params.loss_type}_by_frames"] = loss
 
         if self.params.variance_params.log_scale:  # type: ignore
             predict = torch.expm1(predict)

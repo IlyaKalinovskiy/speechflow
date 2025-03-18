@@ -24,7 +24,7 @@ class ConformerEncoderParams(CNNEncoderParams):
     p_dropout: float = 0.1
 
     use_pe: bool = True
-    pe_type: PE_TYPES = "RoPE"
+    pe_type: PE_TYPES = "PE"
 
     # condition
     condition: tp.Tuple[str, ...] = ()

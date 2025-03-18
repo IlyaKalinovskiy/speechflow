@@ -33,6 +33,7 @@ class TokenLevelPredictorParams(VariancePredictorParams):
     add_lm_feat: bool = False
     use_mtm: bool = False  # masked token modeling
     loss_type: str = "l1_loss"
+    loss_alpha: float = 1.0
     variance_params: VarianceParams = VarianceParams()
 
 
@@ -126,7 +127,8 @@ class TokenLevelPredictor(Component):
             loss_fn = partial(loss_fn, ignore_index=-1)
             predict = predict.transpose(1, -1)
 
-        return {f"{name}_{self.params.loss_type}_by_tokens": loss_fn(predict, target)}
+        loss = self.params.loss_alpha * loss_fn(predict, target)
+        return {f"{name}_{self.params.loss_type}_by_tokens": loss}
 
     def forward_step(
         self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs

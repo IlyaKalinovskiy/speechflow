@@ -223,6 +223,7 @@ class VarianceParams(BaseTorchModelParams):
     emb_dim: int = 128
     begin_iter: int = 0
     end_iter: int = 1_000_000
+    every_iter: int = 1
     skip: bool = False
     use_loss: bool = False
     loss_type: str = "l1_loss"
