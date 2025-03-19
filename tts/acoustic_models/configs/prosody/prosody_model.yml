@@ -33,7 +33,9 @@ checkpoint:
 
 callbacks:
   TTSTrainingVisualizer: {}
-  ProsodyTrainingVisualizer: {}
+  ProsodyTrainingVisualizer:
+    n_components: 10
+    eps: 2
 
 optimizer:
   method:
@@ -114,7 +116,10 @@ model:
         predictor_type: TokenLevelPredictor
       durations:
         predictor_type: TokenLevelDP
-        # log_scale: true
+        predictor_params:
+          vp_output_dim: 25
+          vp_params:
+            add_noise: true
       prosody:
         dim: 500
         predictor_type: TokenLevelPredictor

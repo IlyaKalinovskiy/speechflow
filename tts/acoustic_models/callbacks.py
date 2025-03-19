@@ -20,7 +20,6 @@ from sklearn.manifold import TSNE
 from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
     TTSTextProcessor,
 )
-from speechflow.logging import log_to_file, trace
 from speechflow.utils.plotting import figure_to_ndarray, plot_1d, plot_spectrogram
 from tts.acoustic_models.interface.test_utterances_ru import UTTERANCE
 
@@ -294,8 +293,10 @@ class TTSAudioSynthesizer(Callback):
 class ProsodyTrainingVisualizer(Callback):
     def __init__(
         self,
+        n_components: int = 10,
         eps: int = 6,
     ):
+        self.n_components = n_components
         self.eps = eps
 
     def on_validation_batch_end(
@@ -315,22 +316,37 @@ class ProsodyTrainingVisualizer(Callback):
             codebook = vq_enc.vq.codebook.weight
         elif hasattr(vq_enc, "rlfq"):
             codebook = vq_enc.rlfq.codebooks[0]
+        elif hasattr(vq_enc, "rfsq"):
+            codebook = vq_enc.rfsq.codebooks[0]
         else:
             raise NotImplementedError
 
         embeddings = codebook.cpu().detach().numpy()
-        mapping = self.clustering(embeddings=embeddings, eps=self.eps)
 
+        mapping = self.clustering(embeddings, n_components=self.n_components)
         if len(mapping) > 0:
             pl_module.logger.experiment.add_image(
-                "vq_clusters",
+                "vq_gaussian_clusters",
+                mapping,
+                trainer.global_step,
+                dataformats="CHW",
+            )
+
+        mapping = self.clustering(embeddings, eps=self.eps)
+        if len(mapping) > 0:
+            pl_module.logger.experiment.add_image(
+                "vq_dbscan_clusters",
                 mapping,
                 trainer.global_step,
                 dataformats="CHW",
             )
 
     @staticmethod
-    def clustering(embeddings: np.array, eps: int = 6):
+    def clustering(
+        embeddings: np.array,
+        n_components: tp.Optional[int] = None,
+        eps: tp.Optional[int] = None,
+    ):
         from sklearn.cluster import DBSCAN
         from sklearn.mixture import GaussianMixture
 
@@ -341,7 +357,12 @@ class ProsodyTrainingVisualizer(Callback):
         3. Indices from the codebook are mapped with the corresponding classes
         """
 
-        classes = DBSCAN(eps=eps, min_samples=2).fit_predict(embeddings)
+        if n_components:
+            classes = GaussianMixture(n_components=n_components).fit_predict(embeddings)
+        elif eps:
+            classes = DBSCAN(eps=eps, min_samples=2).fit_predict(embeddings)
+        else:
+            raise NotImplementedError
 
         tsne_ak_2d = TSNE(n_components=2, init="pca", n_iter=3000, random_state=32)
         projections = tsne_ak_2d.fit_transform(embeddings)
