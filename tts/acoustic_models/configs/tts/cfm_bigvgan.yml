@@ -161,13 +161,11 @@ model:
         input_content: [0, 1]
         detach_input: [true, false]
         cat_to_content: [0]
-        predictor_type: TokenLevelDP
+        predictor_type: TokenLevelPredictor
         predictor_params:
-          vp_output_dim: 50
           vp_params:
-            discrete_scale: 25
-            add_noise: true
-            noise_scale: 0.01
+            activation_fn: SiLU
+            loss_alpha: 100
         denormalize: true
         as_embedding: true
         interval: [0, 200]
@@ -177,13 +175,11 @@ model:
         input_content: [0, 1]
         detach_input: [true, false]
         cat_to_content: [0]
-        predictor_type: TokenLevelDP
+        predictor_type: TokenLevelPredictor
         predictor_params:
-          vp_output_dim: 50
           vp_params:
-            discrete_scale: 25
-            add_noise: true
-            noise_scale: 0.01
+            activation_fn: SiLU
+            loss_alpha: 100
         log_scale: false
         denormalize: true
         as_embedding: true
@@ -197,9 +193,7 @@ model:
         predictor_params:
           vp_output_dim: 25
           vp_params:
-            discrete_scale: 1
             add_noise: true
-            noise_scale: 0.1
 
 # finetune:
 #   ckpt_path: /path/to/checkpoint

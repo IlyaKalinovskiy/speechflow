@@ -17,13 +17,12 @@ __all__ = [
 
 
 class TokenLevelDPParams(TokenLevelPredictorParams):
-    activation_fn: str = "SiLU"
     discrete_scale: float = 1.0
     add_noise: bool = False
-    noise_scale: float = 0.01
+    noise_scale: float = 0.1
     loss_type: str = "cross_entropy"
     loss_alpha: float = 10.0
-    loss_beta: float = 0.1
+    loss_beta: float = 1.0
 
 
 class TokenLevelDP(TokenLevelPredictor):
@@ -69,7 +68,7 @@ class TokenLevelDP(TokenLevelPredictor):
             target *= self.params.discrete_scale
 
             ce_loss = 0
-            frac_loss = 0
+            reg_loss = 0
             for dur, enc, dlen in zip(target, predict, lengths):
                 dur = dur[:dlen]
                 enc = enc[:dlen, :]
@@ -85,10 +84,11 @@ class TokenLevelDP(TokenLevelPredictor):
                 ce_loss += self.params.loss_alpha * F.binary_cross_entropy_with_logits(
                     enc[:, :-1].flatten(), trg[:, :-1].flatten()
                 )
-                frac_loss += self.params.loss_beta * F.l1_loss(enc[:, -1], frac)
+                reg_loss += self.params.loss_beta * (F.l1_loss(torch.sigmoid(enc[:, :-1]), trunc) +
+                                                     F.l1_loss(enc[:, -1], frac))
 
             losses[f"{name}_cross_entropy_loss"] = ce_loss / predict.shape[0]
-            losses[f"{name}_fraction_l1_loss"] = frac_loss / predict.shape[0]
+            losses[f"{name}_l1_loss"] = reg_loss / predict.shape[0]
         else:
             losses[f"{name}_{self.params.loss_type}"] = loss_fn(predict, target)
 
