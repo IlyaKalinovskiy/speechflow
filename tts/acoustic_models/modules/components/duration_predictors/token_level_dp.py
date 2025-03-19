@@ -17,9 +17,9 @@ __all__ = [
 
 
 class TokenLevelDPParams(TokenLevelPredictorParams):
-    discrete_scale: float = 1.0
     add_noise: bool = False
     noise_scale: float = 0.1
+    discrete_scale: float = 1.0
     loss_type: str = "cross_entropy"
     loss_alpha: float = 10.0
     loss_beta: float = 1.0
@@ -84,8 +84,10 @@ class TokenLevelDP(TokenLevelPredictor):
                 ce_loss += self.params.loss_alpha * F.binary_cross_entropy_with_logits(
                     enc[:, :-1].flatten(), trg[:, :-1].flatten()
                 )
-                reg_loss += self.params.loss_beta * (F.l1_loss(torch.sigmoid(enc[:, :-1]), trunc) +
-                                                     F.l1_loss(enc[:, -1], frac))
+                reg_loss += self.params.loss_beta * (
+                    F.l1_loss(torch.sigmoid(enc[:, :-1]).sum(-1), trunc)
+                    + F.l1_loss(enc[:, -1], frac)
+                )
 
             losses[f"{name}_cross_entropy_loss"] = ce_loss / predict.shape[0]
             losses[f"{name}_l1_loss"] = reg_loss / predict.shape[0]

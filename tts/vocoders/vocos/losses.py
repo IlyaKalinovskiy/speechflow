@@ -286,14 +286,14 @@ class SpeakerSimilarityLoss(nn.Module):
         )
         self.device = device
 
+    def parameters(self, recurse: bool = True) -> Iterator[Parameter]:
+        return iter(())
+
     def set_device(self, device: str):
         self.bio_proc.device = device
         self.bio_proc.init()
         self.resample.to(device)
         self.device = device
-
-    def parameters(self, recurse: bool = True) -> Iterator[Parameter]:
-        return iter(())
 
     def forward(self, y_hat, y) -> torch.Tensor:
         """
@@ -318,14 +318,21 @@ class WavLMLoss(torch.nn.Module):
         model_name: str = "microsoft/wavlm-base-plus",
         input_sr: int = 24000,
         slm_sr: int = 16000,
+        device: str = "cpu",
     ):
         super().__init__()
-        self.wavlm = AutoModel.from_pretrained(model_name)
+        self.wavlm = AutoModel.from_pretrained(model_name).to(device)
         self.wavlm.feature_extractor._requires_grad = False
-        self.resample = torchaudio.transforms.Resample(input_sr, slm_sr)
+        self.resample = torchaudio.transforms.Resample(input_sr, slm_sr).to(device)
+        self.device = device
 
     def parameters(self, recurse: bool = True) -> Iterator[Parameter]:
         return iter(())
+
+    def set_device(self, device: str):
+        self.wavlm.to(device)
+        self.resample.to(device)
+        self.device = device
 
     def forward(self, y_hat, y):
         y_hat = y_hat.to(self.wavlm.device)
@@ -355,12 +362,12 @@ class CDPAMLoss(nn.Module):
         self.cdpam = cdpam.CDPAM(dev=device)
         self.device = device
 
+    def parameters(self, recurse: bool = True) -> Iterator[Parameter]:
+        return iter(())
+
     def set_device(self, device: str):
         self.cdpam.model.to(device)
         self.device = device
-
-    def parameters(self, recurse: bool = True) -> Iterator[Parameter]:
-        return iter(())
 
     def forward(self, y_hat, y) -> torch.Tensor:
         """

@@ -141,18 +141,23 @@ class VocosLightningEngine(pl.LightningModule):
 
         if use_sm_loss:
             self.sm_loss = losses.SpeakerSimilarityLoss(
-                biometric_model_type, biometric_model_name, sample_rate, loss_device
+                biometric_model_type,
+                biometric_model_name,
+                sample_rate,
+                device=loss_device,
             )
         else:
             self.sm_loss = None
 
         if use_wavlm_loss:
-            self.wavlm_loss = losses.WavLMLoss(wavlm_model_name, sample_rate)
+            self.wavlm_loss = losses.WavLMLoss(
+                wavlm_model_name, sample_rate, device=loss_device
+            )
         else:
             self.wavlm_loss = None
 
         if use_cdpam_loss:
-            self.cdpam_loss = losses.CDPAMLoss(loss_device)
+            self.cdpam_loss = losses.CDPAMLoss(device=loss_device)
         else:
             self.cdpam_loss = None
 
@@ -172,7 +177,7 @@ class VocosLightningEngine(pl.LightningModule):
 
     def on_fit_start(self):
         self.batch_processor.set_device(self.device)
-        for loss in [self.sm_loss, self.cdpam_loss]:
+        for loss in [self.sm_loss, self.wavlm_loss, self.cdpam_loss]:
             if loss is not None:
                 if self.hparams.loss_device == "cpu":
                     loss.set_device(str(self.device))
