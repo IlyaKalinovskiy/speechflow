@@ -147,7 +147,7 @@ class ExperimentSaver:
         if file_path.is_dir():
             file_path = ExperimentSaver.get_last_checkpoint(file_path)
 
-        print(f"Load checkpoint from path: {file_path.as_posix()}")
+        print(f"Load checkpoint from {file_path.as_posix()}")
         if file_path.suffix in [".ckpt", ".pt"]:
             with ExperimentSaver.portable_pathlib():
                 return torch.load(file_path, map_location, weights_only=False)

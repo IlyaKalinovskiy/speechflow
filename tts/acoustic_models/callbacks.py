@@ -293,8 +293,8 @@ class TTSAudioSynthesizer(Callback):
 class ProsodyTrainingVisualizer(Callback):
     def __init__(
         self,
-        n_components: int = 10,
-        eps: int = 6,
+        n_components: tp.Optional[int] = 10,
+        eps: tp.Optional[int] = None,
     ):
         self.n_components = n_components
         self.eps = eps
@@ -362,7 +362,7 @@ class ProsodyTrainingVisualizer(Callback):
         elif eps:
             classes = DBSCAN(eps=eps, min_samples=2).fit_predict(embeddings)
         else:
-            raise NotImplementedError
+            classes = np.zeros(embeddings.shape[0])
 
         tsne_ak_2d = TSNE(n_components=2, init="pca", n_iter=3000, random_state=32)
         projections = tsne_ak_2d.fit_transform(embeddings)

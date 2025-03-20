@@ -60,7 +60,7 @@ def parse_args():
         "-ckpt",
         "--ckpt_path",
         help="path to model checkpoint",
-        type=str,
+        type=Path,
         required=True,
     )
     arguments_parser.add_argument(

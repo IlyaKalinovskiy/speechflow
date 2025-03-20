@@ -334,7 +334,7 @@ class DataLoader:
         self._send_info_message(DCM.RESET)
         self.prefetch_factor = self.min_prefetch_factor
 
-    def get_epoch_iterator(self) -> tp.Iterator[Batch]:
+    def get_epoch_iterator(self) -> tp.Union[tp.Iterator[Batch], tp.Sized]:
         self.reset()
 
         class EpochIterator:

@@ -221,7 +221,7 @@ class DumpProcessor:
         for sample in samples:
             file_path = self._get_filename(sample)
             if not file_path.exists():
-                message = f"Dump for {sample.file_path.as_posix()} not found."
+                message = f"dump for {sample.file_path.as_posix()} not found."
                 LOGGER.debug(trace(self, message=message))
                 continue
 

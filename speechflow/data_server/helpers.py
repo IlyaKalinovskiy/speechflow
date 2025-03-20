@@ -17,6 +17,7 @@ from speechflow.data_server.proxy import Proxy
 from speechflow.data_server.server import DataServer
 from speechflow.io import Config, check_path, tp_PATH, tp_PATH_LIST
 from speechflow.logging import trace, track_process
+from speechflow.logging.logger import create_logger
 from speechflow.utils.gpu_info import get_freer_gpu
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.tensor_utils import string_to_tensor, tensor_to_string
@@ -299,8 +300,8 @@ def run_server(server, worker_type):
 
 @check_path(assert_file_exists=True)
 def dataset_iterator(
-    data_config_path: tp.Optional[tp_PATH] = None,
-    config_data: tp.Optional[tp.Dict] = None,
+    config_path: tp.Optional[tp_PATH] = None,
+    config: tp.Optional[tp.Dict] = None,
     value_select: tp.Optional[tp.List[str]] = None,
     batch_size: int = 1,
     n_processes: int = 1,
@@ -308,8 +309,8 @@ def dataset_iterator(
     with_dump: bool = True,
     subset_name: tp.Optional[str] = None,
     server_addr: tp.Optional[str] = None,
-) -> tp.Iterator[Batch]:
-    batch_size = max(1, batch_size)
+) -> tp.Union[tp.Iterator[Batch], tp.Sized]:
+    create_logger(use_server_logging=False, use_verbose_logging=True)
 
     if server_addr is not None:
         if subset_name is None:
@@ -324,12 +325,12 @@ def dataset_iterator(
         loader.start()
         return loader.get_epoch_iterator()
 
-    if data_config_path is not None:
-        cfg_data = Config.create_from_file(data_config_path, value_select=value_select)
-    elif config_data is not None:
-        cfg_data = config_data
+    if config_path is not None:
+        cfg_data = Config.create_from_file(config_path, value_select=value_select)
+    elif config is not None:
+        cfg_data = config
     else:
-        raise ValueError(f"Invalid path to data config: {data_config_path}")
+        raise ValueError(f"Invalid path to data config: {config_path}")
 
     cfg_data["dataset"]["use_shuffle"] = False
     if subset_name is None:
@@ -360,15 +361,19 @@ def dataset_iterator(
         def __iter__(self):
             return self
 
-        def __len__(self):
-            return sampler._dataset_size
+        def __len__(self) -> int:
+            return len(sampler) // batch_size
 
-        def __next__(self):
+        def __next__(self) -> Batch:
             if data_pipeline[subset_name].sampler.is_last_batch:
                 raise StopIteration
 
             samples: tp.List[DataSample] = sampler.sampling(batch_size)
             samples = [s.copy() for s in samples if s is not None]
+
+            if not samples:
+                raise StopIteration
+
             batch = data_pipeline[subset_name].data_processor.process(samples)
             return batch if batch is not None else next(self)
 
@@ -378,10 +383,10 @@ def dataset_iterator(
 if __name__ == "__main__":
     from tqdm import tqdm
 
-    config_path = "../../tts/acoustic_models/configs/tts/tts_data_24khz.yml"
+    _config_path = "../../tts/acoustic_models/configs/tts/tts_data_24khz.yml"
 
     iterator = dataset_iterator(
-        config_path, device="cpu", with_dump=True, value_select=["ru"]
+        _config_path, device="cpu", with_dump=True, value_select=["ru"]
     )
 
     count = 0

@@ -1,4 +1,5 @@
 import logging
+import warnings
 
 __all__ = ["set_logging_filters"]
 
@@ -44,6 +45,8 @@ class CollatedErrorFilter(logging.Filter):
 
 
 def set_logging_filters(logger, **kwargs):
+    warnings.filterwarnings("ignore", category=UserWarning, module="russian_g2p")
+
     logger.addFilter(AssertionErrorFilter())
     logger.addFilter(ValueErrorFilter())
     logger.addFilter(IndexErrorFilter())

@@ -32,8 +32,6 @@ from speechflow.logging.server import LoggingServer
 
 LOGGER = logging.getLogger("root")
 
-warnings.filterwarnings("ignore", category=UserWarning, module="russian_g2p")
-
 
 def parse_args():
     arguments_parser = argparse.ArgumentParser(
@@ -71,14 +69,6 @@ def parse_args():
         "-vs", "--value_select", help="select specific values", nargs="+", type=str
     )
     arguments_parser.add_argument(
-        "-attr",
-        "--attributes",
-        help="select attributes for calc ranges",
-        nargs="+",
-        type=str,
-        default=["durations", "energy", "pitch", "rate"],
-    )
-    arguments_parser.add_argument(
         "-cont_len",
         "--contour_length",
         help="length of the contour",
@@ -86,7 +76,7 @@ def parse_args():
         default=80,
     )
     arguments_parser.add_argument(
-        "-ssize", "--subset_size", help="size of subset", type=int, default=100000
+        "-ssize", "--subset_size", help="size of subset", type=int, default=100_000
     )
     arguments_parser.add_argument(
         "-n_cl", "--n_clusters", help="number of clusters", type=int, default=500
@@ -99,11 +89,11 @@ def parse_args():
         default=500,
     )
     arguments_parser.add_argument(
-        "-mean_sp_emb",
-        "--speaker_emb_mean",
-        help="number of clusters",
-        type=bool,
-        default=True,
+        "-n_sp_avg",
+        "--num_speaker_emb_to_average",
+        help="number of speaker embeddings to average",
+        type=int,
+        default=20,
     )
     args = arguments_parser.parse_args()
     return args
@@ -140,8 +130,10 @@ def update_config(
         if item not in ["StatisticsRange", "DatasetStatistics"]
     ]
 
-    if not contours_clustering:
-        cfg["sampler"] = {"type": "SimpleSampler"}
+    cfg["sampler"] = {"type": "SimpleSampler"}
+
+    if contours_clustering:
+        cfg["sampler"]["comb_by_len"] = True
 
     cfg["collate"]["type"] = cfg["collate"]["type"].replace("WithPrompt", "")
     cfg["data_server"]["n_processes"] = n_processes
@@ -175,13 +167,13 @@ def validate_dump(
     cfg["data_server"]["n_processes"] = n_processes
     cfg["data_server"]["n_gpus"] = 0
 
-    new_config_path = dump_folder / "cfg_validate.yml"
+    val_config_path = dump_folder / "cfg_validate.yml"
     cfg.to_file(dump_folder / "cfg_validate.yml")
 
     with LoggingServer.ctx(dump_folder):
         with init_data_loader_from_config(
             loader_params=LoaderParams(batch_size=batch_size, non_stop=False),
-            data_config_path=new_config_path,
+            data_config_path=val_config_path,
             value_select=value_select,
         ) as data_loaders:
             count = 0
@@ -278,19 +270,22 @@ def get_stat(values, quantile: float = 0.05, min_val: float = 1e-2):
 
 def main(
     data_config_path: Path,
-    batch_size: int,
-    n_processes: int,
-    n_gpus: int,
-    attributes: tp.List[str],  # attributes for calculate ranges
-    quantile: float = 0.05,  # quantile value for calculate ranges
-    file_name: str = "ranges.json",
+    batch_size: int = 16,
+    n_processes: int = 1,
+    n_gpus: int = 0,
     value_select: tp.Optional[tp.List[str]] = None,
-    num_data_servers: int = 1,
+    attributes: tp.Optional[tp.Tuple[str]] = (
+        "durations",
+        "energy",
+        "pitch",
+        "rate",
+    ),  # attributes for calculate ranges
+    quantile: float = 0.05,  # quantile value for calculate ranges
     contour_length: int = 80,
     subset_size: int = 10000,
     n_clusters: int = 500,
     max_contours_per_speaker: int = 500,
-    speaker_emb_mean: bool = True,
+    num_speaker_emb_to_average: int = 20,
 ):
     cfg = Config.create_from_file(data_config_path, value_select=value_select)
 
@@ -299,9 +294,6 @@ def main(
         cfg["preproc"]["pipe"].remove("contours")
     else:
         contours_clustering = False
-
-    if attributes == [""]:
-        attributes = []
 
     if "dump" not in cfg["processor"] or cfg["processor"]["dump"] is None:
         raise ValueError("section 'processor.dump' not configured")
@@ -323,7 +315,7 @@ def main(
                     f"The pipe configuration has been changed, do you want to remove the old dump? ({dump_folder.as_posix()})"
                 ):
                     LOGGER.warning(f"Remove dump folder {dump_folder.as_posix()}")
-                    shutil.rmtree(dump_folder, ignore_errors=False, onerror=None)
+                    shutil.rmtree(dump_folder, ignore_errors=False)
         except Exception as e:
             print(e)
 
@@ -336,18 +328,11 @@ def main(
             if value.get("type") == "PitchProcessor" and value.get("method") == "yingram":
                 value["method"] = "pyworld"
 
-    config_paths: tp.List[Path] = []
-    for idx, device in enumerate(range(num_data_servers)):  # legacy code
-        cfg = update_config(
-            cfg, n_processes, n_gpus, contours_clustering=contours_clustering
-        )
-        if idx == 0:
-            cfg["tag"] = "main"
+    cfg = update_config(cfg, n_processes, n_gpus, contours_clustering=contours_clustering)
+    dump_config_path = dump_folder / f"cfg_for_dump.yml"
+    cfg.to_file(dump_config_path)
 
-        new_config_path = dump_folder / f"cfg_{idx}.yml"
-        cfg.to_file(new_config_path)
-        config_paths.append(new_config_path)
-
+    attributes = [] if attributes is None else list(attributes)
     attr_minmax: tp.Dict[str, tp.Dict] = {}
     for attr in attributes:
         attr_minmax[attr] = {
@@ -363,7 +348,7 @@ def main(
     with LoggingServer.ctx(dump_folder):
         with init_data_loader_from_config(
             loader_params=LoaderParams(batch_size=batch_size, non_stop=False),
-            data_config_path=config_paths,
+            data_config_path=dump_config_path,
             value_select=value_select,
         ) as data_loaders:
             for data_loader in data_loaders.values():
@@ -383,12 +368,9 @@ def main(
 
                 LOGGER.info(f"dump process: {data_loader.subset_name}")
                 sample_counter = 0
-                for _ in tqdm(range(len(data_loader) * len(config_paths))):
+                for _ in tqdm(range(len(data_loader))):
                     batch = next(data_loader)
-                    if batch.tag != "main":
-                        continue
-                    else:
-                        sample_counter += batch.size
+                    sample_counter += batch.size
 
                     collated: TTSCollateOutput = batch.collated_samples
                     assert collated is not None
@@ -423,7 +405,7 @@ def main(
                             attr_minmax[attr]["mean"][sp_name].append(val_mean[idx])
                             attr_minmax[attr]["var"][sp_name].append(val_var[idx])
 
-                    if speaker_emb_mean:
+                    if num_speaker_emb_to_average:
                         sp_embs = getattr(collated, "speaker_emb", None)
                         if sp_embs is not None:
                             sp_embs = sp_embs.cpu().numpy()
@@ -457,14 +439,15 @@ def main(
                                 "var": float(np.median(to_array("var"))),
                             }
 
-                    ranges_path = dump_folder / file_name
+                    ranges_path = dump_folder / "ranges.json"
                     json_dump_to_file(ranges_path, all_speakers_ranges)
 
-                    if speaker_emb_mean:
+                    if num_speaker_emb_to_average:
                         mean_embeddings = {}
                         for idx, sp_name in enumerate(speaker_bio_embeddings):
                             mean_emb = random.choices(
-                                speaker_bio_embeddings[sp_name], k=20
+                                speaker_bio_embeddings[sp_name],
+                                k=num_speaker_emb_to_average,
                             )
                             mean_emb = np.mean(np.stack(mean_emb), axis=0)
                             mean_embeddings[sp_name] = mean_emb.tolist()

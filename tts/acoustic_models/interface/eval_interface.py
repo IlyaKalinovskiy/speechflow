@@ -180,15 +180,6 @@ class TTSEvaluationInterface:
         # update data config
         cfg_data["processor"].pop("dump", None)
 
-        if "hubert_model_path" in kwargs:
-            cfg_data.preproc.pipe_cfg.ssl.ssl_params.pretrain_path = kwargs[
-                "hubert_model_path"
-            ]
-        if "hubert_vocab_path" in kwargs:
-            cfg_data.preproc.pipe_cfg.ssl.ssl_params.vocab_path = kwargs[
-                "hubert_vocab_path"
-            ]
-
         pauses_from_ts_cfg = cfg_data["preproc"]["pipe_cfg"].get(
             "add_pauses_from_timestamps", {}
         )

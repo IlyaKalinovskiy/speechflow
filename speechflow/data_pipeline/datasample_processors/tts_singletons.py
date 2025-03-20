@@ -373,7 +373,9 @@ class StatisticsRange(metaclass=Singleton):
         if self.statistics_file.is_file():
             self.statistics: tp.Dict[str, tp.Any] = json.loads(self.statistics_file.read_text(encoding="utf-8"))  # type: ignore
         else:
-            raise ValueError("ranges.json not found! First do execute dump.py")
+            raise ValueError(
+                f"{self.statistics_file.as_posix()} not found! First do execute dump.py"
+            )
 
     def __call__(self, data: Dataset) -> Dataset:
         return data
@@ -418,7 +420,7 @@ class MeanBioEmbeddings(metaclass=Singleton):
                 )  # type: ignore
             else:
                 raise ValueError(
-                    "mean_bio_embeddings.json not found! First do execute dump.py"
+                    f"{self.mean_embeddings_file.as_posix()} not found! First do execute dump.py"
                 )
 
         self.data = {

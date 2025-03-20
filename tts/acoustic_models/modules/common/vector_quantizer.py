@@ -162,7 +162,7 @@ class VectorQuantizer(nn.Module):
                 "perplexity": perplexity,
                 "distances": distances.view(batch_size, time, -1),
                 "encodings": encodings.view(batch_size, time, -1),
-                "encoding_indices": encoding_indices,
+                "encoding_indices": encoding_indices.view(batch_size, time, -1),
                 "encoding_distances": encoding_distances,
                 "embedding_distances": embedding_distances,
                 "frames_vs_embedding_distances": frames_vs_embedding_distances,
