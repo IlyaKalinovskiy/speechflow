@@ -343,7 +343,7 @@ def main(
         }
 
     speaker_bio_embeddings: tp.Dict[str, tp.List[npt.NDArray]] = defaultdict(list)
-    contours: tp.Dict[str, tp.Dict[str, list]]= defaultdict(dict)
+    contours: tp.Dict[str, tp.Dict[str, list]] = defaultdict(dict)
 
     with LoggingServer.ctx(dump_folder):
         with init_data_loader_from_config(
@@ -458,10 +458,14 @@ def main(
                     if contours_clustering:
                         all_contours = []
                         for c in contours.values():
-                            all_contours += list(itertools.chain.from_iterable(c.values()))
+                            all_contours += list(
+                                itertools.chain.from_iterable(c.values())
+                            )
 
                         a_index, labels = clustering(
-                            np.stack(all_contours), subset_size=subset_size, n_clusters=n_clusters
+                            np.stack(all_contours),
+                            subset_size=subset_size,
+                            n_clusters=n_clusters,
                         )
 
                         index_filename = dump_folder / "index.ann"

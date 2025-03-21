@@ -14,42 +14,38 @@ __all__ = ["ProsodyPredictionLoss"]
 
 
 class ProsodyPredictionLoss(nn.Module):
-    def __init__(self, names: tp.List[str] = ["binary", "category"]):
+    def __init__(self, names: tp.List[tp.Literal["binary", "category"]]):
         super().__init__()
-
         self.names = names
-        self.loss_fn = torch.nn.ModuleDict({})
+        self.loss_fn = nn.ModuleDict()
         for name in self.names:
             self.loss_fn[name] = nn.CrossEntropyLoss()
 
     def forward(
         self,
-        current_iter: int,
-        outputs: ProsodyPredictionOutput,
-        targets: ProsodyPredictionTarget,
-    ) -> dict:
-
+        output: ProsodyPredictionOutput,
+        target: ProsodyPredictionTarget,
+        batch_idx: int = 0,
+        global_step: int = 0,
+    ) -> tp.Dict[str, torch.Tensor]:
         total_loss = {}
 
         for name in self.names:
-            predicted = getattr(outputs, name).squeeze(-1)
-            orig_shape = predicted.shape
-            target = getattr(targets, name)
+            p = getattr(output, name).squeeze(-1)
+            t = getattr(target, name)
+            orig_shape = p.shape
 
-            _is_prosody = target != -100
-            predicted = predicted.masked_select(_is_prosody.unsqueeze(-1)).reshape(
-                (-1, orig_shape[-1])
-            )
-            target = target.masked_select(_is_prosody)
-
-            total_loss[name] = self.loss_fn[name](predicted, target)
+            _is_prosody = t != -100
+            p = p.masked_select(_is_prosody.unsqueeze(-1)).reshape((-1, orig_shape[-1]))
+            t = t.masked_select(_is_prosody)
+            total_loss[name] = self.loss_fn[name](p, t)
 
         return total_loss
 
     def set_weights(self, dataset, n_classes):
         """Computes weights for loss if target is unbalanced."""
         weights = self.compute_idf_weights(dataset, n_classes)
-        self.loss_fn = torch.nn.ModuleDict({})
+        self.loss_fn = nn.ModuleDict()
         for name in self.names:
             self.loss_fn[name] = nn.CrossEntropyLoss(weight=weights[name])
 

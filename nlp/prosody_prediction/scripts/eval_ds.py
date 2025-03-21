@@ -95,7 +95,7 @@ if __name__ == "__main__":
         callback = ProsodyCallback(
             data_loader=dl_valid,
             names=cfg_model["loss"]["names"],
-            tokenizer=cfg_data["parser"]["tokenizer_name"],
+            tokenizer_name=cfg_data["parser"]["tokenizer_name"],
             n_classes=cfg_model["model"]["params"]["n_classes"],
         )
         eval(dl_valid, model, callback, batch_processor)

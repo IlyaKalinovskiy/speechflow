@@ -49,7 +49,7 @@ from speechflow.training import (
     Optimizer,
 )
 from speechflow.utils.init import lazy_initialization
-from speechflow.utils.pad_utils import sequence_collate
+from speechflow.utils.pad_utils import pad_2d
 from speechflow.utils.profiler import Profiler
 from speechflow.utils.tensor_utils import run_rnn_on_padded_sequence
 
@@ -153,7 +153,7 @@ class SSLCollate(BaseCollate):
         collated = super().__call__(batch)
         collated = SSLCollateOutput(**collated.to_dict())  # type: ignore
 
-        ssl_feat, length = sequence_collate(batch, "ssl_feat", pad_id=0)
+        ssl_feat, length = pad_2d(batch, "ssl_feat", pad_id=0)
 
         if batch[0].speaker_id is not None:
             speaker_id = [x.speaker_id for x in batch]

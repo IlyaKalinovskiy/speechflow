@@ -79,9 +79,13 @@ class ProsodyParser(BaseDSParser):
         sents = metadata["sents"]
         prosody_labels, tokens = [], []
         for sent in sents:
-            for token in sent.tokens:
+            for idx, token in enumerate(sent.tokens):
                 tokens.append(token.text)
+                if idx == 0 or token.is_capitalize:
+                    tokens[-1] = f"{tokens[-1][0].upper()}{tokens[-1][1:]}"
+
                 prosody_labels.append(int(token.prosody) if token.prosody else -1)
+
         tokenized_inputs = tokenizer(
             tokens,
             is_split_into_words=True,
@@ -90,6 +94,7 @@ class ProsodyParser(BaseDSParser):
             truncation=True,
             max_length=512,
         )
+
         word_ids = tokenized_inputs.word_ids()  # Map tokens to their respective word.
         previous_word_idx = None
         binary_label_ids = []
@@ -106,7 +111,7 @@ class ProsodyParser(BaseDSParser):
             previous_word_idx = word_idx
 
         datasample = ProsodyPredictionDataSample(
-            file_path=metadata.get("file_path", Path()),
+            file_path=metadata["file_path"],
             lang=sents[0].lang,
             attention_mask=tokenized_inputs["attention_mask"].flatten(),
             input_ids=tokenized_inputs["input_ids"].flatten(),
@@ -153,6 +158,7 @@ class ProsodyParser(BaseDSParser):
                 m["wav_chunk"] == wav_chunk for m in metadata_by_wav[orig_wav]
             ):
                 continue
+
             metadata_by_wav[orig_wav].append(
                 {
                     "metadata": metadata,

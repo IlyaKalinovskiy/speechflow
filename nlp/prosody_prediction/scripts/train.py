@@ -17,6 +17,7 @@ from nlp import prosody_prediction
 from nlp.prosody_prediction.callbacks import ProsodyCallback
 from speechflow.data_server.helpers import init_data_loader_from_config
 from speechflow.data_server.loader import DataLoader
+from speechflow.io import Config
 from speechflow.logging import trace
 from speechflow.logging.server import LoggingServer
 from speechflow.training.lightning_engine import LightningEngine
@@ -29,30 +30,30 @@ from speechflow.utils.profiler import Profiler
 LOGGER = logging.getLogger("root")
 
 
-def train(cfg: dict, data_loaders: tp.Dict[str, DataLoader]) -> str:
-    experiment_path = Path(cfg["experiment_path"])
+def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
+    experiment_path = Path(cfg_model["experiment_path"])
 
-    seed_everything(cfg["seed"])
+    seed_everything(cfg_model["seed"])
 
     dl_train, dl_valid = data_loaders.values()
 
-    batch_processor_cls = getattr(prosody_prediction, cfg["batch"]["type"])
-    batch_processor = init_class_from_config(batch_processor_cls, cfg["batch"])()
+    batch_processor_cls = getattr(prosody_prediction, cfg_model["batch"]["type"])
+    batch_processor = init_class_from_config(batch_processor_cls, cfg_model["batch"])()
 
-    model_cls = getattr(prosody_prediction, cfg["model"]["type"])
-    model = init_class_from_config(model_cls, cfg["model"]["params"])()
+    model_cls = getattr(prosody_prediction, cfg_model["model"]["type"])
+    model = init_class_from_config(model_cls, cfg_model["model"]["params"])()
 
-    criterion_cls = getattr(prosody_prediction, cfg["loss"]["type"])
-    criterion = init_class_from_config(criterion_cls, cfg["loss"])()
-    criterion.set_weights(dl_train, cfg["model"]["params"]["n_classes"])
+    criterion_cls = getattr(prosody_prediction, cfg_model["loss"]["type"])
+    criterion = init_class_from_config(criterion_cls, cfg_model["loss"])()
+    criterion.set_weights(dl_train, cfg_model["model"]["params"]["n_classes"])
 
-    optimizer = init_class_from_config(Optimizer, cfg["optimizer"])(model=model)
+    optimizer = init_class_from_config(Optimizer, cfg_model["optimizer"])(model=model)
 
     saver = ExperimentSaver(
         expr_path=experiment_path,
         additional_files={
             "data.yml": dl_train.client.info["data_config_raw"],
-            "model.yml": cfg["model_config_raw"],
+            "model.yml": cfg_model.raw_file,
         },
     )
     saver.to_save.update({"dataset": dl_train.client.info["dataset"]})
@@ -68,16 +69,16 @@ def train(cfg: dict, data_loaders: tp.Dict[str, DataLoader]) -> str:
     callbacks = [
         ProsodyCallback(
             dl_valid,
-            names=cfg["loss"]["names"],
-            tokenizer=cfg["callbacks"]["ProsodyCallback"]["tokenizer"],
-            n_classes=cfg["model"]["params"]["n_classes"],
+            names=cfg_model["loss"]["names"],
+            tokenizer_name=cfg_model["callbacks"]["ProsodyCallback"]["tokenizer_name"],
+            n_classes=cfg_model["model"]["params"]["n_classes"],
         ),
-        saver.get_checkpoint_callback(cfg=cfg["checkpoint"]),
+        saver.get_checkpoint_callback(cfg=cfg_model["checkpoint"]),
     ]
 
-    ckpt_path = cfg["trainer"].pop("resume_from_checkpoint", None)
+    ckpt_path = cfg_model["trainer"].pop("resume_from_checkpoint", None)
 
-    trainer = init_class_from_config(pl.Trainer, cfg["trainer"])(
+    trainer = init_class_from_config(pl.Trainer, cfg_model["trainer"])(
         default_root_dir=experiment_path, callbacks=callbacks
     )
 
@@ -112,7 +113,7 @@ def main(
             server_addr=data_server_address,
         ) as data_loaders:
             try:
-                return train(cfg=cfg_model, data_loaders=data_loaders)
+                return train(cfg_model=cfg_model, data_loaders=data_loaders)
             except Exception as e:
                 LOGGER.error(trace("main", e))
                 raise e

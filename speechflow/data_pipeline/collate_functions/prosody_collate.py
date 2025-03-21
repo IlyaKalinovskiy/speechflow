@@ -40,14 +40,17 @@ class ProsodyPredictionCollate(BaseCollate):
             binary, _ = pad_1d(binary, pad_val=-100)
         else:
             binary = None
+
         if batch[0].category is not None:
             category, _ = pad_1d(category, pad_val=-100)
         else:
             category = None
 
         input_ids, _ = pad_1d(input_ids, pad_val=pad_symb_id)
+        attention_mask, _ = pad_1d(attention_mask, pad_val=0)
 
-        collated.input_ids = input_ids
         collated.binary = binary
         collated.category = category
+        collated.input_ids = input_ids
+        collated.attention_mask = attention_mask
         return collated

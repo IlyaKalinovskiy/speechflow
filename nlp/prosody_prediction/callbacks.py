@@ -33,9 +33,9 @@ class ProsodyCallback(Callback):
     def __init__(
         self,
         data_loader: DataLoader,
-        names: tp.List[str] = ["binary", "category"],
-        tokenizer: str = None,
-        n_classes: int = 10,
+        names: tp.List[tp.Literal["binary", "category"]],
+        tokenizer_name: str,
+        n_classes: int,
     ):
         super().__init__()
         self.softmax = torch.nn.Softmax(dim=1)
@@ -43,7 +43,7 @@ class ProsodyCallback(Callback):
         self.names = names
         self._data_loader = data_loader
         self._tokenizer = AutoTokenizer.from_pretrained(
-            tokenizer, add_prefix_space=True, use_fast=True
+            tokenizer_name, add_prefix_space=True, use_fast=True
         )
         self.n_classes = n_classes
 

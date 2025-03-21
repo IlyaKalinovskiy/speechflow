@@ -153,6 +153,7 @@ class ProsodyPredictionDataSample(TTSDataSample):
     input_ids: tp_DATA = None
     binary: tp_DATA = None
     category: tp_DATA = None
+    attention_mask: tp_DATA = None
     pad_id: int = None
     lang: str = None
     word_ids: tp_DATA = None

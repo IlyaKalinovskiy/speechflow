@@ -81,7 +81,7 @@ model:
       mt_num_heads: 2
       mt_layers: 4
       vq_type: vq
-      vq_codebook_size: 1024
+      vq_codebook_size: 128
 
     va_type: HierarchicalVarianceAdaptor
 

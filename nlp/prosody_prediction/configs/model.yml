@@ -3,7 +3,7 @@
 experiment_name: prosody_predictor # name for current experiment
 
 dirs:
-  logging: experiments
+  logging: prosody_experiments
 
 seed: 1234
 
@@ -11,28 +11,28 @@ batch:
   type: ProsodyPredictionProcessor
 
 data_loaders:
-  batch_size: { default: 32, debug: 4 }
-  min_batch_size: 4
+  batch_size: { default: 128, debug: 1 }
   min_prefetch_factor: { default: 50, debug: 1 }
   max_prefetch_factor: { default: 150, debug: 1 }
 
 trainer:
-  accelerator: gpu
-  devices: [auto]
-  max_epochs: 40
+  accelerator: { default: gpu, debug: cpu }
+  devices: { default: [auto], debug: 1 }
+  # strategy: ddp
+  max_epochs: 50
   gradient_clip_val: 5.0
   accumulate_grad_batches: 1
 
 checkpoint:
   monitor: Epoch
   mode: max
-  save_top_k: 20
+  save_top_k: 10
   every_n_epochs: 5
-  save_last: True
+  save_last: False
 
 optimizer:
   method:
-    type: Adam
+    type: AdamW
     lr: 1.e-5
     weight_decay: 0.06
   lr_scheduler:
@@ -41,12 +41,9 @@ optimizer:
 
 callbacks:
   ProsodyCallback:
-    tokenizer: {
-      default: /src/libs/text_parser/text_parser/data/common/xlm-roberta-large/tokenizer,
-      ru: /src/libs/text_parser/text_parser/data/ru/homo_classifier/tokenizer,
-      en: /src/libs/text_parser/text_parser/data/en/roberta_large/tokenizer,
-      ml: /src/libs/text_parser/text_parser/data/common/xlm-roberta-large/tokenizer,
-      }
+    tokenizer_name:
+      default: google-bert/bert-base-multilingual-cased
+      ru: ai-forever/sbert_large_nlu_ru
 
 loss:
   type: ProsodyPredictionLoss
@@ -55,12 +52,9 @@ loss:
 model:
   type: ProsodyModel
   params:
-    model_name: {
-      default: /src/libs/text_parser/text_parser/data/common/xlm-roberta-large/model,
-      ru: /src/libs/text_parser/text_parser/data/ru/homo_classifier/ruRoBerta,
-      en: /src/libs/text_parser/text_parser/data/en/roberta_large/model,
-      ml: /src/libs/text_parser/text_parser/data/common/xlm-roberta-large/model,
-      }
+    lm_model_name:
+      default: google-bert/bert-base-multilingual-cased
+      ru: ai-forever/sbert_large_nlu_ru
     dropout: 0
     n_classes: 10
     n_layers_tune: 15
