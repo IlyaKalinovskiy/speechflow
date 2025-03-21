@@ -19,6 +19,7 @@ __all__ = ["TTSFeatures", "TTSFeaturesParams"]
 class TTSFeaturesParams(ParallelTTSParams):
     pretrain_path: tp.Optional[tp_PATH] = None
     freeze: bool = False
+    spectral_loss_alpha: float = 10.0
 
 
 class TTSFeatures(FeatureExtractor):
@@ -102,8 +103,8 @@ class TTSFeatures(FeatureExtractor):
             else:
                 raise TypeError(f"Type {type(outputs)} is not supported.")
 
-            energy = d.get("energy_postprocessed")
-            pitch = d.get("pitch_postprocessed")
+            energy = F.relu(d.get("energy_postprocessed"))
+            pitch = F.relu(d.get("pitch_postprocessed"))
 
         if energy is not None:
             energy = energy.squeeze(-1)
@@ -147,7 +148,7 @@ class TTSFeatures(FeatureExtractor):
             for predict in outputs.spectrogram:
                 spec_loss = spec_loss + F.l1_loss(self.proj(predict), target_spec)
 
-            losses["spectral_l1_loss"] = spec_loss
+            losses["spectral_l1_loss"] = self.params.spectral_loss_alpha * spec_loss
 
         if self.training and not self.freeze:
             for name, loss in losses.items():

@@ -3,7 +3,6 @@ import shutil
 import typing as tp
 import logging
 import argparse
-import warnings
 import itertools
 
 from collections import defaultdict
@@ -223,15 +222,16 @@ def clustering(
 
 def contours_gathering(
     batch: Batch,
-    contours: np.array,
+    contours: tp.Dict[str, tp.Dict[str, list]],
     contour_length: int,
     max_contours_per_speaker: int = 500,
 ) -> np.array:
     for ds in batch.data_samples:
-        if ds is not None and len(contours[ds.speaker_name]) <= max_contours_per_speaker:
+        c = contours[ds.speaker_name].setdefault(ds.intonation_type, [])
+        if ds is not None and len(c) <= max_contours_per_speaker:
             for contour, words_length in ContoursExtractor.extract(ds, contour_length):
                 if contour is not None:
-                    contours[ds.speaker_name].append(contour)
+                    c.append(contour)
 
     return contours
 
@@ -343,7 +343,7 @@ def main(
         }
 
     speaker_bio_embeddings: tp.Dict[str, tp.List[npt.NDArray]] = defaultdict(list)
-    contours: tp.Dict[str, tp.List[npt.NDArray]] = defaultdict(list)
+    contours: tp.Dict[str, tp.Dict[str, list]]= defaultdict(dict)
 
     with LoggingServer.ctx(dump_folder):
         with init_data_loader_from_config(
@@ -456,11 +456,12 @@ def main(
                         json_dump_to_file(mean_embeddings_path, mean_embeddings)
 
                     if contours_clustering:
-                        all_contours = np.stack(
-                            list(itertools.chain.from_iterable(contours.values()))
-                        )
+                        all_contours = []
+                        for c in contours.values():
+                            all_contours += list(itertools.chain.from_iterable(c.values()))
+
                         a_index, labels = clustering(
-                            all_contours, subset_size=subset_size, n_clusters=n_clusters
+                            np.stack(all_contours), subset_size=subset_size, n_clusters=n_clusters
                         )
 
                         index_filename = dump_folder / "index.ann"
