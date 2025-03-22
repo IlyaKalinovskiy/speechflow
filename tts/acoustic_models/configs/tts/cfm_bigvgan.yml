@@ -11,7 +11,7 @@ batch:
   type: TTSBatchProcessor
 
 data_loaders:
-  batch_size: { default: 16, debug: 4 }
+  batch_size: { default: 32, debug: 4 }
   min_batch_size: 4
   min_prefetch_factor: { default: 50, debug: 1 }
   max_prefetch_factor: { default: 150, debug: 1 }
@@ -85,7 +85,7 @@ model:
           content: [1]
 
     encoder_type: ContextEncoder
-    encoder_inner_dim: 512
+    encoder_inner_dim: 768
     encoder_params:
       encoder_type:
         - DiTEncoder
@@ -108,8 +108,8 @@ model:
 
     decoder_type: CFMDecoder
     decoder_num_layers: 6
-    decoder_inner_dim: 384
-    decoder_output_dim: 80
+    decoder_inner_dim: 768
+    decoder_output_dim: 100
     decoder_params:
       use_prior_decoder: true
       use_cfg: true

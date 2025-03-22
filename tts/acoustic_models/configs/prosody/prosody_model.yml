@@ -63,11 +63,11 @@ model:
     ssl_feat_dim: 1024
     ssl_feat_proj_dim: 1024
 
-    use_learnable_speaker_emb: true
-    # use_dnn_speaker_emb: true
+    # use_learnable_speaker_emb: true
+    use_dnn_speaker_emb: true
     # use_mean_dnn_speaker_emb: true
     # speaker_biometric_model: wespeaker
-    speaker_emb_dim: 32  # 256
+    speaker_emb_dim: 256  # 256
 
     general_condition:
       level_1:

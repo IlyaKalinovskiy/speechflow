@@ -323,7 +323,7 @@ class TTSEvaluationInterface:
         self.batch_processor = init_class_from_config(
             batch_processor_cls, cfg_model["batch"]
         )()
-        self.batch_processor.device = self.device
+        self.batch_processor.set_device(self.device)
 
         if prosody_ckpt_path is not None:
             if "_prosody" not in cfg_data["file_search"]["ext"]:

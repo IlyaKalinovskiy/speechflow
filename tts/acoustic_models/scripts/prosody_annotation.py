@@ -3,6 +3,7 @@ import logging
 import argparse
 
 from collections import defaultdict
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -15,6 +16,7 @@ from speechflow.data_pipeline.core import BaseBatchProcessor
 from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
     TTSTextProcessor,
 )
+from speechflow.data_pipeline.dataset_parsers import EasyDSParser
 from speechflow.data_server.helpers import dataset_iterator
 from speechflow.io import AudioSeg, Config
 from speechflow.training.saver import ExperimentSaver
@@ -83,7 +85,7 @@ def parse_args():
         default="cpu",
     )
     arguments_parser.add_argument(
-        "-n", "--n_components", help="number of prosodic classes", type=int, default=10
+        "-n_cls", "--n_classes", help="number of prosodic classes", type=int, default=0
     )
     arguments_parser.add_argument(
         "-m", "--mapping_file", help="file to store mapping", type=Path, default=None
@@ -101,6 +103,43 @@ def parse_args():
         default=".TextGrid_prosody",
     )
     return arguments_parser.parse_args()
+
+
+def update_sega(obj: tp.Any, output_ext: str):
+    tg_path, tokens, indices, labels = obj
+    # if tg_path.with_suffix(textgrid_ext_new).exists():
+    #    continue
+
+    sega = AudioSeg.load(tg_path)
+    if sega is None:
+        return
+
+    indices = [
+        labels[int(i.item())]
+        for i, t in zip(indices, tokens)
+        if t
+        not in [
+            TTSTextProcessor.bos,
+            TTSTextProcessor.eos,
+            TTSTextProcessor.sil,
+        ]
+    ]
+
+    j = 0
+    number_of_classes = np.zeros(labels.max() + 1)
+    for i, token in enumerate(sega.sent.tokens):
+        if token.pos != "PUNCT":
+            ind = indices[j]
+            sega.sent.tokens[i].prosody = str(ind)
+            j += 1
+            number_of_classes[ind] += 1
+        else:
+            sega.sent.tokens[i].prosody = "-1"
+
+    sega.meta["source_sega"] = tg_path.name
+    sega.save(tg_path.with_suffix(output_ext))
+
+    return number_of_classes
 
 
 def redefine_dataset(
@@ -123,7 +162,7 @@ def redefine_dataset(
         device=str(batch_processor.device),
     )
 
-    number_of_classes = defaultdict(int)
+    number_of_classes = np.zeros(labels.max() + 1)
     for batch in tqdm(iterator, total=len(iterator)):
         model_inputs, _, _ = batch_processor(batch)
 
@@ -132,50 +171,27 @@ def redefine_dataset(
 
         batch_indices = model_outputs.additional_content["encoding_indices_vq0_encoder_0"]
 
+        sega_list = []
         for idx, ds in enumerate(batch.data_samples):
             tg_path = ds.file_path
-            # if tg_path.with_suffix(textgrid_ext_new).exists():
-            #    continue
-
-            sega = AudioSeg.load(tg_path)
-            if sega is None:
-                continue
-
-            tokens = [token.text for token in ds.sent.tokens if token.pos != "PUNCT"]
+            tokens = tuple(
+                [token.text for token in ds.sent.tokens if token.pos != "PUNCT"]
+            )
             indices = batch_indices[idx][: model_inputs.num_words[idx]]
             assert len(tokens) == indices.shape[0]
+            sega_list.append((tg_path, tokens, indices.cpu(), labels))
 
-            indices = [
-                labels[int(i.item())]
-                for i, t in zip(indices, tokens)
-                if t
-                not in [
-                    TTSTextProcessor.bos,
-                    TTSTextProcessor.eos,
-                    TTSTextProcessor.sil,
-                ]
-            ]
+        parser = EasyDSParser(func=partial(update_sega, output_ext=textgrid_ext_new))
+        result = parser.run_from_object_list(sega_list, n_processes=n_processes)
+        number_of_classes += np.sum(result.to_list(), axis=0)
 
-            j = 0
-            for i, token in enumerate(sega.sent.tokens):
-                if token.pos != "PUNCT":
-                    ind = str(indices[j])
-                    sega.sent.tokens[i].prosody = ind
-                    j += 1
-                    number_of_classes[ind] += 1
-                else:
-                    sega.sent.tokens[i].prosody = "-1"
-
-            sega.meta["source_sega"] = tg_path.name
-            sega.save(tg_path.with_suffix(textgrid_ext_new))
-
-    total_number_of_words = sum(number_of_classes.values())
+    total_number_of_words = np.sum(number_of_classes)
     print("Percent of each class and its absolute number:")
     print(
         "\n".join(
             [
                 f"{cl}: {round(percentage/total_number_of_words*100, 2)}% ({percentage})"
-                for cl, percentage in sorted(number_of_classes.items())
+                for cl, percentage in enumerate(number_of_classes)
             ]
         )
     )
@@ -190,7 +206,7 @@ def main(
     n_processes: int = 1,
     n_gpus: int = 0,
     model_device: str = "cpu",
-    n_components: int = 10,
+    n_classes: int = 0,
     mapping_file: tp.Optional[Path] = None,
     textgrid_ext_old: tp.Optional[str] = None,
     textgrid_ext_new: str = ".TextGrid_prosody",
@@ -265,7 +281,11 @@ def main(
     else:
         print("Run codebook clustering")
         codebook = model.encoder.vq_encoder.vq.codebook.weight.cpu().data.numpy()
-        mapping = GaussianMixture(n_components=n_components).fit_predict(codebook)
+        if codebook.shape[0] == n_classes or n_classes == 0:
+            dist = np.linalg.norm(codebook - codebook[0, None], axis=-1)
+            mapping = np.argsort(dist)
+        else:
+            mapping = GaussianMixture(n_components=n_classes).fit_predict(codebook)
         if mapping_file:
             np.save(mapping_file.as_posix(), mapping)
 
