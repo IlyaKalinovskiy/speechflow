@@ -10,7 +10,7 @@ from tts.acoustic_models.modules.common.length_regulators import (
     SoftLengthRegulator,
 )
 from tts.acoustic_models.modules.component import Component
-from tts.acoustic_models.modules.components.encoders import RNNEncoder, RNNEncoderParams
+from tts.acoustic_models.modules.components.encoders import DiTEncoder, DiTEncoderParams
 from tts.acoustic_models.modules.components.encoders.vq_encoder import (
     VQEncoder,
     VQEncoderParams,
@@ -21,7 +21,7 @@ from tts.acoustic_models.modules.prosody.transformer import MultimodalTransforme
 __all__ = ["ProsodyEncoder", "ProsodyEncoderParams"]
 
 
-class ProsodyEncoderParams(VQEncoderParams, RNNEncoderParams):
+class ProsodyEncoderParams(VQEncoderParams, DiTEncoderParams):
     mt_embed_dim: int = 1024
     mt_num_heads: int = 1
     mt_layers: int = 1
@@ -38,33 +38,45 @@ class ProsodyEncoder(Component):
             num_heads=params.mt_num_heads,
             layers=params.mt_layers,
         )
-        self.text_encoder = RNNEncoder(params, params.token_emb_dim)
+        self.audio_encoder = DiTEncoder(params, params.ssl_feat_proj_dim)
+        self.text_encoder = DiTEncoder(params, params.xpbert_feat_dim)
         self.vq_encoder = VQEncoder(params, input_dim)
         self.hard_lr = LengthRegulator()
         self.soft_lr = SoftLengthRegulator()
+        self.dropout = torch.nn.Dropout2d(params.p_dropout)
 
     @property
     def output_dim(self):
         return self.text_encoder.output_dim + self.vq_encoder.output_dim
 
     def forward_step(self, x: ComponentOutput) -> EncoderOutput:
-        audio_embs = x.model_inputs.ssl_feat
-        lm_embs = x.model_inputs.lm_feat.transpose(0, 1)
+        audio_embs = x.embeddings["ssl_feat"]
+        lm_embs = x.embeddings["lm_feat"]
+
+        audio_lens = x.model_inputs.ssl_feat_lengths
+        audio_embs, _ = self.audio_encoder.process_content(
+            audio_embs, audio_lens, x.model_inputs
+        )
 
         invert_durations = x.model_inputs.additional_inputs["word_invert_durations"]
         durations = x.model_inputs.additional_inputs["word_durations"]
         audio_embs, _ = self.soft_lr(audio_embs, invert_durations, durations.shape[1])
 
+        audio_embs = self.dropout(audio_embs).transpose(0, 1)
+        lm_embs = self.dropout(lm_embs).transpose(0, 1)
         bimodal_embs = self.multimodal_transformer(
-            audio_embs.transpose(0, 1), lm_embs, lm_embs
+            audio_embs, lm_embs, lm_embs
         ).transpose(0, 1)
 
         x.set_content(bimodal_embs, get_lengths_from_durations(invert_durations))
         encoder_output = self.vq_encoder(x)
 
-        text = x.embeddings["transcription"]
-        text_lens = x.model_inputs.transcription_lengths
-        text_embs, _ = self.text_encoder.process_content(text, text_lens, x.model_inputs)
+        text_embs = x.embeddings["xpbert_feat"]
+        text_lens = x.model_inputs.xpbert_feat_lengths
+        text_embs, _ = self.text_encoder.process_content(
+            text_embs, text_lens, x.model_inputs
+        )
+        text_embs = self.dropout(text_embs)
 
         quant = encoder_output.content
         dura = x.model_inputs.word_lengths

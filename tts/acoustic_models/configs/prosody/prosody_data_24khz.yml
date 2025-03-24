@@ -42,7 +42,7 @@ preproc:
   pipe: [load_audio, load_audio_segmentation,
          voice_bio_speechbrain, store_bio_emb, voice_bio_wespeaker, mean_bio_embedding,
          spectrogram, melscale, pitch, ssl, timedim_interpolation,
-         add_pauses_from_timestamps, add_service_tokens, text, lm,
+         add_pauses_from_timestamps, add_service_tokens, text, xpbert, lm,
          calc_durations, calc_invert_durations,
          normalize_pitch, enhancement_pitch, pitch_mean,
          contours, normalize_durations]
@@ -101,6 +101,8 @@ preproc:
       type: TTSTextProcessor
       lang: MULTILANG
       # lang: { default: MULTILANG, ru: RU, en: EN, ml: MULTILANG }
+    xpbert:
+      type: XPBertProcessor
     lm:
       type: LMProcessor
       lang: { default: MULTILANG, ru: RU, en: EN }
@@ -165,7 +167,7 @@ processor:
       data_root: *data_root
       dump_path: !join [*data_root, *dump_folder]
       fields: [file_path, speaker_name]
-      handlers: [VoiceBiometricProcessor, SSLProcessor, PitchProcessor, LMProcessor]
+      handlers: [VoiceBiometricProcessor, SSLProcessor, PitchProcessor, XPBertProcessor, LMProcessor]
       mode: file_path
       skip_samples_without_dump: true
     # debug:

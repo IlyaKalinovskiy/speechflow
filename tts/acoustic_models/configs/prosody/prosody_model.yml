@@ -11,7 +11,7 @@ batch:
   type: TTSBatchProcessor
 
 data_loaders:
-  batch_size: { default: 128, debug: 2 }
+  batch_size: { default: 16, debug: 2 }
   min_batch_size: 2
   min_prefetch_factor: { default: 50, debug: 1 }
   max_prefetch_factor: { default: 150, debug: 1 }
@@ -69,14 +69,14 @@ model:
     # speaker_biometric_model: wespeaker
     speaker_emb_dim: 256  # 256
 
-    general_condition:
-      level_1:
-        - condition: [speaker_emb]
-          condition_type: DiT
-
     encoder_type: ProsodyEncoder
-    encoder_inner_dim: 1024
+    encoder_num_layers: 6
+    encoder_inner_dim: 512
+    encoder_output_dim: 1024
     encoder_params:
+      condition: [speaker_emb]
+      condition_dim: 256
+      p_dropout: 0.2
       mt_embed_dim: 1024
       mt_num_heads: 2
       mt_layers: 4

@@ -164,13 +164,13 @@ def model_config_prepare(
             }
         ExperimentSaver.save_checkpoint(checkpoint, new_ckpt_path)
 
-        cfg_model["trainer"]["resume_from_checkpoint"] = new_ckpt_path.as_posix()
+        cfg_model["trainer"]["resume_from_checkpoint"] = new_ckpt_path
 
     if resume_from:
         assert model_config_path and data_config_path
         cfg_model["experiment_path"] = resume_from.as_posix()
         ckpt_path = ExperimentSaver.get_last_checkpoint(resume_from)
-        cfg_model["trainer"]["resume_from_checkpoint"] = ckpt_path.as_posix()
+        cfg_model["trainer"]["resume_from_checkpoint"] = ckpt_path
 
     if (
         cfg_model["trainer"].get("resume_from_checkpoint") is not None

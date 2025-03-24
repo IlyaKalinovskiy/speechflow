@@ -181,7 +181,9 @@ def redefine_dataset(
             assert len(tokens) == indices.shape[0]
             sega_list.append((tg_path, tokens, indices.cpu(), labels))
 
-        parser = EasyDSParser(func=partial(update_sega, output_ext=textgrid_ext_new))
+        parser = EasyDSParser(
+            func=partial(update_sega, output_ext=textgrid_ext_new), progress_bar=False
+        )
         result = parser.run_from_object_list(sega_list, n_processes=n_processes)
         number_of_classes += np.sum(result.to_list(), axis=0)
 

@@ -19,6 +19,7 @@ from speechflow.data_pipeline.core.parser_types import (
     MultiMetadataTransform,
 )
 from speechflow.data_pipeline.core.registry import PipeRegistry
+from speechflow.io import tp_PATH
 from speechflow.logging import is_verbose_logging, trace
 from speechflow.logging.logger import create_logger
 
@@ -59,8 +60,9 @@ class BaseDSParser:
         memory_bound: bool = False,
         chunk_size: tp.Optional[int] = None,
         raise_on_converter_exc: bool = False,
-        dump_path: tp.Optional[tp.Union[str, Path]] = None,
+        dump_path: tp.Optional[tp_PATH] = None,
         release_func: tp.Optional[tp.Callable] = None,
+        progress_bar: bool = True,
     ):
         """
         :param preproc_fn: sequence of transforms for metadata
@@ -69,6 +71,7 @@ class BaseDSParser:
         :param chunk_size: chunk size for single worker
         :param raise_on_converter_exc: Raise exception if convert sample with error
         :param dump_path: folder for storage cache file
+        :param progress_bar: whether to display a progress bar showing the progress
         """
         if preproc_fn and input_fields:
             PipeRegistry.check(preproc_fn, input_fields=input_fields)
@@ -79,6 +82,7 @@ class BaseDSParser:
 
         self.raise_on_converter_exc = raise_on_converter_exc
         self.release_func = release_func
+        self.progress_bar = progress_bar
 
         if dump_path:
             self.cache_folder = Path(dump_path) / "cache"
@@ -153,6 +157,7 @@ class BaseDSParser:
         memory_bound: bool = False,
         chunk_size: tp.Optional[int] = None,
         release_func: tp.Optional[tp.Callable] = None,
+        progress_bar: bool = True,
     ) -> Dataset:
         """Apply preprocessing functions.
 
@@ -162,6 +167,7 @@ class BaseDSParser:
         :param memory_bound: reduce memory usage
         :param chunk_size: chunk size for single worker
         :param release_func: function for delete temporary object
+        :param progress_bar: whether to display a progress bar showing the progress
         :return: list of metadata
 
         """
@@ -177,7 +183,7 @@ class BaseDSParser:
                     fns,
                     total=len(fns),
                     desc="Multitransform preprocessing",
-                    disable=len(fns) == 1,
+                    disable=len(fns) == 1 or not progress_bar,
                 ):
                     try:
                         all_metadata = transform(all_metadata)
@@ -246,9 +252,14 @@ class BaseDSParser:
         memory_bound: bool = False,
         chunk_size: tp.Optional[int] = None,
         release_func: tp.Optional[tp.Callable] = None,
+        progress_bar: bool = True,
     ) -> Dataset:
         memory_bound = memory_bound and n_processes > 1
-        tqdm_disable = len(inputs) == 1 or (n_processes == 1 and not is_verbose_logging())
+        tqdm_disable = (
+            len(inputs) == 1
+            or (n_processes == 1 and not is_verbose_logging())
+            or not progress_bar
+        )
         if chunk_size is None:
             chunk_size = 1 if len(inputs) < 100 else int(math.sqrt(len(inputs)))
 

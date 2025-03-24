@@ -23,8 +23,11 @@ class EasyDSParser(BaseDSParser):
         func: tp.Callable,
         memory_bound: bool = False,
         chunk_size: tp.Optional[int] = None,
+        progress_bar: bool = True,
     ):
-        super().__init__(memory_bound=memory_bound, chunk_size=chunk_size)
+        super().__init__(
+            memory_bound=memory_bound, chunk_size=chunk_size, progress_bar=progress_bar
+        )
         self._func = func
 
     def reader(
