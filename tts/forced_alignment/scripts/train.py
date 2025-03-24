@@ -18,6 +18,7 @@ from speechflow.io import Config
 from speechflow.logging import trace
 from speechflow.logging.server import LoggingServer
 from speechflow.training import ExperimentSaver, LightningEngine, Optimizer
+from speechflow.training.lightning_callbacks import GradNormCallback
 from speechflow.training.utils.config_prepare import model_config_prepare, train_arguments
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.profiler import Profiler
@@ -127,6 +128,7 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]):
 
     callbacks = [
         pl.callbacks.LearningRateMonitor(logging_interval="epoch"),
+        GradNormCallback(),
         AligningVisualisationCallback(),
         saver.get_checkpoint_callback(cfg=cfg_model["checkpoint"]),
     ]

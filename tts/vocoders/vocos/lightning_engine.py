@@ -67,6 +67,7 @@ class VocosLightningEngine(pl.LightningModule):
         evaluate_utmos: bool = False,
         evaluate_pesq: bool = False,
         evaluate_periodicty: bool = False,
+        detect_grad_nan: bool = False,
         use_clearml_logger: bool = False,
         disc_pretrain_path: tp.Optional[tp_PATH] = None,
     ):
@@ -163,6 +164,7 @@ class VocosLightningEngine(pl.LightningModule):
 
         self.train_discriminator = False
         self.base_mel_coeff = self.mel_loss_coeff = mel_loss_coeff
+        self.detect_grad_nan = detect_grad_nan
 
         if use_clearml_logger:
             from clearml import Task
@@ -556,8 +558,8 @@ class VocosLightningEngine(pl.LightningModule):
         checkpoint.update(self.saver.to_save)
 
     def on_after_backward(self) -> None:
-        # if not self.trainer._detect_anomaly:  # type: ignore
-        #    return
+        if not self.detect_grad_nan:
+            return
 
         valid_gradients = True
         for name, param in self.named_parameters():

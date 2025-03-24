@@ -1,16 +1,20 @@
 import torch
 
+from torch import nn
+from torch.nn import functional as F
+
 from speechflow.utils.tensor_utils import (
     apply_mask,
     get_lengths_from_durations,
     get_mask_from_lengths,
 )
+from tts.acoustic_models.modules.common.blocks import Regression
 from tts.acoustic_models.modules.common.length_regulators import (
     LengthRegulator,
     SoftLengthRegulator,
 )
 from tts.acoustic_models.modules.component import Component
-from tts.acoustic_models.modules.components.encoders import DiTEncoder, DiTEncoderParams
+from tts.acoustic_models.modules.components.encoders import RNNEncoder, RNNEncoderParams
 from tts.acoustic_models.modules.components.encoders.vq_encoder import (
     VQEncoder,
     VQEncoderParams,
@@ -21,7 +25,7 @@ from tts.acoustic_models.modules.prosody.transformer import MultimodalTransforme
 __all__ = ["ProsodyEncoder", "ProsodyEncoderParams"]
 
 
-class ProsodyEncoderParams(VQEncoderParams, DiTEncoderParams):
+class ProsodyEncoderParams(VQEncoderParams, RNNEncoderParams):
     mt_embed_dim: int = 1024
     mt_num_heads: int = 1
     mt_layers: int = 1
@@ -38,12 +42,13 @@ class ProsodyEncoder(Component):
             num_heads=params.mt_num_heads,
             layers=params.mt_layers,
         )
-        self.audio_encoder = DiTEncoder(params, params.ssl_feat_proj_dim)
-        self.text_encoder = DiTEncoder(params, params.xpbert_feat_dim)
+        self.audio_encoder = RNNEncoder(params, params.ssl_feat_proj_dim)
+        self.text_encoder = RNNEncoder(params, params.token_emb_dim)
         self.vq_encoder = VQEncoder(params, input_dim)
         self.hard_lr = LengthRegulator()
         self.soft_lr = SoftLengthRegulator()
-        self.dropout = torch.nn.Dropout2d(params.p_dropout)
+        self.dropout = nn.Dropout2d(params.p_dropout)
+        self.proj = Regression(params.encoder_output_dim, 1, activation_fn="SiLU")
 
     @property
     def output_dim(self):
@@ -56,6 +61,10 @@ class ProsodyEncoder(Component):
         audio_lens = x.model_inputs.ssl_feat_lengths
         audio_embs, _ = self.audio_encoder.process_content(
             audio_embs, audio_lens, x.model_inputs
+        )
+        pitch_predict = self.proj(audio_embs)
+        x.additional_losses["pitch_l1_loss"] = F.l1_loss(
+            pitch_predict, x.model_inputs.pitch.unsqueeze(-1)
         )
 
         invert_durations = x.model_inputs.additional_inputs["word_invert_durations"]
@@ -71,8 +80,8 @@ class ProsodyEncoder(Component):
         x.set_content(bimodal_embs, get_lengths_from_durations(invert_durations))
         encoder_output = self.vq_encoder(x)
 
-        text_embs = x.embeddings["xpbert_feat"]
-        text_lens = x.model_inputs.xpbert_feat_lengths
+        text_embs = x.embeddings["transcription"]
+        text_lens = x.model_inputs.transcription_lengths
         text_embs, _ = self.text_encoder.process_content(
             text_embs, text_lens, x.model_inputs
         )

@@ -103,14 +103,14 @@ class TTSFeatures(FeatureExtractor):
             else:
                 raise TypeError(f"Type {type(outputs)} is not supported.")
 
-            energy = F.relu(d.get("energy_postprocessed"))
-            pitch = F.relu(d.get("pitch_postprocessed"))
+            energy = d.get("energy_postprocessed")
+            pitch = d.get("pitch_postprocessed")
 
         if energy is not None:
-            energy = energy.squeeze(-1)
+            energy = F.relu(energy).squeeze(-1)
 
         if pitch is not None:
-            pitch = pitch.squeeze(-1)
+            pitch = F.relu(pitch).squeeze(-1)
 
         return energy, pitch
 

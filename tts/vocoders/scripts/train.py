@@ -20,6 +20,7 @@ from speechflow.data_server.loader import DataLoader
 from speechflow.io import Config, tp_PATH, tp_PATH_LIST
 from speechflow.logging import trace
 from speechflow.logging.server import LoggingServer
+from speechflow.training import lightning_callbacks as sf_callbacks
 from speechflow.training.saver import ExperimentSaver
 from speechflow.training.utils.config_prepare import model_config_prepare, train_arguments
 from speechflow.utils.init import init_class_from_config
@@ -134,6 +135,8 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         for callback_name, callback_cfg in cfg_model["callbacks"].items():
             if hasattr(vocoders.callbacks, callback_name):
                 cls = getattr(vocoders.callbacks, callback_name)
+            elif hasattr(sf_callbacks, callback_name):
+                cls = getattr(sf_callbacks, callback_name)
             else:
                 cls = getattr(pl.callbacks, callback_name)
             callback = init_class_from_config(cls, callback_cfg)()

@@ -33,6 +33,7 @@ checkpoint:
   save_last: false
 
 callbacks:
+  GradNormCallback: {}
   TTSTrainingVisualizer: {}
 
 optimizer:

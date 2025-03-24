@@ -11,13 +11,13 @@ import pytorch_lightning as pl
 THIS_PATH = Path(__file__).absolute()
 ROOT = THIS_PATH.parents[3]
 sys.path.append(ROOT.as_posix())
-
 from speechflow.data_pipeline.datasample_processors import TTSTextProcessor
 from speechflow.data_server.helpers import init_data_loader_from_config
 from speechflow.data_server.loader import DataLoader
 from speechflow.io import Config, tp_PATH, tp_PATH_LIST
 from speechflow.logging import trace
 from speechflow.logging.server import LoggingServer
+from speechflow.training import lightning_callbacks as sf_callbacks
 from speechflow.training.lightning_engine import LightningEngine
 from speechflow.training.optimizer import Optimizer
 from speechflow.training.saver import ExperimentSaver
@@ -143,6 +143,8 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         for callback_name, callback_cfg in cfg_model["callbacks"].items():
             if hasattr(acoustic_models.callbacks, callback_name):
                 cls = getattr(acoustic_models.callbacks, callback_name)
+            elif hasattr(sf_callbacks, callback_name):
+                cls = getattr(sf_callbacks, callback_name)
             else:
                 cls = getattr(pl.callbacks, callback_name)
             callback = init_class_from_config(cls, callback_cfg)()

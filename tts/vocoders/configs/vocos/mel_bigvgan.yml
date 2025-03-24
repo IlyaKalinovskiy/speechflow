@@ -21,7 +21,7 @@ trainer:
   accelerator: { default: gpu, debug: cpu }
   devices: { default: [auto], debug: 1 }
   # strategy: ddp
-  max_steps: 8000000
+  max_steps: 5000000
   gradient_clip_val: 100
   accumulate_grad_batches: 8
   limit_val_batches: 100
