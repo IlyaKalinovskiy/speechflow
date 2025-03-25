@@ -42,13 +42,11 @@ class ProsodyEncoder(Component):
             num_heads=params.mt_num_heads,
             layers=params.mt_layers,
         )
-        self.audio_encoder = RNNEncoder(params, params.ssl_feat_proj_dim)
         self.text_encoder = RNNEncoder(params, params.token_emb_dim)
         self.vq_encoder = VQEncoder(params, input_dim)
         self.hard_lr = LengthRegulator()
         self.soft_lr = SoftLengthRegulator()
         self.dropout = nn.Dropout2d(params.p_dropout)
-        self.proj = Regression(params.encoder_output_dim, 1, activation_fn="SiLU")
 
     @property
     def output_dim(self):
@@ -57,15 +55,6 @@ class ProsodyEncoder(Component):
     def forward_step(self, x: ComponentOutput) -> EncoderOutput:
         audio_embs = x.embeddings["ssl_feat"]
         lm_embs = x.embeddings["lm_feat"]
-
-        audio_lens = x.model_inputs.ssl_feat_lengths
-        audio_embs, _ = self.audio_encoder.process_content(
-            audio_embs, audio_lens, x.model_inputs
-        )
-        pitch_predict = self.proj(audio_embs)
-        x.additional_losses["pitch_l1_loss"] = F.l1_loss(
-            pitch_predict, x.model_inputs.pitch.unsqueeze(-1)
-        )
 
         invert_durations = x.model_inputs.additional_inputs["word_invert_durations"]
         durations = x.model_inputs.additional_inputs["word_durations"]

@@ -558,6 +558,13 @@ class VocosLightningEngine(pl.LightningModule):
         checkpoint.update(self.saver.to_save)
 
     def on_after_backward(self) -> None:
+        self.melspec_loss.zero_grad()
+        self.mr_melspec_loss.zero_grad()
+
+        for loss_fn in [self.sm_loss, self.wavlm_loss, self.cdpam_loss]:
+            if loss_fn is not None:
+                loss_fn.zero_grad()
+
         if not self.detect_grad_nan:
             return
 

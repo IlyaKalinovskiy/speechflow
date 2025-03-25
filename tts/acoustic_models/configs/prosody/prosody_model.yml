@@ -11,7 +11,7 @@ batch:
   type: TTSBatchProcessor
 
 data_loaders:
-  batch_size: { default: 16, debug: 2 }
+  batch_size: { default: 128, debug: 2 }
   min_batch_size: 2
   min_prefetch_factor: { default: 50, debug: 1 }
   max_prefetch_factor: { default: 150, debug: 1 }
@@ -75,11 +75,11 @@ model:
           condition_type: DiT
 
     encoder_type: ProsodyEncoder
-    encoder_num_layers: 6
-    encoder_inner_dim: 512
-    encoder_output_dim: 1024
+    encoder_num_layers: 2
+    encoder_inner_dim: 1024
+    encoder_output_dim: 512
     encoder_params:
-      p_dropout: 0.2
+      p_dropout: 0.1
       mt_embed_dim: 1024
       mt_num_heads: 2
       mt_layers: 4

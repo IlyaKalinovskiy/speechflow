@@ -311,6 +311,10 @@ class SpeakerSimilarityLoss(nn.Module):
         sm_loss = self.bio_proc.compute_sm_loss(y_hat_16khz, y_16khz)
         return torch.mean(sm_loss, dim=0)
 
+    def zero_grad(self, set_to_none: bool = True) -> None:
+        self.bio_proc.model.zero_grad()
+        self.resample.zero_grad()
+
 
 class WavLMLoss(torch.nn.Module):
     def __init__(
@@ -355,6 +359,10 @@ class WavLMLoss(torch.nn.Module):
 
         return floss.mean()
 
+    def zero_grad(self, set_to_none: bool = True) -> None:
+        self.wavlm.zero_grad()
+        self.resample.zero_grad()
+
 
 class CDPAMLoss(nn.Module):
     def __init__(self, device: str = "cpu"):
@@ -382,13 +390,15 @@ class CDPAMLoss(nn.Module):
         y_hat = (y_hat * 32768.0).unsqueeze(1)
         y = (y * 32768.0).unsqueeze(1)
 
-        _, enc_hat, _ = self.cdpam.model.base_encoder.forward(y_hat)
-
         with torch.no_grad():
             _, enc_gt, _ = self.cdpam.model.base_encoder.forward(y)
+            enc_gt = F.normalize(enc_gt.float(), dim=1)
 
+        _, enc_hat, _ = self.cdpam.model.base_encoder.forward(y_hat)
         enc_hat = F.normalize(enc_hat.float(), dim=1)
-        enc_gt = F.normalize(enc_gt.float(), dim=1)
 
         cdpam_loss = self.cdpam.model.model_dist.forward(enc_hat, enc_gt.detach())
         return torch.mean(cdpam_loss, dim=0)
+
+    def zero_grad(self, set_to_none: bool = True) -> None:
+        self.cdpam.model.zero_grad()

@@ -107,6 +107,10 @@ class VoiceBiometricProcessor(BaseDSProcessor):
             )
 
     @property
+    def model(self) -> torch.nn.Module:
+        return self._encoder
+
+    @property
     def target_sample_rate(self) -> int:
         return self._sample_rate
 
