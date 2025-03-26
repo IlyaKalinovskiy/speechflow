@@ -278,7 +278,7 @@ class HierarchicalVarianceAdaptor(Component):
 
         if (
             (self.training and var_params.use_target)
-            or kwargs.get("use_target_durations", False)
+            or kwargs.get("use_target_variances", False)
         ) and targets.get(DP_NAME) is not None:
             durations = targets[DP_NAME]
         else:
@@ -459,7 +459,7 @@ class HierarchicalVarianceAdaptor(Component):
 
         for name, prediction in variance_predictions.items():
             embeddings, variance = self._postprocessing_variance(
-                name, prediction, targets.get(name), model_inputs
+                name, prediction, targets.get(name), model_inputs, **kwargs
             )
             variance_embeddings[name] = embeddings
             variance_content[name].update({f"{name}_postprocessed": variance})
@@ -481,11 +481,15 @@ class HierarchicalVarianceAdaptor(Component):
         prediction,
         target,
         model_inputs,
+        **kwargs,
     ):
         variance_params = self.va_variance_params[name]
         ranges = model_inputs.ranges
 
-        if self.training and variance_params.use_target and target is not None:
+        if (
+            (self.training and variance_params.use_target)
+            or kwargs.get("use_target_variances", False)
+        ) and target is not None:
             variance = target
         else:
             variance = (

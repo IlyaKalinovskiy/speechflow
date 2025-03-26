@@ -22,6 +22,7 @@ from tts.acoustic_models.modules.additional_modules import (
     AdditionalModules,
     AdditionalModulesParams,
 )
+from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.embedding import EmbeddingComponent
 from tts.acoustic_models.modules.general_condition import GeneralCondition, ModelLevel
 from tts.acoustic_models.modules.params import *
@@ -99,6 +100,7 @@ class ParallelTTSModel(BaseTorchModel):
             self.decoder = cls(decoder_params, input_dim=self.cond_module_2.output_dim)
             output_dim = self.decoder.output_dim
         else:
+            self.cond_module_2 = None
             self.decoder = None
 
         if params.postnet_type is not None:
@@ -121,6 +123,33 @@ class ParallelTTSModel(BaseTorchModel):
     @property
     def device(self) -> torch.device:
         return self.embedding_component.emb_calculator.embedding.weight.device
+
+    @property
+    def last_module(self) -> Component:
+        for module in reversed(
+            [
+                self.cond_module_0,
+                self.encoder,
+                self.cond_module_1,
+                self.va[-1],
+                self.cond_module_2,
+                self.decoder,
+                self.cond_module_3,
+                self.postnet,
+            ]
+        ):
+            if module is not None:
+                return module
+        else:
+            raise RuntimeError(f"Invalid {self.__class__.__name__} configuration!")
+
+    @property
+    def output_dim(self) -> int:
+        out_dim = self.last_module.output_dim
+        if isinstance(out_dim, int):
+            return out_dim
+        else:
+            return out_dim[0]
 
     def _encode_inputs(self, inputs, inference: bool = False):
         """Utility method that reduces code duplication."""
@@ -161,9 +190,12 @@ class ParallelTTSModel(BaseTorchModel):
         if self.decoder is not None:
             x = self.cond_module_2(va_output)
             x = self.decoder(x)  # type: ignore
+            gate = getattr(x, "gate", None)
+        else:
+            x = va_output
+            gate = None
 
         s_all = x.stack_content()
-        decoder_output = x
 
         if self.postnet is not None:
             x = self.cond_module_3(x)
@@ -176,9 +208,9 @@ class ParallelTTSModel(BaseTorchModel):
         output = TTSForwardOutput(
             spectrogram=s_all,
             spectrogram_lengths=x.content_lengths,
-            after_postnet_spectrogram=x.content,
+            after_postnet_spectrogram=s_all[-1],
+            gate=gate,
             variance_predictions=variance_predictions,
-            gate=getattr(decoder_output, "gate", None),
             additional_content=x.additional_content,
             additional_losses=x.additional_losses,
             embeddings=x.embeddings,
@@ -192,10 +224,13 @@ class ParallelTTSModel(BaseTorchModel):
             x, inference=True, **kwargs
         )
 
-        x = self.cond_module_2.inference(va_output)
-        x = self.decoder.inference(x)  # type: ignore
-
-        decoder_output = x
+        if self.decoder is not None:
+            x = self.cond_module_2.inference(va_output)
+            x = self.decoder.inference(x)
+            gate = getattr(x, "gate", None)
+        else:
+            x = va_output
+            gate = None
 
         if self.postnet is not None:
             x = self.cond_module_3(x)
@@ -205,8 +240,8 @@ class ParallelTTSModel(BaseTorchModel):
             spectrogram=x.content,
             spectrogram_lengths=x.content_lengths,
             after_postnet_spectrogram=x.content,
+            gate=gate,
             variance_predictions=variance_predictions,
-            gate=decoder_output.gate,
             additional_content=x.additional_content,
             additional_losses=x.additional_losses,
             embeddings=x.embeddings,

@@ -55,7 +55,7 @@ class SpeechQualityAssessment(BaseDSProcessor):
                 f"but got model_type={model_type}!"
             )
 
-        self.logging_transform_params(locals())
+        self.logging_params(self.get_config_from_locals())
 
     def init(self):
         from speechflow.thirdparty.nisqa.NISQA_model import nisqaModel

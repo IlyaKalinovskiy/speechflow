@@ -1,11 +1,11 @@
 import os
 
 import torch
-import fairseq
 import requests
 import torch.nn as nn
 import pytorch_lightning as pl
 
+from fairseq.models.wav2vec import FairseqTask, Wav2Vec2Config, Wav2Vec2Model
 from tqdm import tqdm
 
 UTMOS_CKPT_URL = "https://huggingface.co/spaces/sarulab-speech/UTMOS-demo/resolve/main/epoch%3D3-step%3D7459.ckpt"
@@ -20,14 +20,22 @@ adapted from https://huggingface.co/spaces/sarulab-speech/UTMOS-demo
 class UTMOSScore:
     """Predicting score for each audio clip."""
 
-    def __init__(self, device, ckpt_path="epoch=3-step=7459.ckpt"):
-        self.device = device
+    def __init__(self, device: str = "cpu", ckpt_path: str = "epoch=3-step=7459.ckpt"):
         filepath = os.path.join(os.path.dirname(__file__), ckpt_path)
         if not os.path.exists(filepath):
             download_file(UTMOS_CKPT_URL, filepath)
-        self.model = (
-            BaselineLightningModule.load_from_checkpoint(filepath).eval().to(device)
-        )
+
+        checkpoint = torch.load(filepath, weights_only=False, map_location="cpu")
+
+        self.model = BaselineLightningModule({})
+        self.model.load_state_dict(checkpoint["state_dict"])
+        self.model.eval().to(device)
+
+        self.device = device
+
+    def set_device(self, device: str):
+        self.device = device
+        self.model.eval().to(device)
 
     def score(self, wavs: torch.Tensor) -> torch.Tensor:
         """
@@ -83,9 +91,16 @@ def load_ssl_model(ckpt_path="wav2vec_small.pt"):
     filepath = os.path.join(os.path.dirname(__file__), ckpt_path)
     if not os.path.exists(filepath):
         download_file(WAV2VEC_URL, filepath)
+
+    checkpoint = torch.load(filepath, weights_only=False, map_location="cpu")
+
+    model_cfg = Wav2Vec2Config()
+    for k, v in vars(checkpoint["args"]).items():
+        if hasattr(model_cfg, k):
+            setattr(model_cfg, k, v)
+
     SSL_OUT_DIM = 768
-    model, cfg, task = fairseq.checkpoint_utils.load_model_ensemble_and_task([filepath])
-    ssl_model = model[0]
+    ssl_model = Wav2Vec2Model.build_model(model_cfg, FairseqTask({}))
     ssl_model.remove_pretraining_modules()
     return SSL_model(ssl_model, SSL_OUT_DIM)
 

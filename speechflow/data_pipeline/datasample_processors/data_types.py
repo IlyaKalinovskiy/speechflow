@@ -28,7 +28,7 @@ __all__ = [
     "ProsodyPredictionDataSample",
 ]
 
-tp_DATA = tp.Union[npt.NDArray, Tensor]
+tp_DATA = tp.Union[int, float, str, npt.NDArray, Tensor]
 
 
 @dataclass(eq=False)

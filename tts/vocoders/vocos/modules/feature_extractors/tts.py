@@ -19,7 +19,9 @@ __all__ = ["TTSFeatures", "TTSFeaturesParams"]
 class TTSFeaturesParams(ParallelTTSParams):
     pretrain_path: tp.Optional[tp_PATH] = None
     freeze: bool = False
+    train_end_iter: tp.Optional[int] = None
     spectral_loss_alpha: float = 10.0
+    spectral_loss_end_anneal_iter: tp.Optional[int] = None
 
 
 class TTSFeatures(FeatureExtractor):
@@ -55,8 +57,8 @@ class TTSFeatures(FeatureExtractor):
             scale=0.00002, every_iter=1, begin_iter=1000, end_anneal_iter=10000
         )
 
-        if params.decoder_output_dim != params.mel_spectrogram_dim:
-            self.proj = Regression(params.decoder_output_dim, params.mel_spectrogram_dim)
+        if self.tts_model.output_dim != params.mel_spectrogram_dim:
+            self.proj = Regression(self.tts_model.output_dim, params.mel_spectrogram_dim)
         else:
             self.proj = torch.nn.Identity()
 
@@ -118,16 +120,20 @@ class TTSFeatures(FeatureExtractor):
         losses = {}
         additional_content = {}
 
+        if self.params.train_end_iter is not None:
+            if inputs.global_step >= self.params.train_end_iter:
+                self.freeze = True
+
         if inputs.__class__.__name__ != "TTSForwardInputWithSSML":
 
             if self.freeze:
                 with torch.no_grad():
                     outputs: TTSForwardOutput = self.tts_model(
-                        inputs, use_target_durations=True
+                        inputs, use_target_variances=True
                     )
             else:
                 outputs: TTSForwardOutput = self.tts_model(
-                    inputs, use_target_durations=True
+                    inputs, use_target_variances=True
                 )
                 losses = outputs.additional_losses
 
@@ -148,7 +154,19 @@ class TTSFeatures(FeatureExtractor):
             for predict in outputs.spectrogram:
                 spec_loss = spec_loss + F.l1_loss(self.proj(predict), target_spec)
 
-            losses["spectral_l1_loss"] = self.params.spectral_loss_alpha * spec_loss
+            if self.params.spectral_loss_end_anneal_iter is not None:
+                if inputs.global_step < self.params.spectral_loss_end_anneal_iter:
+                    scale = (
+                        1 - inputs.global_step / self.params.spectral_loss_end_anneal_iter
+                    ) ** 2
+                else:
+                    scale = 0
+            else:
+                scale = 1
+
+            losses["spectral_l1_loss"] = (
+                self.params.spectral_loss_alpha * scale * spec_loss
+            )
 
         if self.training and not self.freeze:
             for name, loss in losses.items():

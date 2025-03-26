@@ -1,12 +1,13 @@
 import os
 import enum
 import typing as tp
+import inspect
 
 from copy import deepcopy as copy
 
 from speechflow.data_pipeline.core.datasample import DataSample
 from speechflow.io import Config
-from speechflow.utils.init import get_default_args, init_method_from_config
+from speechflow.utils.init import init_method_from_config
 
 __all__ = ["BaseDSProcessor", "ComputeBackend"]
 
@@ -49,14 +50,30 @@ class BaseDSProcessor:
             self.transform_params[step_name] = copy(params)  # type: ignore
 
     @staticmethod
-    def get_config_from_locals(local: tp.Dict[str, tp.Any]) -> Config:
-        args = {k: v for k, v in local.items() if not k.startswith("_") and k != "self"}
+    def get_config_from_locals(ignore: tp.Optional[tp.List[str]] = None) -> Config:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            frame = current_frame.f_back
+            local = frame.f_locals
+        else:
+            local = {}
+
+        ignore = ([] if ignore is None else list(ignore)) + ["self"]
+        args = {
+            k: v
+            for k, v in local.items()
+            if k not in ignore and not k.startswith("__") and not isinstance(v, type)
+        }
+
+        if "kwargs" in args and isinstance(args["kwargs"], tp.Dict):
+            args.update(args.pop("kwargs"))
+
         return Config(args)
 
-    def logging_transform_params(self, params: tp.Dict[str, tp.Any]):
-        params = {
-            k: v for k, v in params.items() if not k.startswith("_") and k != "self"
-        }
+    def logging_params(self, params: tp.Union[Config, tp.Dict[str, tp.Any]]):
+        if isinstance(params, Config):
+            params = params.to_dict()
+
         self.transform_params.update({self.__class__.__name__: params})
 
     def init(self):

@@ -65,7 +65,7 @@ engine:
     # disc_pretrain_path: bigvgan_discriminator_optimizer.pt
 
     # automatic evaluation
-    evaluate_utmos: false
+    evaluate_utmos: true
     evaluate_pesq: true
     evaluate_periodicty: true
 

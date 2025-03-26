@@ -87,10 +87,10 @@ class SpecAugProcessor(WaveAugProcessor):
 class NemoSpecAugProcessor(BaseDSProcessor):
     def __init__(self, attributes: tp.Union[str, tp.List[str]], p: float = 1.0, **kwargs):
         super().__init__()
-        self._spec_aug_cfg = self.get_config_from_locals(locals())
+        self._spec_aug_cfg = self.get_config_from_locals()
         self._atts = [attributes] if isinstance(attributes, str) else attributes
         self._p = p
-        self.logging_transform_params(locals())
+        self.logging_params(self.get_config_from_locals())
         self._nemo_spec_aug = None
 
     def init(self):

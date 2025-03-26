@@ -349,7 +349,7 @@ class SSLProcessor(BaseAudioProcessor):
         self._ssl_params = ssl_params
         self._ssl_model = None
         self._use_precompute = use_precompute
-        self.logging_transform_params(locals())
+        self.logging_params(self.get_config_from_locals())
 
     def init(self):
         super().init()
@@ -393,7 +393,7 @@ class ACProcessor(BaseAudioProcessor):
         self._ac_params = ac_params
         self._resynt = resynt
         self._ac_model = None
-        self.logging_transform_params(locals())
+        self.logging_params(self.get_config_from_locals())
 
     def init(self):
         super().init()

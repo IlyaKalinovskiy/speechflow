@@ -6,11 +6,11 @@ import torch
 
 from torch import Tensor
 
-__all__ = ["pad_1d", "pad_2d", "get_mask_from_lengths2"]
+__all__ = ["pad_1d", "pad_2d"]
 
 
 def pad_1d(
-    sequences: tp.List[Tensor],
+    sequences: tp.Sequence[Tensor],
     pad_val: tp.Union[int, float] = 0,
     multiple: tp.Optional[int] = None,
 ):
@@ -39,7 +39,7 @@ def pad_1d(
 
 
 def pad_2d(
-    sequences: tp.List[Tensor],
+    sequences: tp.Sequence[Tensor],
     n_channel: int,
     pad_val: tp.Union[int, float] = 0,
     multiple: tp.Optional[int] = None,
@@ -69,7 +69,7 @@ def pad_2d(
 
 
 def pad_3d(
-    sequences: tp.List[Tensor],
+    sequences: tp.Sequence[Tensor],
     pad_id: tp.Union[int, float] = 0,
     width: int = 8,
     height: int = 80,
@@ -88,10 +88,3 @@ def pad_3d(
         tensor_to_fill[i, : lens[i], :, :] = s
 
     return tensor_to_fill, lens
-
-
-def get_mask_from_lengths2(lengths_tensor: Tensor) -> Tensor:
-    max_len = torch.max(lengths_tensor).item()
-    ids = torch.tensor(range(0, max_len), dtype=torch.int64, device=lengths_tensor.device)
-    mask = ids < lengths_tensor.unsqueeze(1)
-    return mask  # type: ignore

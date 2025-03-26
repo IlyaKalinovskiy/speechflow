@@ -84,7 +84,7 @@ class TTSTextProcessor(BaseDSProcessor):
         from multilingual_text_parser.parser import TextParser
 
         super().__init__()
-        self.logging_transform_params(locals())
+        self.logging_params(self.get_config_from_locals())
 
         text_parser = TextParser(lang=lang, cfg={"pipe": []})
 
@@ -909,7 +909,8 @@ class LMProcessor(BaseDSProcessor):
         self._by_transcription = by_transcription
         self._tokenizer = None
         self._model = None
-        self.logging_transform_params(locals())
+
+        self.logging_params(self.get_config_from_locals())
 
     def init(self):
         super().init()

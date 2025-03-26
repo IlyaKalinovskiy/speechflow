@@ -11,7 +11,7 @@ import numpy as np
 import numpy.typing as npt
 
 from annoy import AnnoyIndex
-from multilingual_text_parser.data_types import Doc, Syntagma, Token, TokenUtils
+from multilingual_text_parser.data_types import Syntagma, Token, TokenUtils
 from scipy import interpolate, signal
 
 from speechflow.data_pipeline.core.registry import PipeRegistry
@@ -1068,6 +1068,7 @@ class ContoursExtractor:
 
 
 if __name__ == "__main__":
+    from multilingual_text_parser.data_types import Doc
     from multilingual_text_parser.parser import TextParser
 
     _lang = "KK"

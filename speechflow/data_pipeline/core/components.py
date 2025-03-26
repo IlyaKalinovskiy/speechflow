@@ -556,7 +556,9 @@ class DataPipeline:
             set_component(pipe, "collate", collate)
             set_component(pipe, "sampler", sampler)
 
-            pipe.singleton_handlers = singleton_handlers
+            pipe.singleton_handlers = (
+                singleton_handlers if singleton_handlers is not None else {}
+            )
 
             pipe.data_processor = init_class_from_config(
                 data_processor.DataProcessor, cfg.section("processor")

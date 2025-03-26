@@ -11,7 +11,6 @@ from pathlib import Path
 
 import git
 import torch
-import multilingual_text_parser
 
 from pytorch_lightning.callbacks import ModelCheckpoint
 
@@ -68,13 +67,17 @@ class ExperimentSaver:
             "files": additional_files,
             "scripts": self.script_files,
             "commit_hash": commit_hash,
-            "versions": {
-                "speechflow": speechflow.__version__,
-                "libs": {
-                    "text_parser": multilingual_text_parser.__version__,
-                },
-            },
+            "versions": {"speechflow": speechflow.__version__, "libs": {}},
         }
+
+        try:
+            import multilingual_text_parser
+
+            self.to_save["versions"]["libs"][
+                "text_parser"
+            ] = multilingual_text_parser.__version__
+        except ImportError:
+            pass
 
     @property
     def checkpoints_dir(self) -> Path:

@@ -17,6 +17,7 @@ from tts.vocoders.batch_processor import VocoderBatchProcessor
 from tts.vocoders.data_types import VocoderForwardInput
 from tts.vocoders.vocos import losses
 from tts.vocoders.vocos.helpers import plot_spectrogram_to_numpy
+from tts.vocoders.vocos.metrics.utmos import UTMOSScore
 from tts.vocoders.vocos.modules.backbones.base import Backbone
 from tts.vocoders.vocos.modules.discriminators import (
     MultiPeriodDiscriminator,
@@ -162,6 +163,11 @@ class VocosLightningEngine(pl.LightningModule):
         else:
             self.cdpam_loss = None
 
+        if self.hparams.evaluate_utmos:
+            self.utmos_model = UTMOSScore(device=loss_device)
+        else:
+            self.utmos_model = None
+
         self.train_discriminator = False
         self.base_mel_coeff = self.mel_loss_coeff = mel_loss_coeff
         self.detect_grad_nan = detect_grad_nan
@@ -179,7 +185,7 @@ class VocosLightningEngine(pl.LightningModule):
 
     def on_fit_start(self):
         self.batch_processor.set_device(self.device)
-        for loss in [self.sm_loss, self.wavlm_loss, self.cdpam_loss]:
+        for loss in [self.sm_loss, self.wavlm_loss, self.cdpam_loss, self.utmos_model]:
             if loss is not None:
                 if self.hparams.loss_device == "cpu":
                     loss.set_device(str(self.device))
@@ -425,13 +431,6 @@ class VocosLightningEngine(pl.LightningModule):
                 )
 
             return loss
-
-    def on_validation_epoch_start(self):
-        if self.hparams.evaluate_utmos:
-            from tts.vocoders.vocos.metrics.utmos import UTMOSScore
-
-            if not hasattr(self, "utmos_model"):
-                self.utmos_model = UTMOSScore(device=self.device)
 
     def validation_step(self, batch, batch_idx, **kwargs):
         inputs, targets, metadata = self.batch_processor(

@@ -61,7 +61,7 @@ engine:
     # disc_pretrain_path: bigvgan_discriminator_optimizer.pt
 
     # automatic evaluation
-    evaluate_utmos: false
+    evaluate_utmos: true
     evaluate_pesq: true
     evaluate_periodicty: true
 
@@ -71,6 +71,9 @@ model:
   feature_extractor:
     class_name: TTSFeatures
     init_args:
+      train_end_iter: 200000
+      spectral_loss_end_anneal_iter: 200000
+
       input: [transcription, transcription]
 
       token_emb_dim: 256
@@ -120,26 +123,7 @@ model:
 
       va_type: HierarchicalVarianceAdaptor
 
-      # decoder_type: ForwardDecoder
-      # decoder_num_layers: 2
-      # decoder_inner_dim: 512
-      # decoder_output_dim: 512
-      # decoder_params:
-      #   condition: [speaker_emb]
-      #   condition_dim: 256
-      #   condition_type: AdaNorm
-
-      decoder_type: WrapperDecoder
-      decoder_num_layers: 6
-      decoder_inner_dim: 512
-      decoder_output_dim: 512
-      decoder_params:
-        base_decoder_type: DiTEncoder
-        base_decoder_params:
-          cnn_n_layers: 0
-          condition: [speaker_emb]
-          condition_dim: 256
-
+      decoder_type: ~
       postnet_type: ~
 
       addm_apply_inverse_speaker_classifier:
@@ -154,6 +138,7 @@ model:
         spectrogram_style_encoder:
           tag: style_emb
           as_encoder: true
+          cat_to_content: [1]
           predictor_type: StyleEncoder
           predictor_params:
             vp_params:
@@ -167,6 +152,7 @@ model:
         biometric_style_encoder:
           tag: style_emb
           as_encoder: true
+          cat_to_content: [1]
           predictor_type: StyleEncoder
           predictor_params:
             vp_params:
@@ -241,6 +227,6 @@ model:
   head:
     class_name: NSFHiFiGANHead
     init_args:
-      input_dim: 512
+      input_dim: 662
       condition_dim: 128
       decode_upsample: false

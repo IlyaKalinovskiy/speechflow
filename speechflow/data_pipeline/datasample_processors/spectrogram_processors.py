@@ -656,17 +656,16 @@ class NemoMelProcessor(BaseSpectrogramProcessor):
         **kwargs,
     ):
         super().__init__()
-        window_size = win_len / sample_rate
-        window_stride = hop_len / sample_rate
-        features = n_mels
-        self._mel_cfg = self.get_config_from_locals(locals())
-        self._mel_cfg.pop("win_len")
-        self._mel_cfg.pop("hop_len")
-        self._mel_cfg.pop("n_mels")
-        self._mel_cfg.pop("kwargs")
-        self._mel_cfg.update(kwargs)
+        self._mel_cfg = self.get_config_from_locals(
+            ignore=["win_len", "hop_len", "n_mels"]
+        )
+        self._mel_cfg["window_size"] = win_len / sample_rate
+        self._mel_cfg["window_stride"] = hop_len / sample_rate
+        self._mel_cfg["features"] = n_mels
+
         self._mel_module = None
-        self.logging_transform_params(locals())
+
+        self.logging_params(self.get_config_from_locals())
 
     def init(self):
         super().init()
@@ -708,7 +707,7 @@ class PitchProcessor(BaseSpectrogramProcessor):
         self.pyworld_frame_period = pyworld_frame_period
         self.torchcrepe_model = torchcrepe_model
         self.torchcrepe_batch_size = torchcrepe_batch_size
-        self.logging_transform_params(locals())
+        self.logging_params(self.get_config_from_locals())
 
     @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"pitch"})
     @lazy_initialization  # required for automatic device selection
