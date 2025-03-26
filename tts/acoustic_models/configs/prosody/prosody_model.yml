@@ -79,7 +79,6 @@ model:
     encoder_inner_dim: 1024
     encoder_output_dim: 512
     encoder_params:
-      p_dropout: 0.1
       mt_embed_dim: 1024
       mt_num_heads: 2
       mt_layers: 4

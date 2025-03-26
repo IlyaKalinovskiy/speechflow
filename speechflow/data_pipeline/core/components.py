@@ -533,9 +533,11 @@ class DataPipeline:
         collate=None,
         sampler=None,
         singleton_handlers=None,
+        **kwargs,
     ):
         cfg = Config.empty({"dataset"})
         cfg["dataset"]["subsets"] = data_subsets
+        cfg.update(**kwargs)
 
         data_pipeline = DataPipeline(cfg)
         data_pipeline.init_components()

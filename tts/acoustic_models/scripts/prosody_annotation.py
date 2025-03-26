@@ -230,9 +230,6 @@ def main(
 
     cfg_data["preproc"]["pipe"].remove("contours")
 
-    # if "vtlp" in cfg_data["preproc"]["pipe"]:
-    #     cfg_data["preproc"]["pipe"].remove("vtlp")
-
     if data_root is not None:
         cfg_data["dirs"].data_root = data_root.as_posix()
 
@@ -242,13 +239,6 @@ def main(
     cfg_data["parser"].dump_path = dump_path.as_posix()
     cfg_data["processor"]["dump"].data_root = cfg_data["dirs"].data_root
     cfg_data["processor"]["dump"].dump_path = dump_path.as_posix()
-    cfg_data["processor"]["dump"].handlers = [
-        "VoiceBiometricProcessor",
-        "SSLProcessor",
-        "PitchProcessor",
-        "XPBertProcessor",
-        "LMProcessor",
-    ]
 
     if "SpeakerIDSetter" in cfg_data.get("singleton_handlers", {}):
         cfg_data["singleton_handlers"][

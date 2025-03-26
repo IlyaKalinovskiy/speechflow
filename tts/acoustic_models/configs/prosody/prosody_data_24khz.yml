@@ -41,8 +41,7 @@ parser:
 preproc:
   pipe: [load_audio, load_audio_segmentation,
          voice_bio_speechbrain, store_bio_emb, voice_bio_wespeaker, mean_bio_embedding,
-         spectrogram, melscale, pitch,
-         ssl, timedim_interpolation,
+         spectrogram, melscale, pitch, ssl, timedim_interpolation,
          add_pauses_from_timestamps, add_service_tokens, text, xpbert, lm,
          calc_durations, calc_invert_durations,
          normalize_pitch, enhancement_pitch, pitch_mean,

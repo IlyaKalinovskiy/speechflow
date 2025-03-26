@@ -44,7 +44,7 @@ class ProsodyEncoder(Component):
         self.vq_encoder = VQEncoder(params, input_dim)
         self.hard_lr = LengthRegulator()
         self.soft_lr = SoftLengthRegulator()
-        self.dropout = nn.Dropout2d(params.p_dropout)
+        self.dropout = nn.Identity()  # nn.Dropout2d(params.p_dropout)
 
     @property
     def output_dim(self):

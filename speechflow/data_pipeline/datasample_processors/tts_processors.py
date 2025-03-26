@@ -574,7 +574,8 @@ def calc_durations(
 def calc_invert_durations(ds: TTSDataSample, token_level: bool = False):
     invert = []
     for dura in ds.durations:
-        invert += [1 / dura] * dura
+        if dura > 0:
+            invert += [1 / dura] * dura
 
     ds.invert_durations = np.array(invert, dtype=np.float32)
 
