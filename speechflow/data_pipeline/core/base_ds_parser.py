@@ -206,6 +206,7 @@ class BaseDSParser:
                     memory_bound=memory_bound,
                     chunk_size=chunk_size,
                     release_func=release_func,
+                    progress_bar=progress_bar,
                 )
 
         return all_metadata
@@ -365,6 +366,7 @@ class BaseDSParser:
             memory_bound=self.memory_bound,
             chunk_size=self.chunk_size,
             release_func=self.release_func,
+            progress_bar=self.progress_bar,
         )
         if n_processes > 1:
             LOGGER.info(
@@ -404,6 +406,7 @@ class BaseDSParser:
                 memory_bound=self.memory_bound,
                 chunk_size=self.chunk_size,
                 release_func=self.release_func,
+                progress_bar=self.progress_bar,
             )
             assert all_metadata, "metadata not read!"
 

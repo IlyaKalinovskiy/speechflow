@@ -42,11 +42,11 @@ preproc:
   pipe: [load_audio, load_audio_segmentation,
          voice_bio_speechbrain, store_bio_emb, voice_bio_wespeaker, mean_bio_embedding,
          spectrogram, melscale, pitch,
+         ssl, timedim_interpolation,
          add_pauses_from_timestamps, add_service_tokens, text, xpbert, lm,
          calc_durations, calc_invert_durations,
          normalize_pitch, enhancement_pitch, pitch_mean,
-         contours, normalize_durations,
-         vtlp, ssl, timedim_interpolation]
+         contours, normalize_durations]
   pipe_cfg:
     load_audio:
       type: SignalProcessor
@@ -86,6 +86,15 @@ preproc:
     pitch:
       type: PitchProcessor
       method: torchcrepe  # pyworld, torchcrepe
+    ssl:
+      type: SSLProcessor
+      ssl_type: Wav2Vec
+      ssl_params:
+        feature_type: partial
+        level: 12  # 23
+    timedim_interpolation:
+      features: [ssl_feat]
+      shape_as: mel
     add_pauses_from_timestamps:
       step: 0.05
       calc_noise_level: True
@@ -134,24 +143,6 @@ preproc:
       type: ContoursExtractor
       index_file: !join [*data_root, *dump_folder, index.ann]
       labels_file: !join [*data_root, *dump_folder, labels.npy]
-    vtlp:
-      type: WaveAugProcessor
-      p: { train: 1.0, test: 0.0 }
-      pipe: [vtlp]
-      pipe_cfg:
-        vtlp:
-          p: 0.25
-          alpha_min: 0.95
-          alpha_max: 1.05
-    ssl:
-      type: SSLProcessor
-      ssl_type: Wav2Vec
-      ssl_params:
-        feature_type: partial
-        level: 12  # 23
-    timedim_interpolation:
-      features: [ssl_feat]
-      shape_as: mel
 
 singleton_handlers:
   handlers: [SpeakerIDSetter, StatisticsRange, MeanBioEmbeddings]

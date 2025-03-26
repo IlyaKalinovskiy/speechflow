@@ -223,13 +223,15 @@ def main(
     model = model_cls(checkpoint["params"])
     model.eval()
     model.load_state_dict(checkpoint["state_dict"])
-    model.to(model_device)
 
     batch_processor_cls = getattr(acoustic_models, cfg_model["batch"]["type"])
     batch_processor = init_class_from_config(batch_processor_cls, cfg_model["batch"])()
     batch_processor.set_device(model_device)
 
     cfg_data["preproc"]["pipe"].remove("contours")
+
+    # if "vtlp" in cfg_data["preproc"]["pipe"]:
+    #     cfg_data["preproc"]["pipe"].remove("vtlp")
 
     if data_root is not None:
         cfg_data["dirs"].data_root = data_root.as_posix()
@@ -240,6 +242,13 @@ def main(
     cfg_data["parser"].dump_path = dump_path.as_posix()
     cfg_data["processor"]["dump"].data_root = cfg_data["dirs"].data_root
     cfg_data["processor"]["dump"].dump_path = dump_path.as_posix()
+    cfg_data["processor"]["dump"].handlers = [
+        "VoiceBiometricProcessor",
+        "SSLProcessor",
+        "PitchProcessor",
+        "XPBertProcessor",
+        "LMProcessor",
+    ]
 
     if "SpeakerIDSetter" in cfg_data.get("singleton_handlers", {}):
         cfg_data["singleton_handlers"][
@@ -293,7 +302,7 @@ def main(
 
     print("Run dataset redefine")
     redefine_dataset(
-        model=model,
+        model=model.to(model_device),
         batch_processor=batch_processor,
         labels=mapping,
         config=cfg_data,

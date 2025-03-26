@@ -581,7 +581,8 @@ def calc_invert_durations(ds: TTSDataSample, token_level: bool = False):
     if token_level:
         invert = []
         for d in ds.aggregated["word_durations"]:
-            invert += [1 / d] * d
+            if d > 0:
+                invert += [1 / d] * d
 
         ds.aggregated["word_invert_durations"] = np.array(invert, dtype=np.float32)
 
