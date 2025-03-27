@@ -1,4 +1,5 @@
 import uuid
+import pickle
 import typing as tp
 import logging
 import argparse
@@ -76,6 +77,11 @@ class DataServer(ProcessWorker):
 
         self._gpus = self.init_gpus(n_gpus) if isinstance(n_gpus, int) else n_gpus
 
+        try:
+            self._pipe_serialize = Serialize.dump(data_pipeline)
+        except (TypeError, pickle.PickleError):
+            self._pipe_serialize = None
+
     @property
     def address(self) -> str:
         return self._addr_for_clients
@@ -125,6 +131,10 @@ class DataServer(ProcessWorker):
         self._zmq_server = ZMQPatterns.server(
             self._addr_for_clients, self._addr_for_workers
         )
+
+        if self._pipe_serialize is not None:
+            self._pipe = Serialize.load(self._pipe_serialize)
+
         self._pipe.init_components()
         self._pipe.load_data(n_processes=self._n_processes)
 

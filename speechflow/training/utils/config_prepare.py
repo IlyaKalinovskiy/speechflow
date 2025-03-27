@@ -164,13 +164,17 @@ def model_config_prepare(
             }
         ExperimentSaver.save_checkpoint(checkpoint, new_ckpt_path)
 
-        cfg_model["trainer"]["resume_from_checkpoint"] = new_ckpt_path
+        cfg_model["trainer"]["resume_from_checkpoint"] = (
+            new_ckpt_path.as_posix() if isinstance(new_ckpt_path, Path) else new_ckpt_path
+        )
 
     if resume_from:
         assert model_config_path and data_config_path
         cfg_model["experiment_path"] = resume_from.as_posix()
         ckpt_path = ExperimentSaver.get_last_checkpoint(resume_from)
-        cfg_model["trainer"]["resume_from_checkpoint"] = ckpt_path
+        cfg_model["trainer"]["resume_from_checkpoint"] = (
+            ckpt_path.as_posix() if isinstance(ckpt_path, Path) else ckpt_path
+        )
 
     if (
         cfg_model["trainer"].get("resume_from_checkpoint") is not None
@@ -194,7 +198,9 @@ def model_config_prepare(
                     speaker_id_setter is not None
                     and speaker_id_setter.get("resume_from_checkpoint") is None
                 ):
-                    speaker_id_setter["resume_from_checkpoint"] = ckpt_path
+                    speaker_id_setter["resume_from_checkpoint"] = (
+                        ckpt_path.as_posix() if isinstance(ckpt_path, Path) else ckpt_path
+                    )
                     shutil.copy(path, path.with_name(f"{path.name}_orig"))
                     cfg_data.to_file(path)
 

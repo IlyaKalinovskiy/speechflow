@@ -368,7 +368,7 @@ class BaseDSParser:
             release_func=self.release_func,
             progress_bar=self.progress_bar,
         )
-        if n_processes > 1:
+        if self.progress_bar:
             LOGGER.info(
                 trace(self, message=f"Prepared {len(all_datasample)} datasamples")
             )

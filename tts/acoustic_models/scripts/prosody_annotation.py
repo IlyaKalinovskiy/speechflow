@@ -2,8 +2,6 @@ import typing as tp
 import logging
 import argparse
 
-from collections import defaultdict
-from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -16,9 +14,12 @@ from speechflow.data_pipeline.core import BaseBatchProcessor
 from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
     TTSTextProcessor,
 )
-from speechflow.data_pipeline.dataset_parsers import EasyDSParser
-from speechflow.data_server.helpers import dataset_iterator
-from speechflow.io import AudioSeg, Config
+from speechflow.data_server.helpers import (
+    LoaderParams,
+    get_dataset_iterator,
+    init_data_loader,
+)
+from speechflow.io import AudioSeg
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.gpu_info import get_freer_gpu
 from speechflow.utils.init import init_class_from_config
@@ -85,7 +86,7 @@ def parse_args():
         default="cpu",
     )
     arguments_parser.add_argument(
-        "-n_cls", "--n_classes", help="number of prosodic classes", type=int, default=0
+        "-ncls", "--n_classes", help="number of prosodic classes", type=int, default=0
     )
     arguments_parser.add_argument(
         "-m", "--mapping_file", help="file to store mapping", type=Path, default=None
@@ -105,8 +106,7 @@ def parse_args():
     return arguments_parser.parse_args()
 
 
-def update_sega(obj: tp.Any, output_ext: str):
-    tg_path, tokens, indices, labels = obj
+def update_sega(tg_path, tokens, indices, labels, output_ext: str):
     # if tg_path.with_suffix(textgrid_ext_new).exists():
     #    continue
 
@@ -143,24 +143,13 @@ def update_sega(obj: tp.Any, output_ext: str):
 
 
 def redefine_dataset(
+    iterator,
     model,
     batch_processor: BaseBatchProcessor,
     labels: np.array,
-    config: tp.Optional[Config] = None,
-    value_select: tp.Optional[tp.List[str]] = None,
-    batch_size: int = 16,
-    n_processes: int = 1,
     textgrid_ext_new: str = ".TextGrid_prosody",
 ):
     """Function that adds additional layer with prosody to segs."""
-
-    iterator = dataset_iterator(
-        config=config,
-        value_select=value_select,
-        batch_size=batch_size,
-        n_processes=n_processes,
-        device=str(batch_processor.device),
-    )
 
     number_of_classes = np.zeros(labels.max() + 1)
     for batch in tqdm(iterator, total=len(iterator)):
@@ -171,7 +160,6 @@ def redefine_dataset(
 
         batch_indices = model_outputs.additional_content["encoding_indices_vq0_encoder_0"]
 
-        sega_list = []
         for idx, ds in enumerate(batch.data_samples):
             tg_path = ds.file_path
             tokens = tuple(
@@ -179,13 +167,9 @@ def redefine_dataset(
             )
             indices = batch_indices[idx][: model_inputs.num_words[idx]]
             assert len(tokens) == indices.shape[0]
-            sega_list.append((tg_path, tokens, indices.cpu(), labels))
 
-        parser = EasyDSParser(
-            func=partial(update_sega, output_ext=textgrid_ext_new), progress_bar=False
-        )
-        result = parser.run_from_object_list(sega_list, n_processes=n_processes)
-        number_of_classes += np.sum(result.to_list(), axis=0)
+            result = update_sega(tg_path, tokens, indices.cpu(), labels, textgrid_ext_new)
+            number_of_classes += result
 
     total_number_of_words = np.sum(number_of_classes)
     print("Percent of each class and its absolute number:")
@@ -216,9 +200,6 @@ def main(
     checkpoint = ExperimentSaver.load_checkpoint(ckpt_path)
     cfg_data, cfg_model = ExperimentSaver.load_configs_from_checkpoint(checkpoint)
 
-    if model_device == "cuda":
-        model_device = torch.device(f"cuda:{get_freer_gpu()}")
-
     model_cls = getattr(acoustic_models, cfg_model["model"]["type"])
     model = model_cls(checkpoint["params"])
     model.eval()
@@ -226,18 +207,19 @@ def main(
 
     batch_processor_cls = getattr(acoustic_models, cfg_model["batch"]["type"])
     batch_processor = init_class_from_config(batch_processor_cls, cfg_model["batch"])()
-    batch_processor.set_device(model_device)
 
     cfg_data["preproc"]["pipe"].remove("contours")
 
     if data_root is not None:
         cfg_data["dirs"].data_root = data_root.as_posix()
+    else:
+        data_root = Path(cfg_data["dirs"].data_root)
 
     if dump_path is None:
-        dump_path = Path(cfg_data.dirs.data_root) / cfg_data.dirs.dump_folder
+        dump_path = data_root / cfg_data.dirs.dump_folder
 
     cfg_data["parser"].dump_path = dump_path.as_posix()
-    cfg_data["processor"]["dump"].data_root = cfg_data["dirs"].data_root
+    cfg_data["processor"]["dump"].data_root = data_root.as_posix()
     cfg_data["processor"]["dump"].dump_path = dump_path.as_posix()
 
     if "SpeakerIDSetter" in cfg_data.get("singleton_handlers", {}):
@@ -291,16 +273,33 @@ def main(
             np.save(mapping_file.as_posix(), mapping)
 
     print("Run dataset redefine")
-    redefine_dataset(
-        model=model.to(model_device),
-        batch_processor=batch_processor,
-        labels=mapping,
+    iterator = get_dataset_iterator(
         config=cfg_data,
         value_select=value_select,
         batch_size=batch_size,
-        n_processes=n_processes,
-        textgrid_ext_new=textgrid_ext_new,
+        device=model_device,
     )
+
+    with init_data_loader(
+        loader_params=LoaderParams(batch_size=iterator.batch_size, non_stop=False),
+        data_pipeline=iterator.data_pipeline,
+        n_processes=n_processes,
+        n_gpus=n_gpus,
+    ) as loaders:
+
+        if model_device == "cuda":
+            model_device = torch.device(f"cuda:{get_freer_gpu()}")
+
+        model.to(model_device)
+        batch_processor.set_device(model_device)
+
+        redefine_dataset(
+            iterator=loaders[iterator.subset_name].get_epoch_iterator(),
+            model=model,
+            batch_processor=batch_processor,
+            labels=mapping,
+            textgrid_ext_new=textgrid_ext_new,
+        )
 
 
 if __name__ == "__main__":
