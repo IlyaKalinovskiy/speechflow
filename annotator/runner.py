@@ -91,12 +91,6 @@ def parse_args():
         default=[30, 30],
     )
     arguments_parser.add_argument(
-        "--use_reverse_mode",
-        help="inverting audios and transcriptions during training",
-        type=lambda x: bool(distutils.util.strtobool(x)),
-        default=True,
-    )
-    arguments_parser.add_argument(
         "--use_asr_transcription",
         help="using ASR transcription to split audio into single utterances",
         type=lambda x: bool(distutils.util.strtobool(x)),
@@ -185,7 +179,6 @@ def _update_fa_configs(
     n_workers_per_gpu: int,
     batch_size: int,
     max_epochs: int,
-    use_reverse_mode: bool,
     experiment_path: tp.Optional[Path],
     finetune_model: tp.Optional[Path] = None,
     sega_suffix: str = "",
@@ -259,9 +252,6 @@ def _update_fa_configs(
         config_data["preproc"]["pipe_cfg"]["voice_bio"]["model_type"] = "resemblyzer"
 
     config_data["preproc"]["pipe_cfg"]["text"]["lang"] = lang
-
-    if use_reverse_mode:
-        config_data["preproc"]["pipe"].append("reverse")
 
     cfg_data_path = output_dir / "forced_alignment" / lang_dir / cfg_data_name
     config_data.to_file(cfg_data_path)
@@ -586,7 +576,6 @@ def main(
     max_epochs: tp.Union[int, tp.List[int]] = 0,
     start_step: int = 0,
     start_stage: int = 1,
-    use_reverse_mode: bool = False,
     use_asr_transcription: bool = False,
     use_resampling_audio: bool = False,
     use_loudnorm_audio: bool = False,
@@ -703,7 +692,6 @@ def main(
                         n_workers_per_gpu=n_workers_per_gpu,
                         batch_size=batch_size,
                         max_epochs=sum(max_epochs[:stage]),
-                        use_reverse_mode=use_reverse_mode,
                         experiment_path=experiment_path,
                         sega_suffix=sega_suffix,
                         finetune_model=finetune_model,
@@ -727,7 +715,7 @@ def main(
                 )
 
         # step 3
-        if start_step <= 3 <= max_step and use_reverse_mode:
+        if start_step <= 3 <= max_step:
             if not pretrained_models or len(pretrained_models) < 2:
                 pretrained_models = _get_pretrained_models(output_dir, lang, langs_filter)
 

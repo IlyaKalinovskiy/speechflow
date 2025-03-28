@@ -67,7 +67,7 @@ def parse_args():
         "-st", "--stage", help="alignment stage", type=int, required=True
     )
     arguments_parser.add_argument(
-        "-bs", "--batch_size", help="num samples in batch", type=int, default=1
+        "-bs", "--batch_size", help="num samples in batch", type=int, default=16
     )
     arguments_parser.add_argument(
         "-ns",
@@ -196,8 +196,10 @@ class Aligner:
                 ] = max_duration
             else:
                 cfg_data["parser"]["pipe"].remove("split_by_phrases")
+
         if "check_phoneme_length" in cfg_data["parser"]["pipe"]:
             cfg_data["parser"]["pipe"].remove("check_phoneme_length")
+
         cfg_data["processor"]["output_collated_only"] = False
         cfg_data["processor"].pop("dump", None)
 
@@ -207,12 +209,20 @@ class Aligner:
         if "ssl" in cfg_data["preproc"]["pipe"]:
             cfg_data["preproc"]["pipe"].remove("ssl")
 
+        # TODO: support legacy models
+        if "text" in cfg_data["preproc"]["pipe_cfg"]:
+            cfg_data["preproc"]["pipe_cfg"]["text"].type = "TTSTextProcessor"
+
         if "reverse" in cfg_data["preproc"]["pipe"]:
             if reverse_mode:
                 cfg_data["preproc"].setdefault("reverse", {})["p"] = 1.0
             else:
                 LOGGER.info("remove reverse function")
                 cfg_data["preproc"]["pipe"].remove("reverse")
+
+                # TODO: support legacy models
+                if "reverse" in cfg_data["preproc"]["pipe"]:
+                    cfg_data["preproc"]["pipe"].remove("reverse")
 
         hop_len = find_field(cfg_data, "hop_len")
 
@@ -267,18 +277,24 @@ class Aligner:
 
         device = torch.device(device)
 
+        # TODO: support legacy models
+        if "plbert_feat_dim" in checkpoint["params"]:
+            checkpoint["params"]["xpbert_feat_dim"] = checkpoint["params"].pop("plbert_feat_dim")
+            checkpoint["params"]["xpbert_feat_proj_dim"] = checkpoint["params"].pop("plbert_feat_proj_dim")
+
         model_cls = getattr(forced_alignment, cfg_model["model"]["type"])
         model = model_cls(checkpoint["params"])
         model.eval()
 
-        model.load_state_dict(checkpoint["state_dict"], strict=True)
+        # TODO: strict=False - support legacy models
+        model.load_state_dict(checkpoint["state_dict"], strict=False)
         model.to(device)
 
         batch_processor_cls = getattr(forced_alignment, cfg_model["batch"]["type"])
         batch_processor = init_class_from_config(
             batch_processor_cls, cfg_model["batch"]
         )()
-        batch_processor.device = device
+        batch_processor.set_device(device)
 
         return model, batch_processor
 

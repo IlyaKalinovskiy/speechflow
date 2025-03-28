@@ -659,7 +659,7 @@ class DataPipeline:
 
     def get_info(
         self, object_size_limit: float = 10, size_format=Serialize.Format.MB
-    ) -> tp.Dict:
+    ) -> tp.Dict:  # type: ignore
         info = {
             "data_config_raw": self.config_raw,
             "data_config": self.config,
