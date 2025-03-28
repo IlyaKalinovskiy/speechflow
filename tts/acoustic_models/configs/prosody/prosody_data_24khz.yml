@@ -84,7 +84,7 @@ preproc:
           n_mels: 100
     pitch:
       type: PitchProcessor
-      method: torchcrepe  # pyworld, torchcrepe
+      method: pyworld  # pyworld, torchcrepe
     ssl:
       type: SSLProcessor
       ssl_type: Wav2Vec

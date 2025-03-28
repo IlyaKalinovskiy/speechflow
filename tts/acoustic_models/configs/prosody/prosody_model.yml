@@ -1,6 +1,6 @@
 ### Model configuration ###
 
-experiment_name: prosody_model  # name for current experiment
+experiment_name: prosody_model_dnn_vq64  # name for current experiment
 
 dirs:
   logging: prosody_experiments
@@ -34,7 +34,7 @@ checkpoint:
 callbacks:
   TTSTrainingVisualizer: {}
   ProsodyTrainingVisualizer:
-    n_components: 10
+    n_components: 16
 
 optimizer:
   method:
@@ -83,7 +83,7 @@ model:
       mt_num_heads: 2
       mt_layers: 4
       vq_type: vq
-      vq_codebook_size: 128
+      vq_codebook_size: 64
 
     va_type: HierarchicalVarianceAdaptor
 

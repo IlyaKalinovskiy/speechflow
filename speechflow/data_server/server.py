@@ -1,5 +1,4 @@
 import uuid
-import pickle
 import typing as tp
 import logging
 import argparse
@@ -54,12 +53,15 @@ class DataServer(ProcessWorker):
         server_addr: tp.Optional[str] = None,
         synchronize_loaders: bool = False,
     ):
+        assert not data_pipeline.is_init
+
         ProcessWorker.__init__(self)
         self._addr_for_clients = (
             server_addr if server_addr else f"127.0.0.1:{find_free_port()}"
         )
         self._addr_for_workers = f"127.0.0.1:{find_free_port()}"
         self._pipe = data_pipeline
+        self._pipe_serialize = Serialize.dump(data_pipeline)
         self._n_processes = n_processes if n_processes else mp.cpu_count()
         self._zmq_server: ZMQServer = None  # type: ignore
         self._synchronize_loaders = synchronize_loaders
@@ -76,11 +78,6 @@ class DataServer(ProcessWorker):
         self._timer = Profiler(auto_logging=False)
 
         self._gpus = self.init_gpus(n_gpus) if isinstance(n_gpus, int) else n_gpus
-
-        try:
-            self._pipe_serialize = Serialize.dump(data_pipeline)
-        except (TypeError, pickle.PickleError):
-            self._pipe_serialize = None
 
     @property
     def address(self) -> str:
@@ -132,9 +129,7 @@ class DataServer(ProcessWorker):
             self._addr_for_clients, self._addr_for_workers
         )
 
-        if self._pipe_serialize is not None:
-            self._pipe = Serialize.load(self._pipe_serialize)
-
+        self._pipe = Serialize.load(self._pipe_serialize)
         self._pipe.init_components()
         self._pipe.load_data(n_processes=self._n_processes)
 
