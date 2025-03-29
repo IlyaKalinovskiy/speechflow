@@ -48,6 +48,10 @@ class SimpleSampler(AbstractDataSampler):
         self._current_data = None  # type: ignore
         self._epoch_size = None
 
+    @property
+    def is_empty(self) -> bool:
+        return self._data is None
+
     def set_dataset(self, data: Dataset):
         self._dataset_size = len(data)
         self._epoch_size = len(data)
@@ -152,6 +156,7 @@ class SimpleSampler(AbstractDataSampler):
 
     def reset(self):
         self._current_idx = 0
+        self._is_last_batch = False
 
     def fill_epoch(self):
         pass

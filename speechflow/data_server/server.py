@@ -59,6 +59,7 @@ class DataServer(ProcessWorker):
         )
         self._addr_for_workers = f"127.0.0.1:{find_free_port()}"
         self._pipe = data_pipeline
+        self._pipe_serialize = Serialize.dump(data_pipeline)
         self._n_processes = n_processes if n_processes else mp.cpu_count()
         self._zmq_server: ZMQServer = None  # type: ignore
         self._synchronize_loaders = synchronize_loaders
@@ -125,6 +126,8 @@ class DataServer(ProcessWorker):
         self._zmq_server = ZMQPatterns.server(
             self._addr_for_clients, self._addr_for_workers
         )
+
+        self._pipe = Serialize.load(self._pipe_serialize)
         self._pipe.init_components()
         self._pipe.load_data(n_processes=self._n_processes)
 

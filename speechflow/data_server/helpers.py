@@ -24,10 +24,11 @@ from speechflow.utils.tensor_utils import string_to_tensor, tensor_to_string
 
 __all__ = [
     "LoaderParams",
+    "DatasetIterator",
+    "run_server",
     "init_data_loader",
     "init_data_loader_from_config",
-    "run_server",
-    "dataset_iterator",
+    "get_dataset_iterator",
 ]
 
 LOGGER = logging.getLogger("root")
@@ -52,6 +53,43 @@ class LoaderParams:
         return Config(self.to_dict())
 
 
+class DatasetIterator:
+    def __init__(self, data_pipeline: DataPipeline, subset_name: str, batch_size: int):
+        self.data_pipeline = data_pipeline
+        self.data_pipeline.init_components()
+
+        self.data_processor = data_pipeline[subset_name].data_processor
+        self.sampler = data_pipeline[subset_name].sampler
+
+        self.subset_name = subset_name
+        self.batch_size = batch_size
+
+    def reset(self):
+        self.sampler.reset()
+
+    def __iter__(self):
+        return self
+
+    def __len__(self) -> int:
+        return len(self.sampler) // self.batch_size
+
+    def __next__(self) -> Batch:
+        if self.sampler.is_empty():
+            self.data_pipeline.load_data()
+
+        if self.sampler.is_last_batch:
+            raise StopIteration
+
+        samples: tp.List[DataSample] = self.sampler.sampling(self.batch_size)
+        samples = [s.copy() for s in samples if s is not None]
+
+        if not samples:
+            raise StopIteration
+
+        batch = self.data_processor.process(samples)
+        return batch if batch is not None else next(self)
+
+
 def _finish_component(
     servers: tp.Optional[tp.List[DataServer]],
     workers: tp.Optional[tp.List[WorkerPool]],
@@ -72,6 +110,35 @@ def _finish_component(
 
 
 @contextmanager
+def run_server(server, worker_type):
+    server.start()
+
+    worker_pool = WorkerPool(
+        server_addr=server.address,
+        n_processes=server.num_processes,
+        worker_type=worker_type,
+    )
+
+    try:
+        worker_pool.start()
+    except Exception as e:
+        server.finish()
+        LOGGER.error(e)
+        raise e
+
+    try:
+        yield
+
+    except Exception as e:
+        LOGGER.error(e)
+        raise e
+
+    finally:
+        worker_pool.finish()
+        server.finish()
+
+
+@contextmanager
 def init_data_loader(
     loader_params: LoaderParams,
     data_pipeline: DataPipeline,
@@ -79,7 +146,7 @@ def init_data_loader(
     n_gpus: tp.Union[int, tp.List[int]] = 0,
     flist_by_subsets: tp.Optional[tp.Dict[str, tp.List[str]]] = None,
 ) -> tp.Generator[tp.Dict[str, DataLoader], None, None]:
-    if torch.cuda.is_available():
+    if n_gpus > 0 and torch.cuda.is_available():
         device = f"cuda:{torch.cuda.current_device()}"
     else:
         device = "cpu"
@@ -269,74 +336,28 @@ def init_data_loader_from_config(
         _finish_component(servers, workers, proxy, data_loaders)
 
 
-@contextmanager
-def run_server(server, worker_type):
-    server.start()
-
-    worker_pool = WorkerPool(
-        server_addr=server.address,
-        n_processes=server.num_processes,
-        worker_type=worker_type,
-    )
-
-    try:
-        worker_pool.start()
-    except Exception as e:
-        server.finish()
-        LOGGER.error(e)
-        raise e
-
-    try:
-        yield
-
-    except Exception as e:
-        LOGGER.error(e)
-        raise e
-
-    finally:
-        worker_pool.finish()
-        server.finish()
-
-
 @check_path(assert_file_exists=True)
-def dataset_iterator(
-    config_path: tp.Optional[tp_PATH] = None,
-    config: tp.Optional[tp.Dict] = None,
+def get_dataset_iterator(
+    config: tp.Union[tp_PATH, tp.MutableMapping],
     value_select: tp.Optional[tp.List[str]] = None,
     batch_size: int = 1,
-    n_processes: int = 1,
-    device: str = "cpu",
+    device: tp.Union[str, torch.device] = "cpu",
     with_dump: bool = True,
     subset_name: tp.Optional[str] = None,
-    server_addr: tp.Optional[str] = None,
-) -> tp.Union[tp.Iterator[Batch], tp.Sized]:
+) -> DatasetIterator:
     create_logger(use_server_logging=False, use_verbose_logging=True)
 
-    if server_addr is not None:
-        if subset_name is None:
-            subset_name = "train"
-
-        loader = DataLoader(
-            server_addr=server_addr,
-            subset_name=subset_name,
-            batch_size=batch_size,
-            non_stop=False,
-        )
-        loader.start()
-        return loader.get_epoch_iterator()
-
-    if config_path is not None:
-        cfg_data = Config.create_from_file(config_path, value_select=value_select)
-    elif config is not None:
-        cfg_data = config
+    if not isinstance(config, tp.MutableMapping):
+        cfg_data = Config.create_from_file(config, value_select=value_select)
     else:
-        raise ValueError(f"Invalid path to data config: {config_path}")
+        cfg_data = config
 
-    cfg_data["dataset"]["use_shuffle"] = False
     if subset_name is None:
         subset_name = cfg_data["dataset"]["subsets"][0]
         cfg_data["dataset"]["subsets"] = [subset_name]
         cfg_data["dataset"]["split_ratio"] = {subset_name: [0, 1]}
+
+    cfg_data["dataset"]["use_shuffle"] = False
 
     cfg_data["processor"]["output_collated_only"] = False
     cfg_data["sampler"] = {"type": "SimpleSampler"}
@@ -348,36 +369,9 @@ def dataset_iterator(
     if "DatasetStatistics" in cfg_data["singleton_handlers"]["handlers"]:
         cfg_data["singleton_handlers"]["handlers"].remove("DatasetStatistics")
 
-    env["DEVICE"] = f"cuda:{get_freer_gpu()}" if device == "cuda" else device
+    env["DEVICE"] = f"cuda:{get_freer_gpu()}" if device == "cuda" else str(device)
 
-    data_pipeline = DataPipeline(cfg_data)
-    data_pipeline.init_components()
-    data_pipeline.load_data(n_processes=n_processes)
-
-    sampler = data_pipeline[subset_name].sampler
-    sampler.reset()
-
-    class DatasetIterator:
-        def __iter__(self):
-            return self
-
-        def __len__(self) -> int:
-            return len(sampler) // batch_size
-
-        def __next__(self) -> Batch:
-            if data_pipeline[subset_name].sampler.is_last_batch:
-                raise StopIteration
-
-            samples: tp.List[DataSample] = sampler.sampling(batch_size)
-            samples = [s.copy() for s in samples if s is not None]
-
-            if not samples:
-                raise StopIteration
-
-            batch = data_pipeline[subset_name].data_processor.process(samples)
-            return batch if batch is not None else next(self)
-
-    return DatasetIterator()
+    return DatasetIterator(DataPipeline(cfg_data), subset_name, batch_size)
 
 
 if __name__ == "__main__":
@@ -385,7 +379,7 @@ if __name__ == "__main__":
 
     _config_path = "../../tts/acoustic_models/configs/tts/tts_data_24khz.yml"
 
-    iterator = dataset_iterator(
+    iterator = get_dataset_iterator(
         _config_path, device="cpu", with_dump=True, value_select=["ru"]
     )
 

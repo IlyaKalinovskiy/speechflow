@@ -992,7 +992,7 @@ class ContoursExtractor:
 
     @staticmethod
     def extract(
-        ds: TTSDataSample, contour_length: int, offset: int = 10
+        ds: TTSDataSample, contour_length: int, offset: int = 10, min_contour_length: int = 10
     ) -> tp.Generator[tp.Tuple[tp.Optional[npt.NDArray], int], None, None]:
         frame_ts_word = np.concatenate([[0], np.cumsum(ds.word_lengths)]).astype(np.int64)
         frame_ts = np.around(np.concatenate([[0], np.cumsum(ds.durations)])).astype(
@@ -1013,8 +1013,11 @@ class ContoursExtractor:
                         first_ind = frame[0]
                         last_ind = min(frame[-1], ds.pitch.shape[0] - 1)
                         contour = ds.pitch[first_ind:last_ind]
+                        if contour.shape[0] < min_contour_length:
+                            yield None, word_len
                         if contour.shape[0] == 1:
                             contour = np.concatenate((contour, contour))
+
                         x = np.arange(0, contour.shape[0])
                         f = interpolate.interp1d(x, contour, fill_value="extrapolate")
                         xnew = np.arange(

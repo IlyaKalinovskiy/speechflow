@@ -15,6 +15,11 @@ class AbstractDataSampler:
         pass
 
     @abc.abstractmethod
+    def is_empty(self) -> bool:
+        """Check that list data samples is not set."""
+        pass
+
+    @abc.abstractmethod
     def set_dataset(self, data: Dataset):
         """Set list of data samples."""
         pass

@@ -513,8 +513,12 @@ class DataPipeline:
     def __init__(self, cfg: Config):
         self._cfg: Config = cfg
         self._tag: str = str(cfg.get("tag", ""))
-        self._flist_by_subsets: tp.Dict[str, tp.List[str]] = {}
+        self._flist_by_subsets: tp.Dict[str, tp.List[tp_PATH]] = {}
         self._pipelines: tp.Dict[str, PipelineComponents] = {}
+
+    def __getitem__(self, name: str) -> PipelineComponents:
+        assert self._pipelines, "Call first of init_components function!"
+        return self._pipelines[name]
 
     @staticmethod
     @check_path(assert_file_exists=True)
@@ -569,6 +573,22 @@ class DataPipeline:
         return data_pipeline
 
     @property
+    def subsets(self) -> tp.List[str]:
+        return list(self._pipelines.keys())
+
+    @property
+    def tag(self):
+        return self._tag
+
+    @property
+    def config(self):
+        return self._cfg.copy()
+
+    @property
+    def config_raw(self):
+        return self._cfg.raw_file
+
+    @property
     def is_init(self) -> bool:
         return True if self._pipelines else False
 
@@ -597,11 +617,6 @@ class DataPipeline:
                 self._cfg, name, (preinit_singleton_handlers or {}).get(name), cache
             )
 
-    def set_file_list(self, files_by_subsets: tp.Optional[tp.Dict[str, tp.List[str]]]):
-        self._cfg.create_section({"dirs"})
-        self._cfg["dirs"]["file_list"] = files_by_subsets
-        assert set(self.subsets) == set(files_by_subsets.keys())
-
     def load_data(self, n_processes: int = 1):
         assert self._pipelines, "Call of init_components function before loading data!"
         if self.is_data_loaded:
@@ -611,46 +626,40 @@ class DataPipeline:
         if isinstance(flist_path, tp.MutableMapping):
             self._flist_by_subsets = flist_path
         else:
-            if flist_path is None or not Path(flist_path).exists():
-                flist_path = generate_file_list(
-                    data_root=self._cfg.section("dirs")["data_root"],
-                    ext=self._cfg.section("file_search")["ext"],
-                    with_subfolders=self._cfg.section("file_search").get(
-                        "with_subfolders", True
-                    ),
-                )
-
-            _read_flist = init_method_from_config(
-                read_file_list, self._cfg.section("dataset")
-            )
-            self._flist_by_subsets = _read_flist(flist_path=flist_path)
+            self._flist_by_subsets = self.get_file_list(flist_path)
 
         for name, pipe in self._pipelines.items():
             pipe.load_data(self._flist_by_subsets[name], n_processes)
 
-    @property
-    def subsets(self) -> tp.List[str]:
-        return list(self._pipelines.keys())
+    def remove_pipeline(self, name: str):
+        self._pipelines.pop(name)
 
-    @property
-    def config(self):
-        return self._cfg.copy()
+    @check_path(assert_file_exists=True)
+    def get_file_list(
+        self, flist_path: tp.Optional[tp_PATH] = None
+    ) -> tp.Dict[str, tp.List[tp_PATH]]:
+        if flist_path is None or not Path(flist_path).exists():
+            flist_path = generate_file_list(
+                data_root=self._cfg.section("dirs")["data_root"],
+                ext=self._cfg.section("file_search")["ext"],
+                with_subfolders=self._cfg.section("file_search").get(
+                    "with_subfolders", True
+                ),
+            )
 
-    @property
-    def config_raw(self):
-        return self._cfg.raw_file
+        _read_flist = init_method_from_config(
+            read_file_list, self._cfg.section("dataset")
+        )
+        return _read_flist(flist_path=flist_path)
 
-    @property
-    def tag(self):
-        return self._tag
-
-    def __getitem__(self, name: str) -> PipelineComponents:
-        assert self._pipelines, "Call first of init_components function!"
-        return self._pipelines[name]
+    def set_file_list(self, files_by_subsets: tp.Dict[str, tp.List[tp_PATH]]):
+        self._cfg.create_section({"dirs"})
+        self._cfg["dirs"]["file_list"] = files_by_subsets
+        assert set(self.subsets) == set(files_by_subsets.keys())
 
     def get_info(
         self, object_size_limit: float = 10, size_format=Serialize.Format.MB
-    ) -> tp.Dict:
+    ) -> tp.Dict:  # type: ignore
         info = {
             "data_config_raw": self.config_raw,
             "data_config": self.config,
@@ -703,9 +712,6 @@ class DataPipeline:
 
         info.update({"singleton_handlers": singleton_handlers, "dataset": dataset})
         return info
-
-    def remove_pipeline(self, name: str):
-        self._pipelines.pop(name)
 
     @staticmethod
     def aggregate_info(
