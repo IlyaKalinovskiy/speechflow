@@ -5,9 +5,11 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torchaudio
 import pytorch_lightning as pl
 
 from nemo.collections.asr.modules import AudioToMelSpectrogramPreprocessor
+from pytorch_lightning import Callback
 from torch import nn
 from torch.nn import functional as F
 
@@ -34,6 +36,7 @@ from speechflow.io import (
     json_load_from_file,
     split_file_list,
 )
+from speechflow.logging import set_verbose_logging
 from speechflow.logging.server import LoggingServer
 from speechflow.training import (
     BaseCriterion,
@@ -47,7 +50,6 @@ from speechflow.utils.init import init_class_from_config, lazy_initialization
 from speechflow.utils.profiler import Profiler
 from speechflow.utils.tensor_utils import run_rnn_on_padded_sequence
 
-
 #
 # --------------  DATA DESCRIPTION --------------
 #
@@ -56,6 +58,7 @@ from speechflow.utils.tensor_utils import run_rnn_on_padded_sequence
 @dataclass
 class ASRDataSample(DataSample):
     audio_chunk: AudioChunk = None
+    waveform: torch.Tensor = None
     transcription: str = None
     mel: torch.Tensor = None
     tokens: torch.Tensor = None
@@ -63,18 +66,21 @@ class ASRDataSample(DataSample):
 
 @dataclass
 class ASRCollateOutput(ASRDataSample, BaseCollateOutput):
+    waveform_lengths: torch.Tensor = None
     mel_lengths: torch.Tensor = None
     token_lengths: torch.Tensor = None
 
 
 @dataclass
 class ASRTarget(TrainData):
+    transcription: str = None
     tokens: torch.Tensor = None
     token_lengths: torch.Tensor = None
 
 
 @dataclass
 class ASRForwardInput(TrainData):
+    waveform: torch.Tensor = None
     mel: torch.Tensor = None
     mel_lengths: torch.Tensor = None
 
@@ -119,6 +125,7 @@ class SignalProcessor(BaseDSProcessor):
     @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"audio_chunk"})
     def process(self, ds: ASRDataSample) -> ASRDataSample:
         ds.audio_chunk.load(sr=self._sample_rate)
+        ds.waveform = ds.audio_chunk.waveform  # type: ignore
         return ds
 
 
@@ -200,11 +207,15 @@ class ASRCollate(BaseCollate):
         collated = super().collate(batch)
         collated = ASRCollateOutput(**collated.to_dict())  # type: ignore
 
+        collated.waveform, collated.waveform_lengths = collate_sequence(
+            batch, "waveform", pad_values=0
+        )
         collated.mel, collated.mel_lengths = collate_sequence(batch, "mel", pad_values=0)
         collated.tokens, collated.token_lengths = collate_sequence(
             batch, "tokens", pad_values=-1
         )
 
+        collated.transcription = [ds.transcription for ds in batch]  # type: ignore
         return collated
 
 
@@ -217,6 +228,7 @@ class ASRModelParams(BaseTorchModelParams):
     mel_dim: int = 80
     inner_dim: int = 256
     output_dim: int = 512
+    with_rnn: bool = False
 
 
 class ASRModel(BaseTorchModel):
@@ -228,18 +240,32 @@ class ASRModel(BaseTorchModel):
         strict_init: bool = True,
     ):
         super().__init__(ASRModelParams.create(cfg, strict_init))
-        self.rnn = nn.GRU(
-            self.params.mel_dim,
-            self.params.inner_dim,
-            batch_first=True,
-            bidirectional=True,
-        )
-        self.proj = nn.Linear(2 * self.params.inner_dim, self.params.output_dim)
+
+        bundle = torchaudio.pipelines.HUBERT_BASE
+        self.model = bundle.get_model()
+        self.model_dim = self.model.encoder.transformer.layer_norm.weight.shape[0]
+
+        if self.params.with_rnn:
+            self.rnn = nn.GRU(
+                self.model_dim,
+                self.params.inner_dim,
+                batch_first=True,
+                bidirectional=True,
+            )
+            self.proj = nn.Linear(2 * self.params.inner_dim, self.params.output_dim)
+        else:
+            self.rnn = None
+            self.proj = nn.Linear(self.model_dim, self.params.output_dim)
 
     def forward(self, inputs: ASRForwardInput) -> ASRForwardOutput:
-        x = inputs.mel
+        x, _ = self.model(inputs.waveform)
         x_lens = (inputs.mel_lengths * x.shape[1]).long()
-        after_rnn = run_rnn_on_padded_sequence(self.rnn, x, x_lens)
+
+        if self.params.with_rnn:
+            after_rnn = run_rnn_on_padded_sequence(self.rnn, x, x_lens)
+        else:
+            after_rnn = x
+
         y = self.proj(after_rnn)
         return ASRForwardOutput(
             logits=y,
@@ -293,6 +319,38 @@ class Criterion(BaseCriterion):
             reduction="mean",
         )
         return {"ctc_loss": ctc_loss}
+
+
+class ValidationMetrics(Callback):
+    def __init__(self, labels, blank_index: int = 0):
+        self.decoder = GreedyCTCDecoder(labels, blank_index)
+        self.greedy_result = None
+
+    def on_validation_start(self, pl_module: pl.LightningModule, *args):
+        self.greedy_result = []
+
+    def on_validation_batch_end(
+        self,
+        trainer: pl.Trainer,
+        pl_module: pl.LightningModule,
+        outputs,
+        batch,
+        batch_idx,
+        dataloader_idx=0,
+    ):
+        _, outputs, targets, _ = pl_module.test_step(batch, batch_idx)
+
+        for i in range(outputs.logits.shape[0]):
+            actual_transcript = targets.transcription[i]
+            greedy_result = self.decoder(outputs.logits[i])
+            greedy_wer = torchaudio.functional.edit_distance(
+                actual_transcript, greedy_result
+            ) / len(actual_transcript)
+            self.greedy_result.append(greedy_wer)
+
+    def on_validation_epoch_end(self, pl_module: pl.LightningModule, *args):
+        mean_wer = np.asarray(self.greedy_result).mean()
+        print("WER:", mean_wer)
 
 
 class GreedyCTCDecoder(torch.nn.Module):
@@ -386,6 +444,7 @@ def train(experiment_path: str, loaders: tp.Dict[str, DataLoader]):
     callbacks = [
         pl.callbacks.LearningRateMonitor(logging_interval="epoch"),
         saver.get_checkpoint_callback(cfg=checkpoint_callback_cfg),
+        ValidationMetrics(tokenizer.labels, tokenizer.blank_index),
     ]
 
     # create trainer
@@ -405,23 +464,27 @@ def train(experiment_path: str, loaders: tp.Dict[str, DataLoader]):
 
 
 if __name__ == "__main__":
-    _dataset_path = "M:/cw_dataset_internship_rus_20k"
-    _alphabet_path = "M:/alphabet.json"
+    _dataset_path = r"M:\Ilya\JustAI/cw_dataset_internship_rus_20k"
+    _alphabet_path = r"M:\Ilya\JustAI/alphabet.json"
     _expr_path = "_logs/test_asr"
     _file_ext = ".txt"
 
-    _data_pipeline = create_data_pipline(subsets=["train", "valid"], alphabet_path=_alphabet_path)
+    _data_pipeline = create_data_pipline(
+        subsets=["train", "valid"], alphabet_path=_alphabet_path
+    )
 
-    _flist = construct_file_list(_dataset_path, _file_ext, with_subfolders=True)
+    _flist = construct_file_list(_dataset_path, _file_ext, with_subfolders=True)[:16]
     _flist_train, _flist_valid = split_file_list(_flist, ratio=0.8)
-
+    _flist_train, _flist_valid = _flist, _flist
     if 1:  # TRAINING
+        set_verbose_logging()
+
         with LoggingServer.ctx(_expr_path):
             with init_data_loader(
                 loader_params=LoaderParams(batch_size=8, non_stop=True),
                 data_pipeline=_data_pipeline,
                 flist_by_subsets={"train": _flist_train, "valid": _flist_valid},
-                n_processes=4,
+                n_processes=1,
                 n_gpus=0,
             ) as _loaders:
                 train(_expr_path, _loaders)
@@ -439,7 +502,7 @@ if __name__ == "__main__":
         _tokenizer = Tokenizer(_alphabet_path)
         _greedy_decoder = GreedyCTCDecoder(_tokenizer.labels, _tokenizer.blank_index)
 
-        _metadata = _data_pipeline["valid"].dataset_parser.reader(_flist[0])
+        _metadata = _data_pipeline["valid"].dataset_parser.reader(Path(_flist[0]))
         _batch = _data_pipeline["valid"].metadata_to_batch(_metadata)
 
         with torch.inference_mode():
