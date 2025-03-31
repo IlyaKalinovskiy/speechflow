@@ -41,6 +41,7 @@ from speechflow.io import (
     construct_file_list,
     split_file_list,
 )
+from speechflow.logging import set_verbose_logging
 from speechflow.logging.server import LoggingServer
 from speechflow.training import (
     BaseCriterion,
@@ -371,6 +372,8 @@ if __name__ == "__main__":
     _flist_train, _flist_valid = split_file_list(_flist, ratio=0.8)
 
     if 1:  # TRAINING
+        set_verbose_logging()
+
         with LoggingServer.ctx(_expr_path):
             with init_data_loader(
                 loader_params=LoaderParams(batch_size=8, non_stop=True),

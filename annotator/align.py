@@ -279,8 +279,12 @@ class Aligner:
 
         # TODO: support legacy models
         if "plbert_feat_dim" in checkpoint["params"]:
-            checkpoint["params"]["xpbert_feat_dim"] = checkpoint["params"].pop("plbert_feat_dim")
-            checkpoint["params"]["xpbert_feat_proj_dim"] = checkpoint["params"].pop("plbert_feat_proj_dim")
+            checkpoint["params"]["xpbert_feat_dim"] = checkpoint["params"].pop(
+                "plbert_feat_dim"
+            )
+            checkpoint["params"]["xpbert_feat_proj_dim"] = checkpoint["params"].pop(
+                "plbert_feat_proj_dim"
+            )
 
         model_cls = getattr(forced_alignment, cfg_model["model"]["type"])
         model = model_cls(checkpoint["params"])
