@@ -257,8 +257,8 @@ def resnet152(pretrained=False, **kwargs) -> BasicResNet:
 class ResNet(BaseTorchModel):
     params: ResNetParams
 
-    def __init__(self, params: tp.Union[Config, ResNetParams], strict_init: bool = True):
-        super().__init__(ResNetParams.create(params, strict_init))
+    def __init__(self, cfg: tp.Union[Config, ResNetParams], strict_init: bool = True):
+        super().__init__(ResNetParams.create(cfg, strict_init))
         params = self.params
 
         if params.depth == 14:

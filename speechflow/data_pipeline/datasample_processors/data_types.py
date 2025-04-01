@@ -3,16 +3,15 @@ import typing as tp
 from dataclasses import dataclass
 
 import torch
-import numpy.typing as npt
 
 from multilingual_text_parser.data_types import Sentence
-from torch import Tensor
 
 from speechflow.data_pipeline.core.datasample import (
     DataSample,
     MovableToDevice,
     ToNumpy,
     ToTensor,
+    tp_DATA,
 )
 from speechflow.io import AudioChunk, Timestamps
 
@@ -27,8 +26,6 @@ __all__ = [
     "ProsodySSMLDataSample",
     "ProsodyPredictionDataSample",
 ]
-
-tp_DATA = tp.Union[int, float, str, npt.NDArray, Tensor]
 
 
 @dataclass(eq=False)

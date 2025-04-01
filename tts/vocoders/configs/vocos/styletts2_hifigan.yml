@@ -49,10 +49,10 @@ engine:
     auxiliary_loss_coeff: 1.0
     decay_mel_coeff: false
     num_warmup_steps: 0  # Optimizers warmup steps
-    pretrain_mel_steps: 1000  # 0 means GAN objective from the first iteration
+    pretrain_mel_steps: 10000  # 0 means GAN objective from the first iteration
     use_cqtd_disc: false
-    use_sm_loss: false
-    use_wavlm_loss: false
+    use_sm_loss: true
+    use_wavlm_loss: true
     use_cdpam_loss: false
     biometric_model_type: speechbrain  # speechbrain, wespeaker
     wavlm_model_name:
@@ -123,7 +123,26 @@ model:
 
       va_type: HierarchicalVarianceAdaptor
 
-      decoder_type: ~
+      # decoder_type: ForwardDecoder
+      # decoder_num_layers: 2
+      # decoder_inner_dim: 512
+      # decoder_output_dim: 512
+      # decoder_params:
+      #   condition: [speaker_emb]
+      #   condition_dim: 256
+      #   condition_type: AdaNorm
+
+      decoder_type: WrapperDecoder
+      decoder_num_layers: 6
+      decoder_inner_dim: 512
+      decoder_output_dim: 512
+      decoder_params:
+        base_decoder_type: DiTEncoder
+        base_decoder_params:
+          cnn_n_layers: 0
+          condition: [speaker_emb]
+          condition_dim: 256
+
       postnet_type: ~
 
       addm_apply_inverse_speaker_classifier:
@@ -138,7 +157,6 @@ model:
         spectrogram_style_encoder:
           tag: style_emb
           as_encoder: true
-          cat_to_content: [1]
           predictor_type: StyleEncoder
           predictor_params:
             vp_params:
@@ -152,7 +170,6 @@ model:
         biometric_style_encoder:
           tag: style_emb
           as_encoder: true
-          cat_to_content: [1]
           predictor_type: StyleEncoder
           predictor_params:
             vp_params:
@@ -171,8 +188,9 @@ model:
             vp_params:
               activation_fn: SiLU
               loss_alpha: 100
+          denormalize: true
           as_embedding: true
-          interval: [0, 2]
+          interval: [0, 200]
           n_bins: 256
           emb_dim: 64
         aggregate_pitch:
@@ -185,8 +203,9 @@ model:
               activation_fn: SiLU
               loss_alpha: 100
           log_scale: false
+          denormalize: true
           as_embedding: true
-          interval: [0, 2]
+          interval: [0, 880]
           n_bins: 256
           emb_dim: 64
         durations:
@@ -227,6 +246,6 @@ model:
   head:
     class_name: NSFHiFiGANHead
     init_args:
-      input_dim: 662
+      input_dim: 512
       condition_dim: 128
       decode_upsample: false

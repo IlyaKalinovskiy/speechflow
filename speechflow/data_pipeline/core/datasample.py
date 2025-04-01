@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import numpy.typing as npt
 
 from torch import Tensor
 
@@ -25,7 +26,10 @@ __all__ = [
     "Detachable",
     "DataSample",
     "TrainData",
+    "tp_DATA",
 ]
+
+tp_DATA = tp.Union[int, float, str, npt.NDArray, Tensor]
 
 
 @dataclass

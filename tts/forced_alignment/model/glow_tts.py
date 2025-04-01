@@ -77,8 +77,8 @@ class GlowTTSParams(EmbeddingParams):
 class GlowTTS(EmbeddingCalculator):
     params: GlowTTSParams
 
-    def __init__(self, params: tp.Union[GlowTTSParams, dict], strict_init: bool = True):
-        super().__init__(GlowTTSParams.create(params, strict_init))
+    def __init__(self, cfg: tp.Union[GlowTTSParams, dict], strict_init: bool = True):
+        super().__init__(GlowTTSParams.create(cfg, strict_init))
         params = self.params
 
         self.n_sqz = params.n_sqz

@@ -1,6 +1,6 @@
 ### Model configuration ###
 
-experiment_name: prosody_model_dnn_vq64  # name for current experiment
+experiment_name: prosody_model  # name for current experiment
 
 dirs:
   logging: prosody_experiments

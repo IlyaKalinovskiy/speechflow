@@ -7,7 +7,6 @@ from pathlib import Path
 import numpy as np
 import torch
 import pydantic
-import numpy.typing as npt
 import pytorch_lightning as pl
 
 from torch import nn
@@ -27,6 +26,7 @@ from speechflow.data_pipeline.core import (
     PipeRegistry,
     Singleton,
     TrainData,
+    tp_DATA,
 )
 from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing.ssl_models import (
     Whisper,
@@ -41,6 +41,7 @@ from speechflow.io import (
     construct_file_list,
     split_file_list,
 )
+from speechflow.logging import set_verbose_logging
 from speechflow.logging.server import LoggingServer
 from speechflow.training import (
     BaseCriterion,
@@ -53,8 +54,6 @@ from speechflow.training import (
 from speechflow.utils.init import lazy_initialization
 from speechflow.utils.profiler import Profiler
 from speechflow.utils.tensor_utils import run_rnn_on_padded_sequence
-
-tp_DATA = tp.Union[int, float, str, npt.NDArray, torch.Tensor]
 
 LOGGER = logging.getLogger("root")
 
@@ -276,6 +275,8 @@ class Criterion(BaseCriterion):
 
 
 def create_data_pipline(subsets):
+    set_verbose_logging()
+
     parser = DSParser()
     preprocessing = [SignalProcessor().process, SSLProcessor().process]
     collate = SSLCollate()
@@ -358,6 +359,31 @@ def train(experiment_path: str, loaders: tp.Dict[str, DataLoader]) -> str:
     return experiment_path
 
 
+def test(expr_path: str | Path, file_path: str | Path):
+    ckpt_path = ExperimentSaver.get_last_checkpoint(expr_path)
+    if ckpt_path is None:
+        raise FileNotFoundError("checkpoint not found")
+
+    checkpoint = ExperimentSaver.load_checkpoint(ckpt_path)
+
+    model = SSLBiometricModel(checkpoint["params"])
+    model.eval()
+    model.load_state_dict(checkpoint["state_dict"])
+
+    metadata = _data_pipeline["valid"].dataset_parser.reader(file_path)
+    batch = _data_pipeline["valid"].metadata_to_batch(metadata)
+
+    with torch.inference_mode():
+        model_input, _, _ = BatchProcessor()(batch)
+        predict: SSLForwardOutput = model(model_input)
+
+    speaker_id_map = checkpoint["speaker_id_map"]
+    speaker_id = speaker_id_map[batch.data_samples[0].speaker_name]
+
+    print("speaker_id target:", speaker_id)
+    print("speaker_id predict:", torch.argmax(predict.logits).item())
+
+
 if __name__ == "__main__":
     from speechflow.utils.fs import get_root_dir
 
@@ -381,25 +407,4 @@ if __name__ == "__main__":
             ) as _loaders:
                 train(_expr_path, _loaders)
     else:  # EVALUATION
-        _ckpt_path = ExperimentSaver.get_last_checkpoint(_expr_path)
-        if _ckpt_path is None:
-            raise FileNotFoundError("checkpoint not found")
-
-        _checkpoint = ExperimentSaver.load_checkpoint(_ckpt_path)
-
-        _model = SSLBiometricModel(_checkpoint["params"])
-        _model.eval()
-        _model.load_state_dict(_checkpoint["state_dict"])
-
-        _metadata = _data_pipeline["valid"].dataset_parser.reader(_flist[0])
-        _batch = _data_pipeline["valid"].metadata_to_batch(_metadata)
-
-        with torch.inference_mode():
-            _model_input, _, _ = BatchProcessor()(_batch)
-            _predict: SSLForwardOutput = _model(_model_input)
-
-        _speaker_id_map = _checkpoint["speaker_id_map"]
-        _speaker_id = _speaker_id_map[_batch.data_samples[0].speaker_name]
-
-        print("speaker_id target:", _speaker_id)
-        print("speaker_id predict:", torch.argmax(_predict.logits).item())
+        test(_expr_path, _flist[-1])

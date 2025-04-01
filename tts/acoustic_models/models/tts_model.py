@@ -49,10 +49,10 @@ class ParallelTTSModel(BaseTorchModel):
 
     def __init__(
         self,
-        params: tp.Union[tp.MutableMapping, ParallelTTSParams],
+        cfg: tp.Union[tp.MutableMapping, ParallelTTSParams],
         strict_init: bool = True,
     ):
-        super().__init__(ParallelTTSParams.create(params, strict_init))
+        super().__init__(ParallelTTSParams.create(cfg, False))
         params = self.params
 
         self.embedding_component = EmbeddingComponent(params)

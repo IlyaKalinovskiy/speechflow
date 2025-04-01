@@ -22,7 +22,7 @@ trainer:
   # strategy: ddp
   max_steps: 5000000
   gradient_clip_val: 100
-  accumulate_grad_batches: 2
+  accumulate_grad_batches: 1
   limit_val_batches: 100
   log_every_n_steps: 100
   # resume_from_checkpoint: /path/to/checkpoint
@@ -49,16 +49,16 @@ engine:
     auxiliary_loss_coeff: 1.0
     decay_mel_coeff: false
     num_warmup_steps: 0  # Optimizers warmup steps
-    pretrain_mel_steps: 1000  # 0 means GAN objective from the first iteration
-    use_cqtd_disc: false
-    use_sm_loss: false
-    use_wavlm_loss: false
+    pretrain_mel_steps: 10000  # 0 means GAN objective from the first iteration
+    use_cqtd_disc: true
+    use_sm_loss: true
+    use_wavlm_loss: true
     use_cdpam_loss: false
     biometric_model_type: speechbrain  # speechbrain, wespeaker
     wavlm_model_name:
       default: wavlm-base-plus
       debug: C:/wavlm-base-plus
-    # disc_pretrain_path: bigvgan_discriminator_optimizer.pt
+    disc_pretrain_path: bigvgan_discriminator_optimizer.pt
 
     # automatic evaluation
     evaluate_utmos: true
@@ -71,6 +71,9 @@ model:
   feature_extractor:
     class_name: TTSFeatures
     init_args:
+      train_end_iter: 200000
+      spectral_loss_end_anneal_iter: 200000
+
       input: [transcription, transcription]
 
       token_emb_dim: 256
@@ -221,4 +224,4 @@ model:
     class_name: BigVGANHead
     init_args:
       input_dim: 100
-      # pretrain_path: bigvgan_generator.pt
+      pretrain_path: bigvgan_generator.pt

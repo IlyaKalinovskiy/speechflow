@@ -127,7 +127,10 @@ class DumpProcessor:
     def _get_sample_path(self, sample: DataSample) -> str:
         path = sample.file_path.as_posix()
         path = path.replace(self.data_root.as_posix(), "")
-        return path
+        try:
+            return path[: path.rindex(".")]
+        except ValueError:
+            return path
 
     def _get_filename(self, sample: DataSample) -> Path:
         if self.mode == "uid":
@@ -394,10 +397,15 @@ class DataProcessor(AbstractDataProcessor):
                     )
                     out_samples.extend(processed_samples)
                 except Exception as e:
+                    fpath = (
+                        sample.file_path.as_posix()
+                        if isinstance(sample.file_path, Path)
+                        else sample.file_path
+                    )
                     trace_message = trace(
                         self,
                         exception=e,
-                        message=f"Filepath: {sample.file_path}",
+                        message=f"Filepath: {fpath}",
                     )
                     LOGGER.error(trace_message)
                     if not skip_corrupted_samples:

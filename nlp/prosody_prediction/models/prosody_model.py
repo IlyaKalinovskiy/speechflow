@@ -26,10 +26,10 @@ class ProsodyModel(EmbeddingCalculator):
 
     def __init__(
         self,
-        params: tp.Union[tp.MutableMapping, ProsodyPredictionParams],
+        cfg: tp.Union[tp.MutableMapping, ProsodyPredictionParams],
         strict_init: bool = True,
     ):
-        super().__init__(ProsodyPredictionParams.create(params, strict_init))
+        super().__init__(ProsodyPredictionParams.create(cfg, strict_init))
         params = self.params
 
         self.bert = AutoModel.from_pretrained(
