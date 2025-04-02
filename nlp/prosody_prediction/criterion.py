@@ -19,7 +19,7 @@ class ProsodyPredictionLoss(nn.Module):
         self.names = names
         self.loss_fn = nn.ModuleDict()
         for name in self.names:
-            self.loss_fn[name] = nn.CrossEntropyLoss()
+            self.loss_fn[name] = nn.CrossEntropyLoss(ignore_index=-100)
 
     def forward(
         self,
@@ -31,14 +31,9 @@ class ProsodyPredictionLoss(nn.Module):
         total_loss = {}
 
         for name in self.names:
-            p = getattr(output, name).squeeze(-1)
+            p = getattr(output, name)
             t = getattr(target, name)
-            orig_shape = p.shape
-
-            _is_prosody = t != -100
-            p = p.masked_select(_is_prosody.unsqueeze(-1)).reshape((-1, orig_shape[-1]))
-            t = t.masked_select(_is_prosody)
-            total_loss[name] = self.loss_fn[name](p, t)
+            total_loss[name] = self.loss_fn[name](p.reshape(-1, p.shape[-1]), t.flatten())
 
         return total_loss
 

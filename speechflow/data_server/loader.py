@@ -125,17 +125,12 @@ class DataLoader:
                     text = text[:100]
                 fn_name = f"{self.__class__.__name__}.{inspect.stack()[1][3]}"
                 message = f"[{self._uid}][{self.subset_name}]: {text}"
-
-                with self._lock:
-                    log_to_file(trace(fn_name, message=message))
-
+                log_to_file(trace(fn_name, message=message))
             except Exception as e:
                 LOGGER.error(trace(self, e))
 
     def _send_info_message(self, text: str):
-        with self._lock:
-            self._msg_client.send({"message": text, "subset_name": self.subset_name})
-
+        self._msg_client.send({"message": text, "subset_name": self.subset_name})
         self._log_to_file(text)
 
     def _recv_message(
@@ -146,7 +141,11 @@ class DataLoader:
         max_num_message: int = 25,
     ) -> tp.List[tp.Any]:
         with self._lock:
-            return client.recv_multipart(deserialize, timeout, max_num_message)
+            try:
+                return client.recv_multipart(deserialize, timeout, max_num_message)
+            except Exception as e:
+                LOGGER.error(trace(self, e))
+                return []
 
     def _is_stop_iteration(self):
         if self._stop_event.is_set():
@@ -222,7 +221,10 @@ class DataLoader:
         }
 
         with self._lock:
-            self._batch_client.send(message)
+            try:
+                self._batch_client.send(message)
+            except Exception as e:
+                LOGGER.error(trace(self, e))
 
         self._log_to_file(str(message))
 

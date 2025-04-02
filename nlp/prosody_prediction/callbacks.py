@@ -50,24 +50,25 @@ class ProsodyCallback(Callback):
     def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
         self._data_loader.reset()
         outputs_all = ProsodyPredictionOutput(
-            binary=[],
-            category=[],
+            binary=[],  # type: ignore
+            category=[],  # type: ignore
         )
         targets_all = ProsodyPredictionTarget(
-            binary=[],
-            category=[],
+            binary=[],  # type: ignore
+            category=[],  # type: ignore
         )
 
         for batch_idx in range(len(self._data_loader)):
             batch = self._data_loader.next_batch()
-            outputs = pl_module.test_step(batch, batch_idx)
-            _, outputs, targets, _ = outputs
+            _, outputs, targets, _ = pl_module.test_step(batch, batch_idx)
+
             if outputs.binary is not None:
-                outputs_all.binary.extend(outputs.binary.to("cpu"))
-                targets_all.binary.extend(targets.binary.to("cpu"))
+                outputs_all.binary.extend(outputs.binary.cpu())  # type: ignore
+                targets_all.binary.extend(targets.binary.cpu())  # type: ignore
+
             if outputs.category is not None:
-                outputs_all.category.extend(outputs.category.to("cpu"))
-                targets_all.category.extend(targets.category.to("cpu"))
+                outputs_all.category.extend(outputs.category.cpu())  # type: ignore
+                targets_all.category.extend(targets.category.cpu())  # type: ignore
 
             # if batch_idx == 0:
             #     output_text = self._log_text(batch, outputs)
@@ -76,6 +77,7 @@ class ProsodyCallback(Callback):
         if outputs_all.binary:
             outputs_all.binary, _ = pad_2d(outputs_all.binary, pad_val=0, n_channel=2)
             targets_all.binary, _ = pad_1d(targets_all.binary, pad_val=-100)
+
         if outputs_all.category:
             outputs_all.category, _ = pad_2d(
                 outputs_all.category,
@@ -85,11 +87,13 @@ class ProsodyCallback(Callback):
             targets_all.category, _ = pad_1d(targets_all.category, pad_val=-100)
 
         metrics, reports = self.compute_metrics(outputs_all, targets_all)
-        for name in self.names:
-            pl_module.logger.experiment.add_text(
-                f"report_{name}", reports[name], global_step=pl_module.global_step
-            )
         pl_module.log_dict(metrics, prog_bar=True, logger=True)
+
+        if pl_module.logger is not None:
+            for name in self.names:
+                pl_module.logger.experiment.add_text(
+                    f"report_{name}", reports[name], global_step=pl_module.global_step
+                )
 
     def compute_metrics(
         self,

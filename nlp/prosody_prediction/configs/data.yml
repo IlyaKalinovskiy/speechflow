@@ -6,7 +6,7 @@ dirs:
 
 file_search:
   ext: .TextGrid_prosody
-  with_subfolders: True
+  with_subfolders: true
 
 data_server:
   n_processes: { default: 8, debug: 1 }

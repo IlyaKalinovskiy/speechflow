@@ -154,7 +154,13 @@ class ProsodyParser(BaseDSParser):
         for metadata in tqdm(all_metadata, desc="Getting original wav"):
             try:
                 meta = metadata["sega"].meta
-                orig_wav = meta["orig_audio_path"]
+
+                # TODO: support legacy models
+                if "orig_wav_path" in meta:
+                    orig_wav = meta["orig_wav_path"]
+                else:
+                    orig_wav = meta["orig_audio_path"]
+
                 wav_chunk = meta["orig_audio_chunk"]
                 if orig_wav in metadata_by_wav and any(
                     m["wav_chunk"] == wav_chunk for m in metadata_by_wav[orig_wav]
