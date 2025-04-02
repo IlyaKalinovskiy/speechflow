@@ -34,7 +34,7 @@ checkpoint:
 callbacks:
   TTSTrainingVisualizer: {}
   ProsodyTrainingVisualizer:
-    n_components: 16
+    n_classes: 8
 
 optimizer:
   method:

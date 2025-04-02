@@ -104,7 +104,7 @@ preproc:
     text:
       type: TTSTextProcessor
       lang: MULTILANG
-      # lang: { default: MULTILANG, ru: RU, en: EN, ml: MULTILANG }
+      num_prosodic_classes: 8
     xpbert:
       type: XPBertProcessor
     lm:

@@ -80,13 +80,20 @@ class Dataset:
 
     @staticmethod
     def _find_filepath(obj: tp.Any) -> tp.Optional[str]:
-        for attr in ["file_path", "filepath", "wav_path"]:
+        for attr in ["file_path", "filepath"]:
             if isinstance(obj, tp.MutableMapping):
                 path = obj.get(attr, None)
             else:
                 path = getattr(obj, attr, None)
             if path is not None:
                 break
+        else:
+            for item in obj.__dict__.values():
+                if isinstance(item, Path):
+                    path = item
+                    break
+            else:
+                path = None
 
         if isinstance(path, Path):
             return path.as_posix()

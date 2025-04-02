@@ -293,10 +293,10 @@ class TTSAudioSynthesizer(Callback):
 class ProsodyTrainingVisualizer(Callback):
     def __init__(
         self,
-        n_components: tp.Optional[int] = 10,
+        n_classes: tp.Optional[int] = 8,
         eps: tp.Optional[int] = None,
     ):
-        self.n_components = n_components
+        self.n_classes = n_classes
         self.eps = eps
 
     def on_validation_batch_end(
@@ -323,7 +323,7 @@ class ProsodyTrainingVisualizer(Callback):
 
         embeddings = codebook.cpu().detach().numpy()
 
-        mapping = self.clustering(embeddings, n_components=self.n_components)
+        mapping = self.clustering(embeddings, n_classes=self.n_classes)
         if len(mapping) > 0:
             pl_module.logger.experiment.add_image(
                 "vq_gaussian_clusters",
@@ -344,7 +344,7 @@ class ProsodyTrainingVisualizer(Callback):
     @staticmethod
     def clustering(
         embeddings: np.array,
-        n_components: tp.Optional[int] = None,
+        n_classes: tp.Optional[int] = None,
         eps: tp.Optional[int] = None,
     ):
         from sklearn.cluster import DBSCAN
@@ -357,8 +357,8 @@ class ProsodyTrainingVisualizer(Callback):
         3. Indices from the codebook are mapped with the corresponding classes
         """
 
-        if n_components:
-            classes = GaussianMixture(n_components=n_components).fit_predict(embeddings)
+        if n_classes:
+            classes = GaussianMixture(n_components=n_classes).fit_predict(embeddings)
         elif eps:
             classes = DBSCAN(eps=eps, min_samples=2).fit_predict(embeddings)
         else:

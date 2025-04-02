@@ -442,10 +442,7 @@ class AudioSeg:
         audio_path: tp.Optional[tp_PATH] = None,
     ):
         if meta:
-            if "wav_path" in meta:
-                audio_path_from_meta = Path(meta["wav_path"])
-            else:
-                audio_path_from_meta = Path(meta["audio_path"])
+            audio_path_from_meta = Path(meta["audio_path"])
         else:
             meta = {}
             audio_path_from_meta = file_path.with_suffix(".wav")

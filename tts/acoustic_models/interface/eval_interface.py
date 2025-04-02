@@ -27,6 +27,7 @@ from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
     TTSTextProcessor,
 )
 from speechflow.io import AudioChunk, check_path, tp_PATH
+from speechflow.logging import trace
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.init import init_class_from_config, init_method_from_config
 from speechflow.utils.seed import set_all_seed
@@ -338,7 +339,7 @@ class TTSEvaluationInterface:
                     text_parser=self.text_parser,
                 )
         else:
-            self.prosody_interface = None
+            self.prosody_ckpt_path = self.prosody_interface = None
 
         if pauses_ckpt_path is not None:
             self.pauses_interface = None
@@ -356,7 +357,7 @@ class TTSEvaluationInterface:
         try:
             self.model.load_state_dict(tts_ckpt["state_dict"], strict=True)
         except Exception as e:
-            print(e)
+            LOGGER.error(trace(self, e))
             self.model.load_state_dict(tts_ckpt["state_dict"], strict=False)
         self.model.to(self.device)
 

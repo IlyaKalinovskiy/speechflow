@@ -305,7 +305,6 @@ class BaseDSParser:
         """Reads a single sample from disk and preprocesses it.
 
         :param file_path: path to file and label (optional) separated by "|"
-        :param output: list of metadata
         :param data_root: path to data folder
         :return: list of correctly processed files
 
@@ -314,7 +313,7 @@ class BaseDSParser:
             try:
                 return Dataset(self.reader(file_path))
             except Exception as e:
-                LOGGER.error(trace(self, e, message=file_path.as_posix()))
+                LOGGER.error(trace(self, e))
 
         label = None
         if isinstance(file_path, str) and "|" in file_path:

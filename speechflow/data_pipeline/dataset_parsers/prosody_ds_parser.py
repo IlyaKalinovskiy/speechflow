@@ -152,42 +152,49 @@ class ProsodyParser(BaseDSParser):
 
         metadata_by_wav = defaultdict(list)
         for metadata in tqdm(all_metadata, desc="Getting original wav"):
-            orig_wav = metadata["sega"].meta["orig_wav_path"]
-            wav_chunk = metadata["sega"].meta["orig_audio_chunk"]
-            if orig_wav in metadata_by_wav and any(
-                m["wav_chunk"] == wav_chunk for m in metadata_by_wav[orig_wav]
-            ):
-                continue
+            try:
+                meta = metadata["sega"].meta
+                orig_wav = meta["orig_audio_path"]
+                wav_chunk = meta["orig_audio_chunk"]
+                if orig_wav in metadata_by_wav and any(
+                    m["wav_chunk"] == wav_chunk for m in metadata_by_wav[orig_wav]
+                ):
+                    continue
 
-            metadata_by_wav[orig_wav].append(
-                {
-                    "metadata": metadata,
-                    "wav_chunk": wav_chunk,
-                }
-            )
+                metadata_by_wav[orig_wav].append(
+                    {
+                        "metadata": metadata,
+                        "wav_chunk": wav_chunk,
+                    }
+                )
+            except Exception as e:
+                LOGGER.error(trace("combine_texts", e))
 
         metadata_processed = []
         for orig_wav in tqdm(metadata_by_wav, desc="Combining texts"):
-            sorted_samples = sorted(
-                metadata_by_wav[orig_wav], key=lambda d: d["wav_chunk"][0]
-            )
-            combined_metadata = {
-                "file_path": Path(orig_wav),
-                "sents": [],
-                "label": sorted_samples[0]["metadata"]["label"],
-            }
-            tokens_num = 0
-            for sample in sorted_samples:
-                combined_metadata["sents"].append(sample["metadata"]["sega"].sent)
-                tokens_num += len(sample["metadata"]["sega"].sent.tokens)
-                if tokens_num > 100:
-                    metadata_processed.append(combined_metadata)
-                    tokens_num = 0
-                    combined_metadata = {
-                        "file_path": Path(orig_wav),
-                        "sents": [],
-                        "label": sorted_samples[0]["metadata"]["label"],
-                    }
-            metadata_processed.append(combined_metadata)
+            try:
+                sorted_samples = sorted(
+                    metadata_by_wav[orig_wav], key=lambda d: d["wav_chunk"][0]
+                )
+                combined_metadata = {
+                    "file_path": Path(orig_wav),
+                    "sents": [],
+                    "label": sorted_samples[0]["metadata"]["label"],
+                }
+                tokens_num = 0
+                for sample in sorted_samples:
+                    combined_metadata["sents"].append(sample["metadata"]["sega"].sent)
+                    tokens_num += len(sample["metadata"]["sega"].sent.tokens)
+                    if tokens_num > 100:
+                        metadata_processed.append(combined_metadata)
+                        tokens_num = 0
+                        combined_metadata = {
+                            "file_path": Path(orig_wav),
+                            "sents": [],
+                            "label": sorted_samples[0]["metadata"]["label"],
+                        }
+                metadata_processed.append(combined_metadata)
+            except Exception as e:
+                LOGGER.error(trace("combine_texts", e))
 
         return metadata_processed

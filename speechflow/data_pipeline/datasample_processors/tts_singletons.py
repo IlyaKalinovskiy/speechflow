@@ -552,7 +552,7 @@ class DatasetStatistics(metaclass=Singleton):
                 else:
                     continue
                 seg_meta = AudioSeg.load_meta(file_path)
-                item.append(seg_meta.get("orig_wav_path"))
+                item.append(seg_meta.get("orig_audio_path"))
                 item.append(np.asarray(seg_meta.get("orig_audio_chunk")))
                 self.speaker_emb[speaker_name].append(item)
             except Exception as e:

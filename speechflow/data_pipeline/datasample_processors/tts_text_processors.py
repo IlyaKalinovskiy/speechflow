@@ -79,6 +79,7 @@ class TTSTextProcessor(BaseDSProcessor):
         words_level: bool = False,
         add_service_tokens: bool = False,
         allow_zero_sil: bool = True,
+        num_prosodic_classes: int = 8,
         ignore_ling_feat: tp.Optional[tp.List[str]] = None,
     ):
         from multilingual_text_parser.parser import TextParser
@@ -103,7 +104,9 @@ class TTSTextProcessor(BaseDSProcessor):
         self.pos_tokens = text_parser.pos
         self.rel_tokens = text_parser.rel
         self.intonation_tokens = text_parser.intonation
-        self.intonation_contour_tokens = tuple([i + 1 for i in range(10)] + [-1])
+        self.intonation_contour_tokens = tuple(
+            [i + 1 for i in range(num_prosodic_classes)] + [-1]
+        )
         self.additional_tokens = (
             self.sntgm,
             self.eosntgm,

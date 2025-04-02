@@ -86,7 +86,7 @@ def parse_args():
         default="cpu",
     )
     arguments_parser.add_argument(
-        "-ncls", "--n_classes", help="number of prosodic classes", type=int, default=0
+        "-ncls", "--n_classes", help="number of prosodic classes", type=int, default=8
     )
     arguments_parser.add_argument(
         "-m", "--mapping_file", help="file to store mapping", type=Path, default=None
@@ -106,7 +106,9 @@ def parse_args():
     return arguments_parser.parse_args()
 
 
-def update_sega(tg_path, tokens, indices, labels, output_ext: str):
+def update_sega(
+    tg_path, tokens, indices, labels, output_ext: str, num_prosodic_classes: int
+):
     # if tg_path.with_suffix(textgrid_ext_new).exists():
     #    continue
 
@@ -137,6 +139,7 @@ def update_sega(tg_path, tokens, indices, labels, output_ext: str):
             sega.sent.tokens[i].prosody = "-1"
 
     sega.meta["source_sega"] = tg_path.name
+    sega.meta["num_prosodic_classes"] = num_prosodic_classes
     sega.save(tg_path.with_suffix(output_ext))
 
     return number_of_classes
@@ -151,7 +154,8 @@ def redefine_dataset(
 ):
     """Function that adds additional layer with prosody to segs."""
 
-    number_of_classes = np.zeros(labels.max() + 1)
+    num_prosodic_classes = labels.max() + 1
+    number_of_classes = np.zeros(num_prosodic_classes)
     for batch in tqdm(iterator, total=len(iterator)):
         model_inputs, _, _ = batch_processor(batch)
 
@@ -168,7 +172,14 @@ def redefine_dataset(
             indices = batch_indices[idx][: model_inputs.num_words[idx]]
             assert len(tokens) == indices.shape[0]
 
-            result = update_sega(tg_path, tokens, indices.cpu(), labels, textgrid_ext_new)
+            result = update_sega(
+                tg_path,
+                tokens,
+                indices.cpu(),
+                labels,
+                textgrid_ext_new,
+                num_prosodic_classes=num_prosodic_classes,
+            )
             number_of_classes += result
 
     total_number_of_words = np.sum(number_of_classes)
@@ -192,7 +203,7 @@ def main(
     n_processes: int = 1,
     n_gpus: int = 0,
     model_device: str = "cpu",
-    n_classes: int = 0,
+    n_classes: int = 8,
     mapping_file: tp.Optional[Path] = None,
     textgrid_ext_old: tp.Optional[str] = None,
     textgrid_ext_new: str = ".TextGrid_prosody",

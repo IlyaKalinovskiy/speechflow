@@ -91,7 +91,7 @@ class TTSDSParser(BaseDSParser):
     def insert_index(metadata: Metadata):
         sega: AudioSegPreview = metadata["sega"]
 
-        index_text = sega.meta.get("orig_wav_path")
+        index_text = sega.meta.get("orig_audio_path")
         index_wave = sega.audio_chunk.file_path.parent
 
         metadata["index_text"] = index_text
@@ -285,7 +285,7 @@ class TTSDSParser(BaseDSParser):
             intonation_types = INTONATION_TYPES
 
         sega: AudioSegPreview = metadata["sega"]
-        src_wav_path = sega.meta.get("orig_wav_path")
+        src_wav_path = sega.meta.get("orig_audio_path")
 
         if not sega.meta.get("intonation_type"):
             if "?" in sega.sent.text:

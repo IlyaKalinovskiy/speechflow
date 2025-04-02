@@ -1,7 +1,5 @@
 import typing as tp
 
-from pathlib import Path
-
 import numpy as np
 import torch
 
@@ -18,6 +16,7 @@ from speechflow.data_pipeline.datasample_processors.data_types import (
 from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
     TTSTextProcessor,
 )
+from speechflow.io import check_path, tp_PATH
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.fs import get_module_dir
 from speechflow.utils.init import init_class_from_config
@@ -30,11 +29,12 @@ PITCH_DOWN_PUNCTUATIONS = (",", ".", ";", ":", "-")
 
 
 class ProsodyPredictionInterface:
+    @check_path(assert_file_exists=True)
     def __init__(
         self,
-        ckpt_path: tp.Union[str, Path],
+        ckpt_path: tp.Union[tp_PATH],
         device: str = "cpu",
-        lang: str = "EN",
+        lang: str = "RU",
         text_parser: tp.Optional[tp.Dict[str, TextParser]] = None,
         ckpt_preload: tp.Optional[dict] = None,
     ):
@@ -44,17 +44,6 @@ class ProsodyPredictionInterface:
             checkpoint = ckpt_preload
 
         cfg_data, cfg_model = ExperimentSaver.load_configs_from_checkpoint(checkpoint)
-        self.device = torch.device(device)
-
-        bert_path = checkpoint["params"]["model_name"]
-        bert_path = bert_path.replace("/src/libs/text_parser/text_parser/", "")
-        bert_path = get_module_dir("text_parser") / bert_path
-        checkpoint["params"]["model_name"] = bert_path.as_posix()
-
-        tokenizer_path = cfg_data["parser"]["tokenizer_name"]
-        tokenizer_path = tokenizer_path.replace("/src/libs/text_parser/text_parser/", "")
-        tokenizer_path = get_module_dir("text_parser") / tokenizer_path
-        cfg_data["parser"]["tokenizer_name"] = tokenizer_path.as_posix()
 
         model_cls = getattr(prosody_prediction, cfg_model["model"]["type"])
         self.model = model_cls(checkpoint["params"])
@@ -65,11 +54,11 @@ class ProsodyPredictionInterface:
 
         self.pipeline = PipelineComponents(cfg_data, "test")
 
-        BatchProcessor = getattr(prosody_prediction, cfg_model["batch"]["type"])
+        batch_processor_cls = getattr(prosody_prediction, cfg_model["batch"]["type"])
         self.batch_processor = init_class_from_config(
-            BatchProcessor, cfg_model["batch"]
+            batch_processor_cls, cfg_model["batch"]
         )()
-        self.batch_processor.device = self.device
+        self.batch_processor.set_device(device)
 
         if text_parser is None:
             self.text_parser = {lang: TextParser(lang=lang)}
@@ -211,7 +200,7 @@ class ProsodyPredictionInterface:
 
     def predict(
         self,
-        text: tp.Union[Doc, str],
+        text: tp.Union[str, Doc],
         tres_bin: tp.Optional[float] = None,
         predict_proba: bool = True,
         seed: int = 0,

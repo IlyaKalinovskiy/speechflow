@@ -22,7 +22,7 @@ from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSam
 from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
     TTSTextProcessor,
 )
-from speechflow.io import Timestamps
+from speechflow.io import Timestamps, check_path, tp_PATH
 from speechflow.logging import trace
 
 __all__ = [
@@ -979,10 +979,11 @@ def random_chunk(ds: TTSDataSample, min_length: float = 2.0, max_length: float =
 
 
 class ContoursExtractor:
+    @check_path(assert_file_exists=True)
     def __init__(
         self,
-        index_file: str,
-        labels_file: bool = False,
+        index_file: tp_PATH,
+        labels_file: tp_PATH,
         contour_length: int = 80,
     ):
         self.t = AnnoyIndex(contour_length, "euclidean")
@@ -997,10 +998,12 @@ class ContoursExtractor:
         offset: int = 10,
         min_contour_length: int = 10,
     ) -> tp.Generator[tp.Tuple[tp.Optional[npt.NDArray], int], None, None]:
-        frame_ts_word = np.concatenate([[0], np.cumsum(ds.word_lengths)]).astype(np.int64)
-        frame_ts = np.around(np.concatenate([[0], np.cumsum(ds.durations)])).astype(
-            np.int64
-        )
+        frame_ts_word = np.concatenate([[0], np.cumsum(ds.word_lengths)])  # type: ignore
+        frame_ts_word = frame_ts_word.astype(np.int64)
+
+        frame_ts = np.around(np.concatenate([[0], np.cumsum(ds.durations)]))  # type: ignore
+        frame_ts = frame_ts.astype(np.int64)
+
         tokens = [token.text for token in ds.sent.tokens if not token.is_punctuation]
 
         for idx, (start, end) in enumerate(zip(frame_ts_word[0:-1], frame_ts_word[1:])):
