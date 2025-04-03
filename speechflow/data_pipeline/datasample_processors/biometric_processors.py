@@ -9,7 +9,6 @@ import torch
 import wespeaker
 import torch.nn.functional as F
 
-from resemblyzer import VoiceEncoder, preprocess_wav
 from speechbrain.pretrained import EncoderClassifier
 
 from speechflow.data_pipeline.core import BaseDSProcessor, PipeRegistry
@@ -20,6 +19,11 @@ from speechflow.data_pipeline.datasample_processors.tts_singletons import (
 from speechflow.io import AudioChunk, tp_PATH
 from speechflow.utils.fs import get_root_dir
 from speechflow.utils.init import lazy_initialization
+
+try:
+    from resemblyzer import VoiceEncoder, preprocess_wav
+except ImportError as e:
+    print(f"Resemblyzer import failed: {e}")
 
 __all__ = ["VoiceBiometricProcessor", "mean_bio_embedding", "wespeaker"]
 

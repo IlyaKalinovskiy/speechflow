@@ -13,7 +13,6 @@ import numpy as np
 import torch
 import numpy.typing as npt
 
-from annoy import AnnoyIndex
 from numpy.random import default_rng
 from sklearn.cluster import FeatureAgglomeration
 from sklearn.metrics import pairwise_distances
@@ -28,6 +27,11 @@ from speechflow.data_server.helpers import LoaderParams, init_data_loader_from_c
 from speechflow.io import Config, json_dump_to_file
 from speechflow.logging import set_verbose_logging
 from speechflow.logging.server import LoggingServer
+
+try:
+    from annoy import AnnoyIndex
+except ImportError as e:
+    print(f"Annoy import failed: {e}")
 
 LOGGER = logging.getLogger("root")
 

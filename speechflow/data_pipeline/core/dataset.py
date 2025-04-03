@@ -88,7 +88,7 @@ class Dataset:
             if path is not None:
                 break
         else:
-            for item in obj.__dict__.values():
+            for item in getattr(obj, "__dict__", {}).values():
                 if isinstance(item, Path):
                     path = item
                     break

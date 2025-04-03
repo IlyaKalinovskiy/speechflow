@@ -10,7 +10,6 @@ from copy import deepcopy as copy
 import numpy as np
 import numpy.typing as npt
 
-from annoy import AnnoyIndex
 from multilingual_text_parser.data_types import Syntagma, Token, TokenUtils
 from scipy import interpolate, signal
 
@@ -24,6 +23,11 @@ from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
 )
 from speechflow.io import Timestamps, check_path, tp_PATH
 from speechflow.logging import trace
+
+try:
+    from annoy import AnnoyIndex
+except ImportError as e:
+    print(f"Annoy import failed: {e}")
 
 __all__ = [
     "add_pauses_from_text",

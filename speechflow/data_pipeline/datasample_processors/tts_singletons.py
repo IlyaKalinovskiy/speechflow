@@ -12,7 +12,6 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 
-from annoy import AnnoyIndex
 from tqdm import tqdm
 
 from speechflow.data_pipeline.core import Dataset, Singleton
@@ -21,6 +20,11 @@ from speechflow.io import AudioSeg
 from speechflow.logging import trace
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.dictutils import find_field
+
+try:
+    from annoy import AnnoyIndex
+except ImportError as e:
+    print(f"Annoy import failed: {e}")
 
 __all__ = [
     "SpeakerIDSetter",
