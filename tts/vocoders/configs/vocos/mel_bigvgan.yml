@@ -12,7 +12,7 @@ batch:
 
 data_loaders:
   # epoch_len: 1000
-  batch_size: { default: 3, debug: 2 }
+  batch_size: { default: 32, debug: 2 }
   min_batch_size: 2
   min_prefetch_factor: { default: 50, debug: 1 }
   max_prefetch_factor: { default: 150, debug: 1 }

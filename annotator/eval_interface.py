@@ -197,7 +197,7 @@ class AnnotatorEvaluationInterface:
 
             file_name = Path(tmp_dir) / f"{sega.audio_chunk.file_path.stem}.TextGrid"
             file_name = file_name.absolute()
-            sega.save(file_name, add_audio=True)
+            sega.save(file_name, with_audio=True)
 
             self.aligner_stage1.align_sega(file_name)
             if self.use_reverse_mode:
@@ -268,4 +268,4 @@ if __name__ == "__main__":
         audio_duration_limit=0,
     )
     _sega = annotator.process(_text, _audio_path, _lang, _speaker_name)
-    _sega.save("sega.tg", add_audio=True)
+    _sega.save("sega.tg", with_audio=True)

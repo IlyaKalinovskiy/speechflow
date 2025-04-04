@@ -9,10 +9,9 @@ from multilingual_text_parser.parser import TextParser
 
 from annotator.asr_services import GoogleASR, OpenAIASR, YandexASR
 from speechflow.data_pipeline.dataset_parsers import EasyDSParser
-from speechflow.io import AudioChunk, construct_file_list
+from speechflow.io import AudioChunk, AudioFormat, construct_file_list
 from speechflow.logging.server import LoggingServer
 from speechflow.utils.gpu_info import get_total_gpu_memory
-from speechflow.utils.init import init_method_from_config
 
 __all__ = ["main"]
 
@@ -37,13 +36,6 @@ def parse_args():
         type=Path,
     )
     arguments_parser.add_argument(
-        "-sr",
-        "--output_sample_rate",
-        help="sample rate for output audio",
-        type=int,
-        default=None,
-    )
-    arguments_parser.add_argument(
         "-ns",
         "--num_samples",
         help="max samples to load",
@@ -63,10 +55,10 @@ def parse_args():
     return arguments_parser.parse_args()
 
 
-def _convert_to_wav(audio_path: Path, output_sample_rate: tp.Optional[int] = None):
-    wav_path = audio_path.with_suffix(".wav")
+def _convert_to_opus(audio_path: Path):
+    wav_path = audio_path.with_suffix(".opus")
     if not wav_path.exists():
-        audio_chunk = AudioChunk(audio_path).load(sr=output_sample_rate)
+        audio_chunk = AudioChunk(audio_path).load()
         if audio_chunk.waveform.ndim == 2:
             audio_chunk.data = audio_chunk.data[0]
         audio_chunk.save(wav_path)
@@ -76,7 +68,6 @@ def main(
     data_root: Path,
     lang: str,
     asr_credentials: tp.Optional[Path] = None,
-    output_sample_rate: tp.Optional[int] = None,
     num_samples: int = 0,
     n_processes: int = 0,
     n_gpus: int = 0,
@@ -141,15 +132,8 @@ def main(
                 LOGGER.error(e)
                 time.sleep(5)
 
-        func = init_method_from_config(
-            _convert_to_wav, {"output_sample_rate": output_sample_rate}
-        )
-        parser = EasyDSParser(func=func)
+        parser = EasyDSParser(func=_convert_to_opus)
         for file_ext in [
-            "*.mp3",
-            "*.flac",
-            "*.ogg",
-            "*.opus",
             "*.aac",
             "*.mp4",
             "*.mkv",
@@ -163,7 +147,7 @@ def main(
         output_file_ext = ".whisper" if use_openai_asr else ".json"
         flist = construct_file_list(
             data_root,
-            ".wav",
+            AudioFormat.as_extensions(),
             with_subfolders=True,
             path_filter=lambda x: not x.with_suffix(output_file_ext).exists(),
         )

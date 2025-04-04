@@ -300,7 +300,7 @@ class VocosLightningEngine(pl.LightningModule):
             )
             self.clearml_task.logger.report_media(
                 title=tag,
-                stream=io.BytesIO(audio_chunk.tobytes()),
+                stream=io.BytesIO(audio_chunk.to_bytes()),
                 iteration=self.global_step,
                 file_extension="wav",
                 series="tada",

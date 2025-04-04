@@ -4,18 +4,25 @@ A speech processing toolkit focused on easy configuration of complex speech data
 
 The goal of this project is to provide a comprehensive toolkit to solve the TTS problem, including a [multilingual frontend](https://github.com/just-ai/multilingual-text-parser) for text preparation, forced alignment models, and a framework for assembling various TTS systems from unified blocks.
 
+### News
+
+- 14.04.2025: SpeechFlow 1.0 is released!
+
 ### Installation
 
-0. Clone a repository
+1. [Anaconda](https://www.anaconda.com/)
+
+2. Clone a repository and update submodules
 
 ```
 git clone https://github.com/just-ai/speechflow
-cd speechflow && git submodule update --init --recursive -f
+cd speechflow
+git submodule update --init --recursive -f
 ```
 
 #### On Ubuntu:
 
-1. Installation system packages
+3. Installation system packages
 
 ```bash
 apt-get update
@@ -24,22 +31,20 @@ apt-get install -y g++
 apt-get install -y wget sox ffmpeg
 ```
 
-2. Installation Python 3.10 with conda environment
+4. Installation Python 3.10 with conda environment
 
 ```bash
 conda create -n py310 python=3.10
 conda activate py310
-# source /opt/conda/etc/profile.d/conda.sh && conda activate py310
 ```
 
-3. Installation [PyTorch](https://pytorch.org/) and python requirements
+5. Installation python requirements
 
 ```bash
-pip install torch torchvision torchaudio
 pip install -r requirements.txt
 ```
 
-4. Installation requirements for [multilingual frontend](https://github.com/just-ai/multilingual-text-parser)
+6. Installation requirements for [multilingual frontend](https://github.com/just-ai/multilingual-text-parser)
 
 ```bash
 # install dotnet
@@ -57,13 +62,13 @@ apt-get install -y nuget
 apt-get install -y espeak-ng
 ```
 
-5. Installation submodules
+7. Installation submodules
 
 ```bash
 sh libs/install.sh
 ```
 
-6. Run tests
+8. Run tests
 
 ```bash
 pytest tests
@@ -83,9 +88,9 @@ pytest tests
 
 #### Alternative installation with [Singularity](https://docs.sylabs.io/guides/main/user-guide/#)
 
-1. Installation [Singularity](https://docs.sylabs.io/guides/3.11/admin-guide/installation.html) (or run `env/singularity.sh`)
-2. Run `install.sh`
-3. Run singularity container `singularity shell --nv --writable --no-home -B /run/user/:/run/user/,.:/src --pwd /src torch_*.sif`
+1. Installation [Singularity](https://docs.sylabs.io/guides/3.11/admin-guide/installation.html) (or run `sh env/singularity.sh`)
+2. Run `sh install.sh`
+3. Run singularity container `singularity shell --nv --writable --no-home -B .:/src --pwd /src torch_*.img`
 4. Activate conda environment `source /ext3/miniconda3/etc/profile.d/conda.sh && conda activate py310`
 
 

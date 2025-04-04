@@ -11,7 +11,7 @@ batch:
   type: TTSBatchProcessor
 
 data_loaders:
-  batch_size: { default: 48, debug: 4 }
+  batch_size: { default: 128, debug: 4 }
   min_batch_size: 4
   min_prefetch_factor: { default: 50, debug: 1 }
   max_prefetch_factor: { default: 150, debug: 1 }

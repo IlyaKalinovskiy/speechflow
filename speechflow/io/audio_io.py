@@ -21,17 +21,18 @@ __all__ = ["AudioFormat", "AudioChunk"]
 
 class AudioFormat(Enum):
     wav = 0
-    mp3 = 1
-    ogg = 2
-    opus = 3
+    flac = 1
+    opus = 2
+    ogg = 4
+    mp3 = 5
 
     @classmethod
-    def names(cls):
+    def formats(cls):
         return list(map(lambda c: c.name, cls))
 
-    @staticmethod
-    def get_formats() -> tp.Tuple[str, ...]:
-        return tuple([f".{name}" for name in AudioFormat.names()])
+    @classmethod
+    def as_extensions(cls):
+        return [f".{name}" for name in cls.formats()]
 
 
 @dataclass
@@ -52,6 +53,13 @@ class AudioChunk:
             ), "audio file not found!"
         else:
             assert self.waveform is not None, "waveform data not set!"
+            assert self.sr is not None, "samplerate data not set!"
+
+        if self.sr is None:
+            try:
+                self.sr = int(librosa.get_samplerate(path=self.file_path.as_posix()))
+            except Exception:
+                pass
 
         self._set_end()
 
@@ -60,7 +68,6 @@ class AudioChunk:
             if self.waveform is None:
                 assert self.file_path, "file path not set!"
                 try:
-                    self.sr = int(librosa.get_samplerate(path=self.file_path.as_posix()))
                     if LIBROSA_VERSION[1] <= 9:
                         self.end = librosa.get_duration(
                             filename=self.file_path.as_posix()
@@ -136,7 +143,7 @@ class AudioChunk:
                 self.data, self.sr, self.fade_duration[0], self.fade_duration[1]
             )
 
-        return self.astype(dtype, inplace=True)
+        return self.as_type(dtype, inplace=True)
 
     def save(
         self,
@@ -148,9 +155,9 @@ class AudioChunk:
             file_path = Path(file_path)
 
         if isinstance(file_path, Path):
-            audio_format = file_path.suffix[1:]
-            if audio_format not in ["wav", "flac", "mp3"]:
-                raise ValueError(f"'{audio_format}' audio format is not supported.")
+            format = file_path.suffix[1:]
+            if format not in AudioFormat.formats():
+                raise ValueError(f"'{format}' audio format is not supported.")
 
             if not overwrite:
                 if isinstance(file_path, (Path, str)):
@@ -158,40 +165,71 @@ class AudioChunk:
                         file_path
                     ).exists(), f"file {str(file_path)} is exists!"
         else:
-            audio_format = "wav"
+            format = "wav"
 
-        data = self.astype(np.float32).data
-
-        if data.ndim == 2 and data.shape[0] == 1:
+        if self.data.ndim == 2 and self.data.shape[0] == 1:
             raise ValueError(
                 "Unacceptable data shape, single-channel data must be flatten."
             )
 
-        sf.write(file_path, data, self.sr, format=audio_format)
+        if isinstance(file_path, Path):
+            file_path.write_bytes(self.to_bytes(format))
+        else:
+            file_path.write(self.to_bytes(format))
+
         return self
 
-    def tobytes(self, audio_format: AudioFormat = AudioFormat.wav, bitrate: str = "128k"):
+    def to_bytes(
+        self, format: str | AudioFormat = AudioFormat.wav, bitrate: str = "128k"
+    ) -> bytes:
         buff = io.BytesIO()
-        if audio_format in [AudioFormat.wav]:
-            self.save(buff)
-        elif audio_format in [AudioFormat.mp3, AudioFormat.ogg, AudioFormat.opus]:
-            in_buff = io.BytesIO(self.astype(np.int16).data.tobytes())
+        format = AudioFormat[format]
+        if format in [AudioFormat.wav, AudioFormat.flac, AudioFormat.mp3]:
+            data = self.as_type(np.float32).data
+            sf.write(buff, data, self.sr, format=format.name)
+        elif format in [AudioFormat.ogg, AudioFormat.opus]:
+            in_buff = io.BytesIO(self.as_type(np.int16).data.tobytes())
             audio = pydub.AudioSegment.from_raw(
                 in_buff, sample_width=2, channels=1, frame_rate=self.sr
             )
             buff = audio.export(
                 buff,
-                format=audio_format.name,
-                codec="opus"
-                if audio_format in [AudioFormat.ogg, AudioFormat.opus]
-                else None,
-                bitrate=None if audio_format == AudioFormat.ogg else bitrate,
+                format=format.name,
+                codec="opus" if format in [AudioFormat.ogg, AudioFormat.opus] else None,
+                bitrate=None if format == AudioFormat.ogg else bitrate,
                 parameters=["-strict", "-2"],
             )
         else:
-            raise NotImplementedError(f"Audio format {audio_format} is not supported")
+            raise NotImplementedError(f"Audio format {format} is not supported")
 
         return buff.getvalue()
+
+    def as_type(self, dtype, inplace: bool = False) -> "AudioChunk":
+        data = self.data
+
+        if self.dtype != dtype:
+            if all(
+                np.issubdtype(dt, np.signedinteger) for dt in [self.dtype, dtype]
+            ) or all(np.issubdtype(dt, np.floating) for dt in [self.dtype, dtype]):
+                data = self.data.astype(dtype)
+            else:
+                scale = np.float32(np.iinfo(np.int16).max)
+                if np.issubdtype(self.dtype, np.signedinteger):
+                    data = (self.data / scale).astype(dtype)
+                else:
+                    data = (self.data * scale).astype(dtype)
+
+        if inplace:
+            self.data = data
+            return self
+        else:
+            return AudioChunk(
+                file_path=self.file_path,
+                begin=self.begin,
+                end=self.end,
+                data=data,
+                sr=self.sr,
+            )
 
     def erase(self):
         del self.data
@@ -199,26 +237,6 @@ class AudioChunk:
 
     def copy(self):
         return copy(self)
-
-    def gsm_preemphasis(self, beta: float = 0.86, inplace: bool = False) -> "AudioChunk":
-        """High-pass filter for telephone channel https://edadocs.software.keys
-        ight.com/display/ads2009/GSM+Preemphasis."""
-        sig = self.data
-        assert np.issubdtype(
-            self.data.dtype, np.floating
-        ), "Audio data must be floating-point!"
-        sig = signal.lfilter([1, -beta], [1], sig)
-        if inplace:
-            self.data = sig
-            return self
-        else:
-            return AudioChunk(
-                file_path=self.file_path,
-                begin=self.begin,
-                end=self.end,
-                sr=self.sr,
-                data=sig,
-            )
 
     def trim(
         self,
@@ -252,6 +270,47 @@ class AudioChunk:
                 data=self.data[begin:end],
                 sr=self.sr,
             )
+
+    def pad(
+        self,
+        left: float = 0,
+        right: float = 0,
+        mode: str = "constant",
+        inplace: bool = False,
+    ):
+        left = int(left * self.sr)
+        right = int(right * self.sr)
+
+        data = self.data
+        data = np.pad(data, (left, right), mode=mode, constant_values=0)  # type: ignore
+
+        if inplace:
+            self.data = data
+            self.end += (left + right) / self.sr
+            return self
+        else:
+            return AudioChunk(data=data, sr=self.sr)
+
+    def multiple(
+        self, value: int, mode: str = "constant", odd: bool = False, inplace: bool = False
+    ):
+        data = self.data
+        pad_size = value - data.shape[0] % value
+        if pad_size == value:
+            pad_size = 0
+
+        data = np.pad(data, (0, pad_size), mode=mode, constant_values=0)  # type: ignore
+
+        if odd:
+            data = data[:-1]
+            pad_size -= 1
+
+        if inplace:
+            self.data = data
+            self.end += pad_size / self.sr
+            return self
+        else:
+            return AudioChunk(data=data, sr=self.sr)
 
     def volume(self, value: float = 1.0, inplace: bool = False):
         sig = self.data
@@ -298,72 +357,24 @@ class AudioChunk:
                 sr=sr,
             )
 
-    def multiple(
-        self, value: int, mode: str = "constant", odd: bool = False, inplace: bool = False
-    ):
-        data = self.data
-        pad_size = value - data.shape[0] % value
-        if pad_size == value:
-            pad_size = 0
-
-        data = np.pad(data, (0, pad_size), mode=mode, constant_values=0)  # type: ignore
-
-        if odd:
-            data = data[:-1]
-            pad_size -= 1
-
+    def gsm_preemphasis(self, beta: float = 0.86, inplace: bool = False) -> "AudioChunk":
+        """High-pass filter for telephone channel https://edadocs.software.keys
+        ight.com/display/ads2009/GSM+Preemphasis."""
+        sig = self.data
+        assert np.issubdtype(
+            self.data.dtype, np.floating
+        ), "Audio data must be floating-point!"
+        sig = signal.lfilter([1, -beta], [1], sig)
         if inplace:
-            self.data = data
-            self.end += pad_size / self.sr
-            return self
-        else:
-            return AudioChunk(data=data, sr=self.sr)
-
-    def pad(
-        self,
-        left: float = 0,
-        right: float = 0,
-        mode: str = "constant",
-        inplace: bool = False,
-    ):
-        left = int(left * self.sr)
-        right = int(right * self.sr)
-
-        data = self.data
-        data = np.pad(data, (left, right), mode=mode, constant_values=0)  # type: ignore
-
-        if inplace:
-            self.data = data
-            self.end += (left + right) / self.sr
-            return self
-        else:
-            return AudioChunk(data=data, sr=self.sr)
-
-    def astype(self, dtype, inplace: bool = False) -> "AudioChunk":
-        data = self.data
-
-        if self.dtype != dtype:
-            if all(
-                np.issubdtype(dt, np.signedinteger) for dt in [self.dtype, dtype]
-            ) or all(np.issubdtype(dt, np.floating) for dt in [self.dtype, dtype]):
-                data = self.data.astype(dtype)
-            else:
-                scale = np.float32(np.iinfo(np.int16).max)
-                if np.issubdtype(self.dtype, np.signedinteger):
-                    data = (self.data / scale).astype(dtype)
-                else:
-                    data = (self.data * scale).astype(dtype)
-
-        if inplace:
-            self.data = data
+            self.data = sig
             return self
         else:
             return AudioChunk(
                 file_path=self.file_path,
                 begin=self.begin,
                 end=self.end,
-                data=data,
                 sr=self.sr,
+                data=sig,
             )
 
     @staticmethod
@@ -393,6 +404,13 @@ class AudioChunk:
             sr=sr,
         )
 
+    @staticmethod
+    def find_audio(file_path: Path) -> tp.Optional[Path]:
+        for ext in AudioFormat.as_extensions():
+            audio_path = file_path.with_suffix(ext)
+            if audio_path.exists():
+                return audio_path
+
 
 if __name__ == "__main__":
     from speechflow.utils.fs import get_root_dir
@@ -405,9 +423,11 @@ if __name__ == "__main__":
 
     _flac_chunk = AudioChunk(_flac_path).load()
 
-    for _audio_format in AudioFormat.names():
-        _bytes = _audio_chunk.tobytes(AudioFormat[_audio_format])
-        _file_path = f"{_wav_path.stem}.{_audio_format}"
-        with open(_file_path, "wb") as f:
-            f.write(_bytes)
-        print(_file_path, AudioChunk(_file_path).load().duration)
+    for _format in AudioFormat.formats():
+        try:
+            print(_format)
+            _file_path = f"{_wav_path.stem}.{_format}"
+            _audio_chunk.save(_file_path, overwrite=True)
+            print(_file_path, AudioChunk(_file_path).load().duration)
+        except Exception as e:
+            print(e)

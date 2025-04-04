@@ -731,7 +731,7 @@ class PitchProcessor(BaseSpectrogramProcessor):
             else:
                 frame_period = 1000 * hop_len / sample_rate
 
-            waveform = audio_chunk.astype(np.float64).waveform
+            waveform = audio_chunk.as_type(np.float64).waveform
             f0, _ = pw.dio(
                 waveform,
                 audio_chunk.sr,

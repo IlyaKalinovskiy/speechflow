@@ -74,7 +74,7 @@ class GoogleASR(CloudASR):
         if AudioChunk(md["audio_path"]).duration < 60:
             try:
                 audio = google_speech.RecognitionAudio(
-                    content=metadata["waveform"].tobytes()
+                    content=metadata["waveform"].to_bytes()
                 )
                 operation = speech_client.long_running_recognize(
                     config=config, audio=audio
@@ -86,7 +86,7 @@ class GoogleASR(CloudASR):
             bucket = storage_client.get_bucket(self._bucket_name)
             blob = bucket.blob(str(uuid.uuid4()))
             blob.upload_from_string(
-                metadata["waveform"].tobytes(), content_type="audio/wav"
+                metadata["waveform"].to_bytes(), content_type="audio/wav"
             )
 
             try:

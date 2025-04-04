@@ -55,7 +55,18 @@ def parse_args():
         default=1,
     )
     arguments_parser.add_argument(
-        "-sr", "--output_sample_rate", help="sample rate for output audio", type=int
+        "-sr",
+        "--audio_sample_rate",
+        help="sample rate for output audio",
+        type=int,
+        default=24000,
+    )
+    arguments_parser.add_argument(
+        "-af",
+        "--audio_format",
+        help="format for output audio",
+        type=str,
+        default="wav",
     )
     arguments_parser.add_argument(
         "-m",
@@ -83,8 +94,11 @@ def _get_speaker_name(md: Metadata, data_root: Path, sep: str = "/"):
     return speaker_name
 
 
-def _audio_resampling(audio_path: Path, new_sample_rate: int):
-    AudioChunk(audio_path).load(sr=new_sample_rate).save(overwrite=True)
+def _audio_converter(audio_path: Path, sample_rate: int, format: str):
+    new_audio_path = audio_path.with_suffix(f".{format}")
+    AudioChunk(audio_path).load(sr=sample_rate).save(new_audio_path, overwrite=True)
+    if new_audio_path != audio_path:
+        audio_path.unlink()
 
 
 def _audio_loudnorm(audio_path: Path):
@@ -111,7 +125,8 @@ def main(
     split_audio: bool = True,
     resampling_audio: bool = True,
     loudnorm_audio: bool = True,
-    output_sample_rate: int = 24000,
+    audio_sample_rate: int = 24000,
+    audio_format: tp.Literal["wav", "flac", "opus"] = "wav",
     prefix: str = "",
     raise_on_converter_exc: bool = False,
     disable_logging: bool = False,
@@ -122,7 +137,7 @@ def main(
 
         if file_list is None:
             file_list = generate_file_list(
-                data_root, AudioFormat.get_formats(), with_subfolders=True
+                data_root, AudioFormat.as_extensions(), with_subfolders=True
             )
             text_from_label = False
         else:
@@ -202,13 +217,10 @@ def main(
                 try:
                     file_name = sega_out_dir / f"{prefix}{total_sent_count}.TextGrid"
                     sega.meta.update({"speaker_name": speaker_name})
-
-                    if split_audio:
-                        sega.audio_chunk.load()
-
-                    sega.save(file_name, add_audio=split_audio)
-
-                    seg_files.append(f"{file_name.as_posix()}|{sega.sent.text_orig}")
+                    sega.save(file_name, with_audio=split_audio)
+                    seg_files.append(
+                        f"{file_name.relative_to(output_dir).as_posix()}|{sega.sent.text_orig}"
+                    )
                     audio_files.append(sega.audio_chunk.file_path)
                     del sega.audio_chunk
 
@@ -219,16 +231,17 @@ def main(
                 except Exception as e:
                     LOGGER.error(e)
 
-        if split_audio and resampling_audio:
-            LOGGER.info(f"Resampling of audio files to {output_sample_rate}Hz")
-            func = partial(_audio_resampling, new_sample_rate=output_sample_rate)
-            EasyDSParser(func).run_from_path_list(
+        if split_audio and loudnorm_audio:
+            LOGGER.info("Volume normalization of audio files")
+            EasyDSParser(_audio_loudnorm).run_from_path_list(
                 path_list=audio_files, n_processes=n_processes
             )
 
-        if split_audio and loudnorm_audio:
-            LOGGER.info("Volume normalization of audio files")
-            func = partial(_audio_loudnorm)
+        if split_audio and resampling_audio:
+            LOGGER.info(f"Resampling of audio files to {audio_sample_rate}Hz")
+            func = partial(
+                _audio_converter, sample_rate=audio_sample_rate, format=audio_format
+            )
             EasyDSParser(func).run_from_path_list(
                 path_list=audio_files, n_processes=n_processes
             )

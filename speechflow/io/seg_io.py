@@ -1,5 +1,4 @@
 import json
-import shutil
 import typing as tp
 
 from copy import copy
@@ -11,7 +10,7 @@ import numpy as np
 from multilingual_text_parser.data_types import Doc, Position, Sentence, Syntagma, Token
 from praatio import tgio
 
-from speechflow.io import AudioChunk, Timestamps
+from speechflow.io import AudioChunk, AudioFormat, Timestamps
 from speechflow.io.utils import check_path, tp_PATH
 
 __all__ = ["AudioSeg", "AudioSegPreview"]
@@ -34,6 +33,7 @@ def _fix_json_string(string: str) -> str:
     string = string.replace("': null,", '": null,')
     string = string.replace("\\'", "'")
     string = string.replace(", '", ', "')
+    string = string.replace("': ", '": ')
     return string
 
 
@@ -358,9 +358,9 @@ class AudioSeg:
     def save(
         self,
         file_path: tp_PATH,
-        add_audio: bool = False,
-        add_meta: bool = True,
         overwrite: bool = True,
+        with_audio: bool = False,
+        audio_format: str = "wav",
         fields: tp.Tuple[str, ...] = (
             "orig",
             "syntagmas",
@@ -381,7 +381,7 @@ class AudioSeg:
 
         seqs = {}
         for name in fields:
-            seqs[name] = self.get_tier(name, relative=add_audio)
+            seqs[name] = self.get_tier(name, relative=with_audio)
 
         meta = self.meta
         meta["lang"] = self.sent.lang
@@ -392,31 +392,16 @@ class AudioSeg:
             tier = tgio.IntervalTier(name, field, 0, maxT=self.audio_chunk.duration)
             tg.addTier(tier)
 
-        if add_audio:
-            if self.audio_chunk.file_path is not None:
-                audio_ext = self.audio_chunk.file_path.suffix
-            else:
-                audio_ext = ".wav"
+        if with_audio:
+            if self.audio_chunk.empty:
+                self.audio_chunk.load()
 
-            curr_audio_path = self.audio_chunk.file_path
-            new_audio_path = file_path.with_suffix(audio_ext)
-
-            if curr_audio_path is None:
-                self.audio_chunk.save(new_audio_path, overwrite=overwrite)
-            else:
-                if AudioChunk(curr_audio_path).duration == self.audio_chunk.duration:
-                    shutil.copy(curr_audio_path, new_audio_path)
-                else:
-                    if self.audio_chunk.empty:
-                        self.audio_chunk.load()
-
-                    self.audio_chunk.save(new_audio_path, overwrite=overwrite)
-
+            new_audio_path = file_path.with_suffix(f".{audio_format}")
+            self.audio_chunk.save(new_audio_path, overwrite=overwrite)
             self.audio_chunk.file_path = new_audio_path
 
             meta["audio_path"] = self.audio_chunk.file_path.name
             meta["audio_chunk"] = (0.0, self.audio_chunk.duration)  # type: ignore
-            meta["audio_sr"] = self.audio_chunk.sr
         else:
             audio_path = Path(self.audio_chunk.file_path)
             if audio_path.parent == self.sega_path.parent:
@@ -426,11 +411,9 @@ class AudioSeg:
 
             meta["audio_path"] = audio_path
             meta["audio_chunk"] = (self.audio_chunk.begin, self.audio_chunk.end)  # type: ignore
-            meta["audio_sr"] = self.audio_chunk.sr
 
-        if add_meta:
-            tier = self.get_tier_for_meta(meta, relative=add_audio)
-            tg.addTier(tier)
+        tier = self.get_tier_for_meta(meta, relative=with_audio)
+        tg.addTier(tier)
 
         tg.save(file_path.as_posix())
 
@@ -454,6 +437,12 @@ class AudioSeg:
         if not audio_path_from_meta.is_absolute():
             audio_path_from_meta = file_path.with_name(audio_path_from_meta.name)
 
+        if not audio_path_from_meta.exists():
+            for ext in AudioFormat.as_extensions():
+                if audio_path_from_meta.with_suffix(ext).exists():
+                    audio_path_from_meta = audio_path_from_meta.with_suffix(ext)
+                    break
+
         audio_path = audio_path_from_meta if audio_path is None else audio_path
         if not audio_path.exists():
             raise FileNotFoundError(f"Audio file {audio_path.as_posix()} not found!")
@@ -463,7 +452,6 @@ class AudioSeg:
                 audio_path,
                 begin=meta["audio_chunk"][0],
                 end=meta["audio_chunk"][1],
-                sr=meta.get("audio_sr"),
             )
         elif "orig_audio_chunk" in meta:
             audio_chunk = AudioChunk(

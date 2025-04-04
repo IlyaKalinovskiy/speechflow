@@ -50,10 +50,17 @@ def parse_args():
     )
     arguments_parser.add_argument(
         "-sr",
-        "--sample_rate",
+        "--audio_sample_rate",
         help="sample rate for output audio",
         type=int,
         default=24000,
+    )
+    arguments_parser.add_argument(
+        "-af",
+        "--audio_format",
+        help="format for output audio",
+        type=str,
+        default="wav",
     )
     arguments_parser.add_argument(
         "-nproc",
@@ -567,7 +574,8 @@ def main(
     lang: str,
     langs_filter: tp.Optional[tp.List[str]] = None,
     speakers_filter: tp.Optional[tp.List[str]] = None,
-    sample_rate: tp.Optional[int] = None,
+    audio_sample_rate: tp.Optional[int] = None,
+    audio_format: tp.Literal["wav", "flac", "opus"] = "wav",
     n_processes: int = 1,
     n_gpus: int = 0,
     n_workers_per_gpu: int = 1,
@@ -612,7 +620,6 @@ def main(
                     data_root=data_root / meta["root"],
                     lang=meta.get("lang", lang),
                     asr_credentials=asr_credentials,
-                    output_sample_rate=sample_rate,
                     num_samples=num_samples,
                     n_processes=n_processes,
                     n_gpus=n_gpus,
@@ -648,7 +655,8 @@ def main(
                     num_samples=num_samples,
                     n_processes=n_processes,
                     n_gpus=n_gpus,
-                    output_sample_rate=sample_rate,
+                    audio_sample_rate=audio_sample_rate,
+                    audio_format=audio_format,
                     multispeaker_mode=meta.get("many", False),
                     use_asr_transcription=meta.get(
                         "use_asr_transcription", use_asr_transcription

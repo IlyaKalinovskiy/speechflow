@@ -41,7 +41,7 @@ def main():
             sega.set_phoneme_timestamps(ds.phoneme_timestamps)
 
             fpath = output_path / f"{ds.audio_chunk.file_path.name}_{idx}.tg"
-            sega.save(fpath, add_audio=True)
+            sega.save(fpath, with_audio=True)
 
             plot_durations_and_signals(
                 ds.mel,

@@ -48,9 +48,13 @@ class SimpleSegGenerator(BaseDSParser):
         self._text_from_label = text_from_label
 
     def reader(self, file_path: Path, label: tp.Optional[str] = None) -> tp.List[dict]:
+        audio_path = AudioChunk.find_audio(file_path)
+        if audio_path is None:
+            return []
+
         metadata = {
             "file_path": file_path,
-            "audio_path": file_path,
+            "audio_path": audio_path,
             "text_path": file_path.with_suffix(".txt"),
         }
 
@@ -152,4 +156,4 @@ if __name__ == "__main__":
         if "segmentation" in meta:
             for idx, sega in enumerate(meta["segmentation"]):
                 fpath = output_path / f"{meta['audio_path'].name}_{idx}.TextGrid"
-                sega.save(fpath, add_audio=True)
+                sega.save(fpath, with_audio=True)

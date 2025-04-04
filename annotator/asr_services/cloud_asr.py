@@ -54,7 +54,7 @@ class CloudASR(BaseDSParser):
     def converter(self, metadata: Metadata) -> tp.List[Metadata]:
         audio_path = Path(metadata["audio_path"])
         audio_chunk = AudioChunk(audio_path)
-        audio_chunk = audio_chunk.load(sr=self._sample_rate).astype(np.int16)
+        audio_chunk = audio_chunk.load(sr=self._sample_rate).as_type(np.int16)
 
         try:
             metadata.update({"waveform": audio_chunk.waveform, "sr": audio_chunk.sr})

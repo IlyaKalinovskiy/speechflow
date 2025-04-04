@@ -186,11 +186,6 @@ class SignalProcessor(BaseAudioProcessor):
         ds.audio_chunk.multiple(value, mode, odd=odd, inplace=True)
         return ds
 
-    @staticmethod
-    def astype(ds: AudioDataSample, dtype=np.float32) -> AudioDataSample:
-        ds.audio_chunk.astype(dtype, inplace=True)
-        return ds
-
     def resample(
         self, ds: AudioDataSample, sample_rate: int, **kwargs
     ) -> AudioDataSample:

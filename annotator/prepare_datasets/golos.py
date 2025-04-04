@@ -19,9 +19,7 @@ def wave_preprocessing(wav_path: Path, target_dbfs: float = -30.0):
 
     audio_chunk = AudioChunk(wav_path)
     assert audio_chunk.sr >= 16000
-
-    audio_chunk.load(dtype=np.float32)
-    audio_chunk.astype(dtype=np.int16, inplace=True)
+    audio_chunk.load(dtype=np.int16)
 
     audio_segment = AudioSegment(
         audio_chunk.data.tobytes(),

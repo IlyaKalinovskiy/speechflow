@@ -71,8 +71,8 @@ class AudiobookSpliter(BaseDSParser):
     def reader(
         self, file_path: Path, label: tp.Optional[str] = None
     ) -> tp.List[Metadata]:
-        audio_path = file_path.with_suffix(".wav")
-        if not audio_path.exists():
+        audio_path = AudioChunk.find_audio(file_path)
+        if audio_path is None:
             return []
 
         if self._text_from_label and label:
@@ -264,6 +264,7 @@ class AudiobookSpliter(BaseDSParser):
                         "eos_label": eos_label,
                         "orig_audio_path": Path(audio_chunk.file_path).as_posix(),
                         "orig_audio_chunk": (audio_chunk.begin, audio_chunk.end),
+                        "orig_audio_samplerate": audio_chunk.sr,
                         "text_parser_version": multilingual_text_parser.__version__,
                     }
                 )
@@ -432,7 +433,7 @@ if __name__ == "__main__":
                     _file_name = f"{meta['audio_path'].name.split('.')[0]}_{idx}.TextGrid"
                     _file_path = output_path / _file_name
                     sega.meta["speaker_name"] = "LJSpeech"
-                    sega.save(_file_path, add_audio=True)
+                    sega.save(_file_path, with_audio=True)
                     print(sega.sent.text_orig, _file_name)
                 except Exception as e:
                     print(e)
