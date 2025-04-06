@@ -15,9 +15,7 @@ __all__ = ["StyleEncoder", "StyleEncoderParams"]
 
 
 class StyleEncoderParams(EmbeddingParams):
-    base_encoder_type: tp.Literal[
-        "SimpleStyle", "StyleSpeech", "StyleTTS2"
-    ] = "SimpleStyle"
+    base_encoder_type: tp.Literal["SimpleStyle", "StyleSpeech"] = "SimpleStyle"
     base_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
     source: tp.Optional[str] = "spectrogram"
     source_dim: int = 80

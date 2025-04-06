@@ -46,9 +46,6 @@ class ForwardPostnet(Component):
     def forward_step(self, inputs: DecoderOutput) -> PostnetOutput:  # type: ignore
         content = inputs.get_content()
         x = content[-1]
-
         x = self.cbhg(x)
-
         x_out = self.proj(x)
-
         return PostnetOutput.copy_from(inputs).set_content(x_out)

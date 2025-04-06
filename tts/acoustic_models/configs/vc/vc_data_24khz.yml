@@ -2,7 +2,6 @@
 
 dirs:
   data_root: &data_root ../../../examples/simple_datasets/speech/SEGS
-  # data_root: &data_root /media/data1/DECODER_SEGS_v2
   dump_folder: &dump_folder dump_vc_whisp_24KHz
 
 file_search:
@@ -19,7 +18,6 @@ dataset:
   split_ratio: { default: 0.999, debug: 0.5 }
   max_num_samples: { default: 0, debug: 40 }
   directory_filter:
-    include: { default: ~, justai: EN }
     exclude: ["!"]
 
 parser:
@@ -81,17 +79,12 @@ preproc:
           f_max: 8000
     ssl:
       type: SSLProcessor
-      ssl_type: Hubert
+      ssl_type: { default: Wav2Vec, ml: WavLM }
       ssl_params:
-        model_name: facebook/hubert-large-ls960-ft
-        pretrain_path:
-          immers: /media/i.kalinovskiy/GitLab2/speechflow/hubert_phoneme_en/epoch=0-step=4500.ckpt
-          justai: /src/EN_epoch=0-step=4500.ckpt
-          debug: C:/FluentaAI/hubert_phoneme_en/epoch=0-step=4500.ckpt
-        vocab_path:
-          immers: /media/i.kalinovskiy/GitLab2/speechflow/hubert_phoneme_en/vocab.json
-          justai: /src/EN_epoch=0-step=4500_vocab.json
-          debug: C:/FluentaAI/hubert_phoneme_en/vocab.json
+        default:
+          feature_type: partial
+          level: 12  # 23
+        ml: ~
         # stream_mod:
         #   chunk_size: 6400
         #   context_size: [64000, 6550]
@@ -130,11 +123,6 @@ sampler:
     type: RandomSampler
     comb_by_len: true
     use_neighbors: true
-    # epoch_size: 100000
-    # fields_to_compute_weight: [uid, speaker_name]
-    # chunks_ratio: [0.5, 0.5]
-    # use_dynamic_batch: true
-    # max_batch_length: 50_000
   test:
     type: SimpleSampler
     comb_by_len: true

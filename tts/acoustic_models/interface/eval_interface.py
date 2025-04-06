@@ -38,7 +38,7 @@ from tts.acoustic_models.data_types import (
     TTSForwardInputWithSSML,
     TTSForwardOutput,
 )
-from tts.acoustic_models.models.prosody_reference import (
+from tts.acoustic_models.interface.prosody_reference import (
     REFERENECE_TYPE,
     ComplexProsodyReference,
 )

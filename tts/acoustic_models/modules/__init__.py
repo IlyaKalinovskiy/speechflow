@@ -11,21 +11,19 @@ from tts.acoustic_models.modules.components import (
 )
 from tts.acoustic_models.modules.params import *
 
-from . import ada_speech, common, forward_tacotron, prosody, tacotron2
+from . import common, forward_tacotron, prosody, tacotron2
 from .components import variance_adaptors as va
 
 TTS_ENCODERS = ComponentCollection()
 TTS_ENCODERS.registry_module(encoders, lambda x: "Encoder" in x)
 TTS_ENCODERS.registry_module(tacotron2, lambda x: "Encoder" in x)
 TTS_ENCODERS.registry_module(forward_tacotron, lambda x: "Encoder" in x)
-TTS_ENCODERS.registry_module(ada_speech, lambda x: "Encoder" in x)
 TTS_ENCODERS.registry_module(prosody, lambda x: "Encoder" in x)
 
 TTS_DECODERS = ComponentCollection()
 TTS_DECODERS.registry_module(decoders, lambda x: "Decoder" in x)
 TTS_DECODERS.registry_module(tacotron2, lambda x: "Decoder" in x)
 TTS_DECODERS.registry_module(forward_tacotron, lambda x: "Decoder" in x)
-TTS_DECODERS.registry_module(ada_speech, lambda x: "Decoder" in x)
 
 TTS_POSTNETS = ComponentCollection()
 TTS_POSTNETS.registry_module(postnet, lambda x: "Postnet" in x)

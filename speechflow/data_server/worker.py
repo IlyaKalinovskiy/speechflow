@@ -77,7 +77,11 @@ class BatchWorker(ProcessWorker):
                     break
 
             request = Serialize.load(message[0])
-            samples = Serialize.loads(message[1:])
+
+            if message[1:]:
+                samples = Serialize.loads(message[1:])
+            else:
+                return
 
             data_processor = self._data_processor[request["subset_name"]]
             batch = data_processor.process(samples)

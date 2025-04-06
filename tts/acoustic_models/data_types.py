@@ -6,7 +6,7 @@ from torch import Tensor
 
 from speechflow.data_pipeline.collate_functions.tts_collate import LinguisticFeatures
 from speechflow.data_pipeline.core.datasample import TrainData
-from tts.acoustic_models.models.prosody_reference import ComplexProsodyReference
+from tts.acoustic_models.interface.prosody_reference import ComplexProsodyReference
 
 __all__ = [
     "TTSTarget",

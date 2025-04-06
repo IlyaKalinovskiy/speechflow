@@ -10,7 +10,7 @@ from tts.acoustic_models.interface.eval_interface import (
     TTSContext,
     TTSEvaluationInterface,
 )
-from tts.acoustic_models.models.prosody_reference import REFERENECE_TYPE
+from tts.acoustic_models.interface.prosody_reference import REFERENECE_TYPE
 from tts.acoustic_models.modules.common.length_regulators import SoftLengthRegulator
 from tts.vocoders.eval_interface import VocoderEvaluationInterface
 

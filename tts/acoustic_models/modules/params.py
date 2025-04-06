@@ -6,7 +6,6 @@ from pydantic import Field
 
 from speechflow.data_pipeline.collate_functions.tts_collate import LinguisticFeatures
 from speechflow.training.base_model import BaseTorchModelParams
-from tts.acoustic_models.modules.common import CONDITIONAL_TYPES
 
 __all__ = [
     "EncoderParams",

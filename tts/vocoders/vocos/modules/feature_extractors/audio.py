@@ -91,9 +91,7 @@ class AudioFeaturesParams(BaseTorchModelParams):
     sf_encoder_use_condition: bool = True
     sf_condition_type: CONDITIONAL_TYPES = "cat"
     # style encoder
-    style_encoder_type: tp.Literal[
-        "SimpleStyle", "StyleSpeech", "StyleTTS2"
-    ] = "StyleSpeech"
+    style_encoder_type: tp.Literal["SimpleStyle", "StyleSpeech"] = "StyleSpeech"
     style_feat_type: tp.Literal[
         "linear_spectrogram",
         "mel_spectrogram",

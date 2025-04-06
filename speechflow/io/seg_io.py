@@ -38,7 +38,7 @@ def _fix_json_string(string: str) -> str:
 
 
 def _extract_meta(string: str):
-    string = string[string.rfind("meta") + len("meta") + 1 :]
+    string = string[string.rfind('"meta"') + len('"meta"') + 1 :]
     string = string[string.find('"{') + 1 :][::-1]
     string = string[string.find('"}') + 1 :][::-1]
     return json.loads(_fix_json_string(string))

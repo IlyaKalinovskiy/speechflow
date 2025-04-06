@@ -148,9 +148,15 @@ class ExperimentSaver:
     @check_path(assert_file_exists=True)
     def load_checkpoint(file_path: tp_PATH, map_location: str = "cpu") -> tp.Dict:
         if file_path.is_dir():
-            file_path = ExperimentSaver.get_last_checkpoint(file_path)
+            ckpt_path = ExperimentSaver.get_last_checkpoint(file_path)
+            if ckpt_path is None:
+                raise FileNotFoundError(
+                    f"Not found checkpoint in directory {file_path.as_posix()}"
+                )
+            else:
+                file_path = ckpt_path
 
-        print(f"Load checkpoint from {file_path.as_posix()}")
+        LOGGER.info(f"Load checkpoint from {file_path.as_posix()}")
         if file_path.suffix in [".ckpt", ".pt"]:
             with ExperimentSaver.portable_pathlib():
                 return torch.load(file_path, map_location, weights_only=False)

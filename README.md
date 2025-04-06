@@ -154,7 +154,7 @@ We provide pre-trained [multilingual forced alignment models](https://huggingfac
 
 Run this script to get segmentations:
 ```
-# single GPU (the minimum requirement is 128GB RAM and 24GB VRAM)
+# single GPU (the minimum requirement is 64GB RAM and 24GB VRAM)
 python -m annotator.runner -d source_data_root -o segmentation_dataset_name -l=MULTILANG -ngpu=1 -nproc=16 -bs=16 --pretrained_models mfa_stage1_epoch=19-step=208340.pt mfa_stage2_epoch=29-step=312510.pt
 
 # multi GPU (the minimum requirement is 256GB RAM and 24GB VRAM per GPU)
@@ -175,14 +175,29 @@ See more examples [here](examples/simple_datasets/speech/SEGS).
 The alignment model is based on the [Glow-TTS](https://github.com/jaywalnut310/glow-tts) code.
 Our implementation can be studied [here](tts/forced_alignment/model/glow_tts.py).
 
-### Trainig accustic models
+### Training prosody model
 
-coming soon ...
+1. Build a dump of the required features
 
-### Trainig vocoder
+```
+# single GPU
+python -m tts.acoustic_models.scripts.dump -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml -nproc=5 -ngpu=1 [-vs <languade>]
 
-coming soon ...
+# multi GPU
+python -m tts.acoustic_models.scripts.dump -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml -nproc=20 -ngpu=4 [-vs <languade>]
+```
 
-### Inferensces
+2. Training model
+```
+python -m tts.acoustic_models.scripts.dump -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml -nproc=20 -ngpu=4 [-vs <languade>]
+```
 
-coming soon ...
+
+
+### Training TTS model
+
+
+### Training prosody prediction model
+
+
+### Inference

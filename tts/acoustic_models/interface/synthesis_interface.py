@@ -24,7 +24,7 @@ from tts.acoustic_models.interface.eval_interface import (
     TTSEvaluationInterface,
     TTSOptions,
 )
-from tts.acoustic_models.models.prosody_reference import REFERENECE_TYPE
+from tts.acoustic_models.interface.prosody_reference import REFERENECE_TYPE
 from tts.vocoders.eval_interface import VocoderEvaluationInterface, VocoderOptions
 
 __all__ = ["SpeechSynthesisInterface", "SynthesisOptions", "SynthesisOutput"]

@@ -10,4 +10,3 @@ from .tokenlevel_predictor import (
     TokenLevelPredictorWithDiscriminator,
     TokenLevelPredictorWithDiscriminatorParams,
 )
-from .vits_predictor import VITSPredictor, VITSPredictorParams
