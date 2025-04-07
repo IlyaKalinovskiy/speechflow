@@ -1,6 +1,6 @@
 ### Model configuration ###
 
-experiment_name: prosody_model  # name for current experiment
+experiment_name: prosody_model
 
 dirs:
   logging: prosody_experiments

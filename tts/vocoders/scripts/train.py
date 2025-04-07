@@ -128,7 +128,9 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
         raise NotImplementedError
 
     callbacks = [
-        saver.get_checkpoint_callback(cfg=cfg_model["checkpoint"]),
+        saver.get_checkpoint_callback(
+            cfg=cfg_model["checkpoint"], prefix=cfg_model["experiment_name"]
+        ),
     ]
 
     if cfg_model.get("callbacks"):

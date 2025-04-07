@@ -150,40 +150,40 @@ class ProsodyParser(BaseDSParser):
     def combine_texts(all_metadata: tp.List[Metadata]) -> tp.List[Metadata]:
         """Combines original texts and cuts them by 100 words to fit in a model."""
 
-        metadata_by_wav = defaultdict(list)
-        for metadata in tqdm(all_metadata, desc="Getting original wav"):
+        metadata_by_audio = defaultdict(list)
+        for metadata in tqdm(all_metadata, desc="Getting original audio"):
             try:
                 meta = metadata["sega"].meta
 
                 # TODO: support legacy models
                 if "orig_wav_path" in meta:
-                    orig_wav = meta["orig_wav_path"]
+                    orig_audio = meta["orig_wav_path"]
                 else:
-                    orig_wav = meta["orig_audio_path"]
+                    orig_audio = meta["orig_audio_path"]
 
-                wav_chunk = meta["orig_audio_chunk"]
-                if orig_wav in metadata_by_wav and any(
-                    m["wav_chunk"] == wav_chunk for m in metadata_by_wav[orig_wav]
+                audio_chunk = meta["orig_audio_chunk"]
+                if orig_audio in metadata_by_audio and any(
+                    m["audio_chunk"] == audio_chunk for m in metadata_by_audio[orig_audio]
                 ):
                     continue
 
-                metadata_by_wav[orig_wav].append(
+                metadata_by_audio[orig_audio].append(
                     {
                         "metadata": metadata,
-                        "wav_chunk": wav_chunk,
+                        "audio_chunk": audio_chunk,
                     }
                 )
             except Exception as e:
                 LOGGER.error(trace("combine_texts", e))
 
         metadata_processed = []
-        for orig_wav in tqdm(metadata_by_wav, desc="Combining texts"):
+        for orig_audio in tqdm(metadata_by_audio, desc="Combining texts"):
             try:
                 sorted_samples = sorted(
-                    metadata_by_wav[orig_wav], key=lambda d: d["wav_chunk"][0]
+                    metadata_by_audio[orig_audio], key=lambda d: d["audio_chunk"][0]
                 )
                 combined_metadata = {
-                    "file_path": Path(orig_wav),
+                    "file_path": Path(orig_audio),
                     "sents": [],
                     "label": sorted_samples[0]["metadata"]["label"],
                 }
@@ -195,7 +195,7 @@ class ProsodyParser(BaseDSParser):
                         metadata_processed.append(combined_metadata)
                         tokens_num = 0
                         combined_metadata = {
-                            "file_path": Path(orig_wav),
+                            "file_path": Path(orig_audio),
                             "sents": [],
                             "label": sorted_samples[0]["metadata"]["label"],
                         }

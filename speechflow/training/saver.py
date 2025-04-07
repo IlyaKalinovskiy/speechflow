@@ -138,7 +138,12 @@ class ExperimentSaver:
 
         return None
 
-    def get_checkpoint_callback(self, cfg: Config):
+    def get_checkpoint_callback(self, cfg: Config, prefix: tp.Optional[str] = None):
+        filename = cfg.get("filename", "{epoch}-{step}")
+
+        if prefix is not None:
+            cfg.filename = f"{prefix}_{filename}"
+
         checkpoint_callback = init_class_from_config(ModelCheckpoint, cfg)(
             dirpath=self.expr_path / ExperimentSaver._folder
         )

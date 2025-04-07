@@ -130,7 +130,9 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]):
         pl.callbacks.LearningRateMonitor(logging_interval="epoch"),
         GradNormCallback(),
         AligningVisualisationCallback(),
-        saver.get_checkpoint_callback(cfg=cfg_model["checkpoint"]),
+        saver.get_checkpoint_callback(
+            cfg=cfg_model["checkpoint"], prefix=cfg_model["experiment_name"]
+        ),
     ]
 
     if "early_stopping" in cfg_model:

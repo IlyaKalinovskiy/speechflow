@@ -73,7 +73,9 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
             tokenizer_name=cfg_model["callbacks"]["ProsodyCallback"]["tokenizer_name"],
             n_classes=cfg_model["model"]["params"]["n_classes"],
         ),
-        saver.get_checkpoint_callback(cfg=cfg_model["checkpoint"]),
+        saver.get_checkpoint_callback(
+            cfg=cfg_model["checkpoint"], prefix=cfg_model["experiment_name"]
+        ),
     ]
 
     ckpt_path = cfg_model["trainer"].pop("resume_from_checkpoint", None)

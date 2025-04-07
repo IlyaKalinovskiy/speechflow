@@ -135,7 +135,9 @@ def train(cfg_model: Config, data_loaders: tp.Dict[str, DataLoader]) -> str:
     )
 
     callbacks = [
-        saver.get_checkpoint_callback(cfg=cfg_model["checkpoint"]),
+        saver.get_checkpoint_callback(
+            cfg=cfg_model["checkpoint"], prefix=cfg_model["experiment_name"]
+        ),
         pl.callbacks.LearningRateMonitor(logging_interval="epoch"),
     ]
 

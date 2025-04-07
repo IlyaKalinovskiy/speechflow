@@ -129,6 +129,8 @@ class ProsodyCallback(Callback):
                 )
                 predictions = predicted.argmax(-1)
 
+            metrics[f"{name}_ERR"] = metrics[f"{name}/EER"]
+
             roc_auc = roc_auc_score(
                 target,
                 probabilities,
