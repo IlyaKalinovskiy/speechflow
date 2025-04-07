@@ -6,7 +6,10 @@ from torch import nn
 
 from speechflow.training.base_model import BaseTorchModelParams
 from tts.vocoders.vocos.modules.backbones.base import Backbone
-from tts.vocoders.vocos.modules.backbones.components.blocks import AdaLayerNorm, ConvNeXtBlock
+from tts.vocoders.vocos.modules.backbones.components.blocks import (
+    AdaLayerNorm,
+    ConvNeXtBlock,
+)
 
 __all__ = ["VocosBackbone", "VocosBackboneParams"]
 

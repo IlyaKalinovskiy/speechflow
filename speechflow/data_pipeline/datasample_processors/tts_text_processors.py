@@ -79,7 +79,7 @@ class TTSTextProcessor(BaseDSProcessor):
         words_level: bool = False,
         add_service_tokens: bool = False,
         allow_zero_sil: bool = True,
-        num_prosodic_classes: int = 8,
+        num_prosodic_classes: tp.Optional[int] = None,
         ignore_ling_feat: tp.Optional[tp.List[str]] = None,
     ):
         from multilingual_text_parser.parser import TextParser
@@ -97,6 +97,9 @@ class TTSTextProcessor(BaseDSProcessor):
             self.num_symbols_per_phoneme_token = text_parser.num_symbols_per_phoneme
         else:
             self.num_symbols_per_phoneme_token = 1
+
+        if num_prosodic_classes is None:
+            num_prosodic_classes = 0
 
         self.service_tokens = (self.pad, self.bos, self.eos, self.sil, self.unk)
         self.phoneme_tokens = text_parser.phonemes

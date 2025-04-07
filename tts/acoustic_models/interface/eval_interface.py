@@ -204,12 +204,14 @@ class TTSEvaluationInterface:
         text_cfg["add_service_tokens"] = True
 
         self.lang = text_cfg.get("lang", "RU")
-        if "alphabet" in tts_ckpt:
-            assert tts_ckpt["alphabet"] == TTSTextProcessor(self.lang).alphabet
-        else:
-            assert (
-                tts_ckpt["params"]["alphabet_size"]
-                == TTSTextProcessor(lang=self.lang).alphabet_size
+        self.num_prosodic_classes = text_cfg.get("num_prosodic_classes")
+        text_proc = TTSTextProcessor(
+            lang=self.lang, num_prosodic_classes=self.num_prosodic_classes
+        )
+        if tts_ckpt["alphabet"] != text_proc.alphabet:
+            raise ValueError(
+                f"The current TTS model is trained with a different alphabet! "
+                f"Unknown symbols: {set(tts_ckpt['alphabet']) ^ set(text_proc.alphabet)}"
             )
 
         cfg_data["collate"]["type"] = (
@@ -335,6 +337,7 @@ class TTSEvaluationInterface:
                 self.prosody_interface = ProsodyPredictionInterface(
                     ckpt_path=self.prosody_ckpt_path,
                     lang=self.lang,
+                    num_prosodic_classes=self.num_prosodic_classes,
                     device=device_model,
                     text_parser=self.text_parser,
                 )
