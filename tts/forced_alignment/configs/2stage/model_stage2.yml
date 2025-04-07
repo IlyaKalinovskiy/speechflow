@@ -1,6 +1,6 @@
 ### Model configuration ###
 
-experiment_name: forced_alignment_stage1
+experiment_name: forced_alignment_stage2
 
 dirs:
   logging: experiments_fa_2stage

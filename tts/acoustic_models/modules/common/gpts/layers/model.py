@@ -905,7 +905,7 @@ class VALLE(VALLF):
                 targets,
                 ignore_index=self._num_audio_tokens,
                 reduction=reduction,
-            ) * (totalF_length / (total_length - prefix_len * x.shape[0]))
+            ) * (total_length / (total_length - prefix_len * x.shape[0]))
             metrics["NarTop10Accuracy"] = (
                 self.nar_accuracy_metric(
                     F.pad(
@@ -978,8 +978,6 @@ class VALLE(VALLF):
 
         pbar = tqdm()
         while True:
-            files = os.listdir("/media/hdd/a.pimenov/dumps/demo/selfattention/")
-            torch.save()
             pbar.update(1)
             y_emb = self.ar_audio_embedding(y)
             y_emb = self.ar_audio_prenet(y_emb)

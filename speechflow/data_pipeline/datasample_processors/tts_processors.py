@@ -1042,7 +1042,7 @@ class ContoursExtractor:
                             yield None, word_len
                         else:
                             yield contour, word_len
-                    except:
+                    except Exception:
                         yield None, word_len
                 else:
                     yield None, word_len

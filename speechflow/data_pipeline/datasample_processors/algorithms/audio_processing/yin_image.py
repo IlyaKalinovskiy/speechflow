@@ -21,7 +21,7 @@ def m2l(sr: float, m: tp.Union[float, torch.Tensor]) -> tp.Union[float, torch.Te
     return sr / (440 * 2 ** ((m - 69) / 12))
 
 
-def l2m(sr: float, l: tp.Union[float, torch.Tensor]) -> tp.Union[float, torch.Tensor]:
+def l2m(sr: float, tl: tp.Union[float, torch.Tensor]) -> tp.Union[float, torch.Tensor]:
     """Lag-to-midi converter.
 
     Args:
@@ -31,7 +31,7 @@ def l2m(sr: float, l: tp.Union[float, torch.Tensor]) -> tp.Union[float, torch.Te
         corresponding midi-scale value.
 
     """
-    return 12 * np.log2(sr / (440 * l)) + 69
+    return 12 * np.log2(sr / (440 * tl)) + 69
 
 
 class Yingram(nn.Module):
@@ -118,8 +118,8 @@ class Yingram(nn.Module):
         )
         # [B, T / strides, lmax - 1]
         cumdiff = diff[..., 1:] / (diff[..., 1:].cumsum(dim=-1) + 1e-7)
-        ## in NANSY, Eq(1), it does not normalize the cumulative sum with lag size
-        ## , but in YIN, Eq(8), it normalize the sum with their lags
+        # in NANSY, Eq(1), it does not normalize the cumulative sum with lag size
+        # , but in YIN, Eq(8), it normalize the sum with their lags
         cumdiff = cumdiff * torch.arange(1, tau_max, device=cumdiff.device)
         # [B, T / strides, lmax], cumulative mean normalized difference
         cumdiff = F.pad(cumdiff, [1, 0], value=1.0)

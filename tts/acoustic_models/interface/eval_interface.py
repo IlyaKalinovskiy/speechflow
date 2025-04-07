@@ -129,11 +129,11 @@ class TTSEvaluationInterface:
         tts_ckpt_path: tp_PATH,
         prosody_ckpt_path: tp.Optional[tp_PATH] = None,
         pauses_ckpt_path: tp.Optional[tp_PATH] = None,
-        device_model: str = "cpu",
-        device_pipe: str = "cpu",
+        device: str = "cpu",
+        device_pipe: tp.Optional[str] = None,
         **kwargs,
     ):
-        env["DEVICE"] = device_pipe
+        env["DEVICE"] = device_pipe if device_pipe is not None else device
 
         tts_ckpt = ExperimentSaver.load_checkpoint(tts_ckpt_path)
         cfg_data, cfg_model = ExperimentSaver.load_configs_from_checkpoint(tts_ckpt)
@@ -176,7 +176,7 @@ class TTSEvaluationInterface:
 
         self.lang_id_map = tts_ckpt.get("lang_id_map", {})
         self.speaker_id_map = tts_ckpt.get("speaker_id_map", {})
-        self.device = torch.device(device_model)
+        self.device = torch.device(device)
 
         # update data config
         cfg_data["processor"].pop("dump", None)
@@ -338,7 +338,7 @@ class TTSEvaluationInterface:
                     ckpt_path=self.prosody_ckpt_path,
                     lang=self.lang,
                     num_prosodic_classes=self.num_prosodic_classes,
-                    device=device_model,
+                    device=device,
                     text_parser=self.text_parser,
                 )
         else:

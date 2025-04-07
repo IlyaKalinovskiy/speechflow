@@ -8,8 +8,8 @@ __all__ = ["BaseCriterion"]
 class BaseCriterion(torch.nn.Module):
     def forward(
         self,
-        output: "TrainData",
-        target: "TrainData",
+        output: "TrainData",  # noqa: F821
+        target: "TrainData",  # noqa: F821
         batch_idx: int = 0,
         global_step: int = 0,
     ) -> tp.Dict[str, torch.Tensor]:

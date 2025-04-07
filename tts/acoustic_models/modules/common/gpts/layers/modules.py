@@ -381,7 +381,6 @@ class ActivationBalancer(nn.Module):
         prob = max(self.min_prob, 0.5 ** (1 + (count / 4000.0)))
 
         if random.random() < prob:
-            sign_gain_factor = 0.5
             if self.min_positive != 0.0 or self.max_positive != 1.0:
                 sign_factor = _compute_sign_factor(
                     x,
@@ -431,7 +430,6 @@ class DoubleSwishFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x: torch.Tensor) -> torch.Tensor:
         requires_grad = x.requires_grad
-        x_dtype = x.dtype
         if x.dtype == torch.float16:
             x = x.to(torch.float32)
 

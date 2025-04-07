@@ -44,7 +44,7 @@ def construct_file_list(
         flist = [p for p in flist if Path(p).parents[0] == data_root]
 
     if path_filter:
-        flist = [file for file in flist if path_filter(Path(file))]
+        flist = [file for file in flist if path_filter(file)]
 
     return flist
 

@@ -1,3 +1,6 @@
+"""UTMOS score, automatic Mean Opinion Score (MOS) prediction system, adapted from
+https://huggingface.co/spaces/sarulab-speech/UTMOS-demo."""
+
 import os
 
 import torch
@@ -10,11 +13,6 @@ from tqdm import tqdm
 
 UTMOS_CKPT_URL = "https://huggingface.co/spaces/sarulab-speech/UTMOS-demo/resolve/main/epoch%3D3-step%3D7459.ckpt"
 WAV2VEC_URL = "https://huggingface.co/spaces/sarulab-speech/UTMOS-demo/resolve/main/wav2vec_small.pt"
-
-"""
-UTMOS score, automatic Mean Opinion Score (MOS) prediction system,
-adapted from https://huggingface.co/spaces/sarulab-speech/UTMOS-demo
-"""
 
 
 class UTMOSScore:
@@ -187,7 +185,7 @@ class LDConditioner(nn.Module):
         self.input_dim = input_dim
         self.judge_dim = judge_dim
         self.num_judges = num_judges
-        assert num_judges != None
+        assert num_judges is not None
         self.judge_embedding = nn.Embedding(num_judges, self.judge_dim)
         # concat [self.output_layer, phoneme features]
 
@@ -227,7 +225,7 @@ class LDConditioner(nn.Module):
                 ),
                 dim=2,
             )
-        if judge_ids != None:
+        if judge_ids is not None:
             concatenated_feature = torch.cat(
                 (
                     concatenated_feature,

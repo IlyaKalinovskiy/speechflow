@@ -333,7 +333,7 @@ def main(
                 value["method"] = "pyworld"
 
     cfg = update_config(cfg, n_processes, n_gpus, contours_clustering=contours_clustering)
-    dump_config_path = dump_folder / f"cfg_for_dump.yml"
+    dump_config_path = dump_folder / "cfg_for_dump.yml"
     cfg.to_file(dump_config_path)
 
     attributes = [] if attributes is None else list(attributes)

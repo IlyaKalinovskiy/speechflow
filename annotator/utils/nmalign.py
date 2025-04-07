@@ -139,18 +139,14 @@ def match(
         # try subsegmentation / splitting ind2
         if (
             try_subseg
-            and
             # not already very good alignment
-            score < SUBSEG_ACC_MAX
-            and
+            and score < SUBSEG_ACC_MAX
             # multiple words
-            " " in seg2
-            and
+            and " " in seg2
             # long enough
-            len(seg2) > SUBSEG_LEN_MIN
-            and
+            and len(seg2) > SUBSEG_LEN_MIN
             # seg2 a lot larger than seg1 (disabled)
-            (1 or len(seg2) - len(seg1) > SUBSEG_LEN_MIN / 2)
+            and (1 or len(seg2) - len(seg1) > SUBSEG_LEN_MIN / 2)
         ):
             subseg = match_subseg(
                 l1,

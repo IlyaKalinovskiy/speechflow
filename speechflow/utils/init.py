@@ -126,7 +126,7 @@ def lazy_initialization(func):
 
             for attr in none_attr_before:
                 if attr not in none_attr_after:
-                    attr_value = getattr(args[0], attr)  # type: ignore
+                    attr_value = getattr(args[0], attr)  # noqa: F841
                     del attr_value
                     setattr(args[0], attr, None)
 

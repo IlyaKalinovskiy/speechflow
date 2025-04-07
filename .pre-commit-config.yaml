@@ -57,7 +57,7 @@ repos:
 #    -   id: mypy
 #        stages: [commit]
 #        additional_dependencies: [data-science-types==0.2.23, numpy==1.24.0]
-#        exclude: \S*\/(main.py|train.py|eval_tts.py|setup.py)
+#        exclude: \S*\/(main.py|train.py|eval.py|setup.py)
 #        args: [--ignore-missing-imports, --install-types, --non-interactive, --python-version=3.8, --no-implicit-optional, --allow-redefinition, --show-error-codes, --warn-no-return]
 -   repo: https://github.com/asottile/pyupgrade
     rev: v2.7.2

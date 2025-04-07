@@ -919,12 +919,8 @@ class VALLE_XTTS(VALLF):
         x = torch.cat([x, audio_prompt_emb], dim=1)
         x_lens = x_lens + enroll_x_lens
 
-        text_len = x_lens.max()
         prompts = y[:, 0, :]
-        #     y = y[:, 0, :]
-        #     prefix_len = y.shape[-1]
         y = None
-        prefix_len = 0
 
         x_len = x_lens.max()
         x_attn_mask = torch.zeros((x_len, x_len), dtype=torch.bool)
@@ -980,7 +976,6 @@ class VALLE_XTTS(VALLF):
             else:
                 y = samples
 
-        # codes = [y[:, prefix_len + int(self.ar_audio_prepend_bos) :]]
         codes = [y]
         if self.num_quantizers == 1:
             return torch.stack(codes, dim=-1)

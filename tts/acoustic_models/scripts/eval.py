@@ -102,16 +102,18 @@ def synthesize(
 if __name__ == "__main__":
     device = "cpu"
 
-    tts_model_path = "M:\\Илья\\JustAI\\epoch=19-step=125000.ckpt"
-    voc_model_path = (
-        "M:\\Илья\\JustAI\\vocos_checkpoint_epoch=1_step=16668_val_loss=5.8527.ckpt"
+    tts_model_path = (
+        "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=28_step=270848_val_loss=5.7816.ckpt"
     )
-    prosody_model_path = None
+    voc_model_path = (
+        "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=28_step=270848_val_loss=5.7816.ckpt"
+    )
+    prosody_model_path = "M:\\Ilya\\JustAI\\07_Apr_2025_16_43_34_prosody_predictor_epoch=9_step=62500_category_EER=0.3694.ckpt"
 
     tts = TTSEvaluationInterface(
         tts_ckpt_path=tts_model_path,
         prosody_ckpt_path=prosody_model_path,
-        device_model=device,
+        device=device,
     )
     voc = VocoderEvaluationInterface(
         ckpt_path=voc_model_path,
@@ -125,11 +127,12 @@ if __name__ == "__main__":
         {
             "lang": "RU",
             "speaker_name": "Ksyusha",
-            "style_reference": Path("M:/Илья/JustAI/30872.wav"),
+            "style_reference": Path("M:/Ilya/JustAI/30872.wav"),
             "utterances": """
 
-            С нача+ла следующего учебного года в школах Петербурга планируют увеличить стоимость школьных обедов, изменение цен затронет все категории школьников.
-
+Минфин США 12 июля 2024 года вел санкции против Московской биржи. 
+В результате, биржевые торги долларом и евро приостановили и перенесли на внебиржевой рынок. 
+Официальные курсы европейской и американской валют по будням устанавливает Центробанк, ориентируясь на отчетность банков и информацию внебиржевых торгов.
             """,
         },
     ]

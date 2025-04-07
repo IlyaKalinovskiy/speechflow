@@ -58,7 +58,7 @@ class VisualizerCallback(Callback):
                         predict = ft_additional[name].squeeze(-1)
                     data = torch.stack([target_signal, predict[random_idx][:T]])
                     self._log_1d(f"predict/{name}", data, pl_module)
-            except:
+            except Exception:
                 pass
 
     @staticmethod

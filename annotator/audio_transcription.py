@@ -149,7 +149,7 @@ def main(
             data_root,
             AudioFormat.as_extensions(),
             with_subfolders=True,
-            path_filter=lambda x: not x.with_suffix(output_file_ext).exists(),
+            path_filter=lambda x: not Path(x).with_suffix(output_file_ext).exists(),
         )
         if not flist:
             return

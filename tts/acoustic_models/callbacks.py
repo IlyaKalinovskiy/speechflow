@@ -232,7 +232,7 @@ class TTSAudioSynthesizer(Callback):
         if self.tts is None:
             self.tts = TTSEvaluationInterface(
                 all_checkpoints[-1],
-                device_model=pl_module.model.device.type,
+                device=str(pl_module.model.device),
                 load_model=False,
             )
 

@@ -92,7 +92,11 @@ class ExperimentSaver:
         )
     ):
         root_dir = get_root_dir()
-        files = find_files(root_dir.as_posix(), extensions=extensions)
+        files = find_files(
+            root_dir.as_posix(),
+            extensions=extensions,
+            path_filter=lambda x: all(s not in x for s in ["conda", "python", "env"]),
+        )
         script_files = {}
         for file in files:
             script_files[file.replace(str(root_dir), "")] = Path(file).read_bytes()

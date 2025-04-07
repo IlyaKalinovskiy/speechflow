@@ -296,52 +296,13 @@ class VocoderEvaluationInterface(VocoderLoader):
 
 
 if __name__ == "__main__":
-    if 0:
-        from speechflow.utils.fs import get_root_dir
+    from speechflow.utils.fs import get_root_dir
 
-        test_file_path = get_root_dir() / "tests/data/test_audio.wav"
+    test_file_path = get_root_dir() / "tests/data/test_audio.wav"
 
-        voc = VocoderEvaluationInterface(
-            ckpt_path="mel_vocos_checkpoint_epoch=79_step=400000_val_loss=4.9470.ckpt"
-        )
+    voc = VocoderEvaluationInterface(
+        ckpt_path="mel_vocos_checkpoint_epoch=79_step=400000_val_loss=4.9470.ckpt"
+    )
 
-        voc_out = voc.resynthesize(test_file_path, lang="RU")
-        voc_out.audio_chunk.save("resynt.wav", overwrite=True)
-    else:
-        from pathlib import Path
-
-        from tqdm import tqdm
-
-        from speechflow.logging import trace
-
-        vocoder_path = "vocos_checkpoint_epoch=2_step=60000_val_loss=9.3055.ckpt"
-        ref_wav_path = "642111.wav"
-
-        test_files = "wav_16k"
-        result_path = "result"
-
-        hubert_model_path = "hubert_phoneme_en/epoch=0-step=4500.ckpt"
-        hubert_vocab_path = "hubert_phoneme_en/vocab.json"
-
-        device = "cpu"
-
-        voc = VocoderEvaluationInterface(
-            vocoder_path,
-            device=device,
-            hubert_model_path=hubert_model_path,
-            hubert_vocab_path=hubert_vocab_path,
-        )
-
-        file_list = list(Path(test_files).glob("*.wav"))
-        Path(result_path).mkdir(parents=True, exist_ok=True)
-
-        for wav_path in tqdm(file_list):
-            result_file_name = Path(result_path) / wav_path.name
-            if result_file_name.exists():
-                continue
-
-            try:
-                voc_out = voc.resynthesize(wav_path, ref_wav_path, lang="EN")
-                voc_out.audio_chunk.resample(sr=16000).save(result_file_name)
-            except Exception as e:
-                print(trace("eval_interface", e))
+    voc_out = voc.resynthesize(test_file_path, lang="RU")
+    voc_out.audio_chunk.save("resynt.wav", overwrite=True)

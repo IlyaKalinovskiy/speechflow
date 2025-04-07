@@ -194,11 +194,11 @@ class BigVGANHead(WaveformGenerator):
     def remove_weight_norm(self):
         try:
             print("Removing weight norm...")
-            for l in self.ups:
-                for l_i in l:
+            for l_ in self.ups:
+                for l_i in l_:
                     remove_weight_norm(l_i)
-            for l in self.resblocks:
-                l.remove_weight_norm()
+            for l_ in self.resblocks:
+                l_.remove_weight_norm()
             remove_weight_norm(self.conv_pre)
             remove_weight_norm(self.conv_post)
         except ValueError:
@@ -318,10 +318,10 @@ class AMPBlock1(nn.Module):
         return x
 
     def remove_weight_norm(self):
-        for l in self.convs1:
-            remove_weight_norm(l)
-        for l in self.convs2:
-            remove_weight_norm(l)
+        for l_ in self.convs1:
+            remove_weight_norm(l_)
+        for l_ in self.convs2:
+            remove_weight_norm(l_)
 
 
 class AMPBlock2(nn.Module):
@@ -411,5 +411,5 @@ class AMPBlock2(nn.Module):
         return x
 
     def remove_weight_norm(self):
-        for l in self.convs:
-            remove_weight_norm(l)
+        for l_ in self.convs:
+            remove_weight_norm(l_)
