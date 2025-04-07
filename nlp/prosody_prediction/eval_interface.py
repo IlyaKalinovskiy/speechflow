@@ -34,8 +34,8 @@ class ProsodyPredictionInterface:
         self,
         ckpt_path: tp.Union[tp_PATH],
         lang: str = "RU",
-        num_prosodic_classes: int = 8,
         device: str = "cpu",
+        num_prosodic_classes: tp.Optional[int] = None,
         text_parser: tp.Optional[tp.Dict[str, TextParser]] = None,
         ckpt_preload: tp.Optional[dict] = None,
     ):
@@ -46,11 +46,12 @@ class ProsodyPredictionInterface:
 
         cfg_data, cfg_model = ExperimentSaver.load_configs_from_checkpoint(checkpoint)
 
-        if num_prosodic_classes != cfg_model.model.params.n_classes:
-            raise ValueError(
-                f"Different number of prosodic classes for "
-                f"TTS({num_prosodic_classes}) and Prosody({cfg_model.model.params.n_classes}) models!"
-            )
+        if num_prosodic_classes is not None:
+            if num_prosodic_classes != cfg_model.model.params.n_classes:
+                raise ValueError(
+                    f"Different number of prosodic classes for "
+                    f"TTS({num_prosodic_classes}) and Prosody({cfg_model.model.params.n_classes}) models!"
+                )
 
         model_cls = getattr(prosody_prediction, cfg_model["model"]["type"])
         self.model = model_cls(checkpoint["params"])
@@ -68,9 +69,7 @@ class ProsodyPredictionInterface:
         self.batch_processor.set_device(device)
 
         if text_parser is None:
-            self.text_parser = {
-                lang: TextParser(lang=lang, num_prosodic_classes=num_prosodic_classes)
-            }
+            self.text_parser = {lang: TextParser(lang=lang, device=str(device))}
         else:
             self.text_parser = text_parser
 
