@@ -169,8 +169,9 @@ def model_config_prepare(
         )
 
     if resume_from:
-        assert model_config_path and data_config_path
+        assert model_config_path and data_config_path and resume_from.is_dir()
         cfg_model["experiment_path"] = resume_from.as_posix()
+        cfg_model["experiment_name"] = resume_from.name
         ckpt_path = ExperimentSaver.get_last_checkpoint(resume_from)
         cfg_model["trainer"]["resume_from_checkpoint"] = (
             ckpt_path.as_posix() if isinstance(ckpt_path, Path) else ckpt_path

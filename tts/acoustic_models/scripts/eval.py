@@ -101,14 +101,24 @@ def synthesize(
 
 if __name__ == "__main__":
     device = "cpu"
-
+    # vocos_checkpoint_epoch=40_step=370856_val_loss=5.7798.ckpt
+    tts_model_path = "M:\\Ilya\\JustAI\\epoch=104-step=250050.ckpt"  # "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=40_step=370856_val_loss=5.7798.ckpt"
     tts_model_path = (
-        "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=28_step=270848_val_loss=5.7816.ckpt"
+        "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=40_step=370856_val_loss=5.7798.ckpt"
     )
     voc_model_path = (
-        "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=28_step=270848_val_loss=5.7816.ckpt"
+        "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=40_step=370856_val_loss=5.7798.ckpt"
     )
-    prosody_model_path = "M:\\Ilya\\JustAI\\07_Apr_2025_16_43_34_prosody_predictor_epoch=9_step=62500_category_EER=0.3694.ckpt"
+    # voc_model_path = "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=12_step=108342_val_loss=5.8525.ckpt"
+
+    tts_model_path = (
+        "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=18_step=395000_val_loss=6.4311.ckpt"
+    )
+    voc_model_path = (
+        "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=18_step=395000_val_loss=6.4311.ckpt"
+    )
+
+    prosody_model_path = "M:\\Ilya\\JustAI\\07_Apr_2025_16_43_34_prosody_predictor_epoch=20_step=131250_category_EER=0.3664.ckpt"
 
     tts = TTSEvaluationInterface(
         tts_ckpt_path=tts_model_path,
@@ -130,12 +140,27 @@ if __name__ == "__main__":
             "style_reference": Path("M:/Ilya/JustAI/30872.wav"),
             "utterances": """
 
-Минфин США 12 июля 2024 года вел санкции против Московской биржи. 
-В результате, биржевые торги долларом и евро приостановили и перенесли на внебиржевой рынок. 
-Официальные курсы европейской и американской валют по будням устанавливает Центробанк, ориентируясь на отчетность банков и информацию внебиржевых торгов.
+    "Мы идем сейчас в парк?",
+    "Не пойти ли нам погулять?",
+    "Неужели нельзя было подготовиться к занятию лучше?",
+    "Разве ты об этом ничего не читал?",
+    "Разве можно останавливаться на полпути?",
+    "Кто знает ответ на заданный вопрос?",
+    "О чем вы тут шушукаетесь?",
+    "Для чего используется этот прибор?",
+
+
             """,
         },
     ]
+
+    tests[0][
+        "utterances"
+    ] = """
+    Главная #особенность этой технологии —, создание замкнутого цикла обучения, где искусственный интеллект сам выступает и учеником, и учителем.
+    Система работает по принципу внутренней обратной свя+зи: одна часть модели генерирует ответы, а другая выступает «судьей», оценивая их качество и соответствие заданным критэ+риям.
+    Если ответ удовлетворяет требованиям, модель получает «вознаграждение» и запоминает успешную стратегию.
+            """
 
     for idx, test in enumerate(tests):
         audio_chunk = synthesize(

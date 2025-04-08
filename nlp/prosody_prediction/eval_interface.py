@@ -18,14 +18,16 @@ from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
 )
 from speechflow.io import check_path, tp_PATH
 from speechflow.training.saver import ExperimentSaver
-from speechflow.utils.fs import get_module_dir
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.seed import set_numpy_seed
 
 __all__ = ["ProsodyPredictionInterface"]
 
-PITCH_DOWN_CONTURS = ("1", "2", "4", "7", "8")
+PITCH_DOWN_CONTURS = ("3",)
 PITCH_DOWN_PUNCTUATIONS = (",", ".", ";", ":", "-")
+
+PITCH_UP_CONTURS = ("7",)
+PITCH_UP_PUNCTUATIONS = ("?",)
 
 
 class ProsodyPredictionInterface:
@@ -148,13 +150,10 @@ class ProsodyPredictionInterface:
         doc: Doc,
         output: ProsodyPredictionOutput,
         datasamples: tp.List[ProsodyPredictionDataSample],
-        tres_bin: tp.Optional[float] = None,
+        tres_bin: float = 0,
         predict_proba: bool = True,
     ) -> Doc:
         predicted_tags = []
-        if tres_bin is None:
-            tres_bin = 0.5
-
         for datasample in datasamples:
             word_ids = datasample.word_ids
             pred_binary = self._softmax(output.binary)[0, :, 1]
@@ -185,12 +184,15 @@ class ProsodyPredictionInterface:
             for token_id, token in enumerate(sent.tokens):
                 if (
                     token.prosody is None
+                    and not token.is_punctuation
                     and token.text not in self.service_tokens
                     and token.emphasis != "accent"
                 ):
                     prosody_tag = predicted_tags[idx]
                     if (
-                        prosody_tag != -1
+                        PITCH_DOWN_CONTURS
+                        or PITCH_UP_CONTURS
+                        and prosody_tag != -1
                         and doc.sents[sent_id].tokens[token_id]
                         != doc.sents[sent_id].tokens[-1]
                     ):
@@ -200,8 +202,16 @@ class ProsodyPredictionInterface:
                         ):
                             if prosody_tag not in PITCH_DOWN_CONTURS:
                                 prosody_tag = str(np.random.choice(PITCH_DOWN_CONTURS))
+                        if (
+                            doc.sents[sent_id].tokens[token_id + 1].text
+                            in PITCH_UP_PUNCTUATIONS
+                        ):
+                            if prosody_tag not in PITCH_UP_CONTURS:
+                                prosody_tag = str(np.random.choice(PITCH_UP_CONTURS))
 
                     doc.sents[sent_id].tokens[token_id].prosody = prosody_tag
+                else:
+                    doc.sents[sent_id].tokens[token_id].prosody = "-1"
 
                 idx += 1
 
@@ -210,7 +220,7 @@ class ProsodyPredictionInterface:
     def predict(
         self,
         text: tp.Union[str, Doc],
-        tres_bin: tp.Optional[float] = None,
+        tres_bin: float = 0,
         predict_proba: bool = True,
         seed: int = 0,
     ) -> Doc:

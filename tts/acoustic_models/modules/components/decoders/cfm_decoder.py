@@ -87,7 +87,7 @@ class CFMDecoderParams(DecoderParams):
     condition_dim: int = 0
 
     # cfm params
-    cfm_n_timesteps: int = 200
+    cfm_n_timesteps: int = 30
     cfm_temperature: float = 0.67
     cfm_sigma_min: float = 1e-4
 

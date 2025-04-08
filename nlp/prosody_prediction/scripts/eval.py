@@ -1,7 +1,7 @@
 from nlp.prosody_prediction.eval_interface import ProsodyPredictionInterface
 
 if __name__ == "__main__":
-    ckpt_path = "M:\\Ilya\\JustAI\\epoch=9-step=31250.ckpt"
+    ckpt_path = "M:\\Ilya\\JustAI\\07_Apr_2025_16_43_34_prosody_predictor_epoch=20_step=131250_category_EER=0.3664.ckpt"
     device = "cpu"
 
     text = """
