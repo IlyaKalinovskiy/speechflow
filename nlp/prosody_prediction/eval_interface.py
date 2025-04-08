@@ -23,10 +23,7 @@ from speechflow.utils.seed import set_numpy_seed
 
 __all__ = ["ProsodyPredictionInterface"]
 
-PITCH_DOWN_CONTURS = ("3",)
 PITCH_DOWN_PUNCTUATIONS = (",", ".", ";", ":", "-")
-
-PITCH_UP_CONTURS = ("7",)
 PITCH_UP_PUNCTUATIONS = ("?",)
 
 
@@ -152,6 +149,8 @@ class ProsodyPredictionInterface:
         datasamples: tp.List[ProsodyPredictionDataSample],
         tres_bin: float = 0,
         predict_proba: bool = True,
+        down_contur_ids: tp.Optional[tp.Tuple[int, ...]] = None,
+        up_contur_ids: tp.Optional[tp.Tuple[int, ...]] = None,
     ) -> Doc:
         predicted_tags = []
         for datasample in datasamples:
@@ -190,8 +189,8 @@ class ProsodyPredictionInterface:
                 ):
                     prosody_tag = predicted_tags[idx]
                     if (
-                        PITCH_DOWN_CONTURS
-                        or PITCH_UP_CONTURS
+                        down_contur_ids
+                        or up_contur_ids
                         and prosody_tag != -1
                         and doc.sents[sent_id].tokens[token_id]
                         != doc.sents[sent_id].tokens[-1]
@@ -200,14 +199,14 @@ class ProsodyPredictionInterface:
                             doc.sents[sent_id].tokens[token_id + 1].text
                             in PITCH_DOWN_PUNCTUATIONS
                         ):
-                            if prosody_tag not in PITCH_DOWN_CONTURS:
-                                prosody_tag = str(np.random.choice(PITCH_DOWN_CONTURS))
+                            if prosody_tag not in down_contur_ids:
+                                prosody_tag = str(np.random.choice(down_contur_ids))
                         if (
                             doc.sents[sent_id].tokens[token_id + 1].text
                             in PITCH_UP_PUNCTUATIONS
                         ):
-                            if prosody_tag not in PITCH_UP_CONTURS:
-                                prosody_tag = str(np.random.choice(PITCH_UP_CONTURS))
+                            if prosody_tag not in up_contur_ids:
+                                prosody_tag = str(np.random.choice(up_contur_ids))
 
                     doc.sents[sent_id].tokens[token_id].prosody = prosody_tag
                 else:
@@ -223,6 +222,8 @@ class ProsodyPredictionInterface:
         tres_bin: float = 0,
         predict_proba: bool = True,
         seed: int = 0,
+        down_contur_ids: tp.Optional[tp.Tuple[int, ...]] = None,
+        up_contur_ids: tp.Optional[tp.Tuple[int, ...]] = None,
     ) -> Doc:
         if isinstance(text, str):
             doc = self.text_parser[self._lang].process(Doc(text))
@@ -233,5 +234,7 @@ class ProsodyPredictionInterface:
         batch = self.pipeline.datasample_to_batch(samples)
         outputs = self.evaluate(batch)
 
-        doc = self._assign_prosody_tags(doc, outputs, samples, tres_bin, predict_proba)
+        doc = self._assign_prosody_tags(
+            doc, outputs, samples, tres_bin, predict_proba, down_contur_ids, up_contur_ids
+        )
         return doc

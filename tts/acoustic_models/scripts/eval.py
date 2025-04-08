@@ -9,10 +9,11 @@ from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
 from tts.acoustic_models.interface.eval_interface import (
     TTSContext,
     TTSEvaluationInterface,
+    TTSOptions,
 )
 from tts.acoustic_models.interface.prosody_reference import REFERENECE_TYPE
 from tts.acoustic_models.modules.common.length_regulators import SoftLengthRegulator
-from tts.vocoders.eval_interface import VocoderEvaluationInterface
+from tts.vocoders.eval_interface import VocoderEvaluationInterface, VocoderOptions
 
 
 def plotting(tts_in: TTSForwardInput, tts_out: TTSForwardOutput, doc, signals=("pitch",)):
@@ -66,24 +67,27 @@ def synthesize(
     style_reference: tp.Optional[
         tp.Union[REFERENECE_TYPE, tp.Dict[str, REFERENECE_TYPE]]
     ] = None,
-    use_profiler: bool = False,
+    tts_opt: TTSOptions = TTSOptions(),
+    voc_opt: VocoderOptions = VocoderOptions(),
     seed: int = 0,
+    use_profiler: bool = False,
 ):
     tts_ctx = TTSContext.create(
         lang, speaker_name, speaker_reference, style_reference, seed
     )
-    tts_ctx = tts_interface.prepare_embeddings(tts_ctx)
+    tts_ctx = tts_interface.prepare_embeddings(tts_ctx, opt=tts_opt)
 
-    doc = tts_interface.prepare_text(text, lang)
-    doc = tts_interface.predict_prosody_by_text(doc, tts_ctx)
+    doc = tts_interface.prepare_text(text, lang, opt=tts_opt)
+    doc = tts_interface.predict_prosody_by_text(doc, tts_ctx, opt=tts_opt)
 
     tts_in = tts_interface.prepare_batch(
         tts_interface.split_sentences(doc)[0],
         tts_ctx,
+        opt=tts_opt,
     )
 
     with Profiler(enable=use_profiler):
-        tts_out = tts_interface.evaluate(tts_in, tts_ctx)
+        tts_out = tts_interface.evaluate(tts_in, tts_ctx, opt=tts_opt)
 
         if voc_interface is not None:
             voc_out = voc_interface.synthesize(
@@ -91,11 +95,12 @@ def synthesize(
                 tts_out,
                 lang=tts_ctx.prosody_reference.default.lang,
                 speaker_name=tts_ctx.prosody_reference.default.speaker_name,
+                opt=voc_opt,
             )
         else:
             voc_out = None
 
-    plotting(tts_in, tts_out, doc)
+    # plotting(tts_in, tts_out, doc)
     return voc_out.audio_chunk
 
 
@@ -162,18 +167,24 @@ if __name__ == "__main__":
     Если ответ удовлетворяет требованиям, модель получает «вознаграждение» и запоминает успешную стратегию.
             """
 
-    for idx, test in enumerate(tests):
-        audio_chunk = synthesize(
-            tts,
-            voc,
-            test["utterances"],
-            test["lang"],
-            speaker_name=test["speaker_name"],
-            speaker_reference=test["style_reference"],
-            style_reference=test["style_reference"],
-            seed=get_seed(),
-        )
-        audio_chunk.save(
-            f"tts_result_{test['speaker_name']}_{idx}.wav",
-            overwrite=True,
-        )
+    tts_opt = TTSOptions()
+    tts_opt.down_contur_ids = (3,)
+    tts_opt.up_contur_ids = (4,)
+
+    for r in range(10):
+        for idx, test in enumerate(tests):
+            audio_chunk = synthesize(
+                tts,
+                voc,
+                test["utterances"],
+                test["lang"],
+                speaker_name=test["speaker_name"],
+                speaker_reference=test["style_reference"],
+                style_reference=test["style_reference"],
+                tts_opt=tts_opt,
+                seed=get_seed(),
+            )
+            audio_chunk.save(
+                f"tts_result_{test['speaker_name']}_{idx}_r{r}.wav",
+                overwrite=True,
+            )
