@@ -104,8 +104,8 @@ class TTSOptions:
     speech_quality: float = 5.0
     tres_bin: float = 0.5
     predict_proba: bool = True
-    down_contur_ids: tp.Optional[tp.Tuple[int, ...]] = (None,)
-    up_contur_ids: tp.Optional[tp.Tuple[int, ...]] = (None,)
+    down_contur_ids: tp.Optional[tp.Tuple[int, ...]] = None
+    up_contur_ids: tp.Optional[tp.Tuple[int, ...]] = None
 
     def __post_init__(self):
         if self.average_val is None:

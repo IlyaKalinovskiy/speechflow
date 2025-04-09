@@ -10,7 +10,8 @@ from pathlib import Path
 import numpy as np
 import multilingual_text_parser
 
-from multilingual_text_parser.data_types import Doc, EmptyTextError, Sentence
+from multilingual_text_parser.data_types import Doc, Sentence
+from multilingual_text_parser.parser import EmptyTextError
 
 import speechflow
 
@@ -527,9 +528,9 @@ class SpeechSynthesisInterface:
 if __name__ == "__main__":
 
     synt_interface = SpeechSynthesisInterface(
-        tts_ckpt_path="C:\\SRS\\data\\cfm_tts\\epoch=14-step=62505.ckpt",
-        vocoder_ckpt_path="C:\\SRS\\data\\cfm_tts\\vocos_checkpoint_epoch=3_step=100000_val_loss=8.2706.ckpt",
-        prosody_ckpt_path=None,
+        tts_ckpt_path="M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=18_step=395000_val_loss=6.4311.ckpt",
+        vocoder_ckpt_path="M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=18_step=395000_val_loss=6.4311.ckpt",
+        prosody_ckpt_path="M:\\Ilya\\JustAI\\07_Apr_2025_16_43_34_prosody_predictor_epoch=20_step=131250_category_EER=0.3664.ckpt",
         device="cpu",
         with_profiler=True,
     )
@@ -538,8 +539,8 @@ if __name__ == "__main__":
         print(f"- {name}")
 
     _lang = "RU"
-    _speaker_name = "Natasha"
-    _style_reference = Path("C:\\SRS\\5.wav")
+    _speaker_name = "Ksyusha"
+    _style_reference = Path("M:/Ilya/JustAI/30872.wav")
 
     synt_interface.synthesize(
         "прогрев",
@@ -550,11 +551,10 @@ if __name__ == "__main__":
 
     if 1:
         _utterances = """
-        <options pitch_scale="1.2"><style id="-1" tag="decoder_speaker|postnet"/>
-        Услышал, что на использование мобильного банка или некоторых операций наложено ограничение, а вы хотите его отменить.
-        Уважаемый, я голосовой ассистент банка ОТП.
-        Уважаемая, вы позвонили в банк ОТП.
-        Я его виртуальный консультант.
+        Голос будет <prosody volume="175">звучать громче.</prosody>
+        Речь будет <prosody rate="140">произноситься быстрее.</prosody>
+        Речь будет <prosody rate="75">произноситься медленнее.</prosody>
+        <prosody pitch="125">Тон голоса будет повышен.</prosody>
         """
 
         for i in range(10):
