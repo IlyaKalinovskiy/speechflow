@@ -17,7 +17,7 @@ from speechflow.data_pipeline.core.registry import PipeRegistry
 from speechflow.data_pipeline.datasample_processors.data_types import (
     ProsodyPredictionDataSample,
 )
-from speechflow.io import AudioSeg
+from speechflow.io import AudioSeg, tp_PATH
 from speechflow.logging import trace
 from speechflow.utils.versioning import version_check
 
@@ -34,7 +34,8 @@ class ProsodyParser(BaseDSParser):
         preproc_fn: tp.Optional[tp.Sequence[MetadataTransform]] = None,
         memory_bound: bool = False,
         raise_on_converter_exc: bool = False,
-        dump_path: tp.Optional[tp.Union[str, Path]] = None,
+        dump_path: tp.Optional[tp_PATH] = None,
+        progress_bar: bool = True,
         tokenizer_name: str = None,
     ):
         super().__init__(
@@ -43,6 +44,7 @@ class ProsodyParser(BaseDSParser):
             memory_bound=memory_bound,
             raise_on_converter_exc=raise_on_converter_exc,
             dump_path=dump_path,
+            progress_bar=progress_bar,
         )
 
         if not tokenizer_name:

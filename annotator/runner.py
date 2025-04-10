@@ -246,7 +246,8 @@ def _update_fa_configs(
     if langs_filter:
         config_data["dataset"]["directory_filter"] = {"include": langs_filter}
 
-    speaker_ids = config_data["singleton_handlers"].setdefault("SpeakerIDSetter", {})
+    config_data["singleton_handlers"].setdefault("SpeakerIDSetter", {})
+    speaker_ids = config_data["singleton_handlers"]["SpeakerIDSetter"]
     speaker_ids["remove_unknown_speakers"] = False
     if langs_filter:
         speaker_ids["langs_filter"] = langs_filter
@@ -322,6 +323,7 @@ def _seg_processing(
                 pretrained_models[1],
                 device=device,
                 last_word_correction=True,
+                audio_duration_limit=None,
             )
             setattr(_seg_processing, "annotator", annotator)
 
@@ -330,13 +332,13 @@ def _seg_processing(
             return
 
     new_sega_path = sega_path.with_suffix(".TextGridStage3" + sega_suffix)
-    if new_sega_path.exists():
-        return
+    # if new_sega_path.exists():
+    #    return
 
     annotator = getattr(_seg_processing, "annotator")
     sega = annotator.process(sega_path=sega_path)
     sega.save(new_sega_path)
-    LOGGER.info(f"Save sega {new_sega_path.as_posix()}")
+    # LOGGER.info(f"Save sega {new_sega_path.as_posix()}")
 
 
 def _run_segs_correction(

@@ -113,9 +113,9 @@ class Aligner:
         n_processes: int = 1,
         device: str = "cpu",
         reverse_mode: bool = False,
-        max_duration: float = 15,  # in seconds
         min_pause_len: float = 0.08,  # in seconds
         sega_suffix: str = "",
+        max_duration: tp.Optional[float] = 15,  # in seconds
         preload: tp.Optional[tp.Union[tp.Dict, tp.Tuple]] = None,
     ):
         self._ckpt_path = ckpt_path
@@ -178,7 +178,7 @@ class Aligner:
     def _prepare_aligning(
         ckpt_path: tp_PATH,
         reverse_mode: bool = False,
-        max_duration: float = 15,
+        max_duration: tp.Optional[float] = None,
         ckpt_preload: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ):
         if ckpt_preload is None:
@@ -189,8 +189,9 @@ class Aligner:
         cfg_data, _ = ExperimentSaver.load_configs_from_checkpoint(checkpoint)
 
         cfg_data["dataset"]["subsets"].remove("train")
+        cfg_data["parser"]["progress_bar"] = False
         if "split_by_phrases" in cfg_data["parser"]["pipe"]:
-            if max_duration > 0:
+            if max_duration:
                 cfg_data["parser"]["pipe_cfg"]["split_by_phrases"][
                     "max_duration"
                 ] = max_duration
@@ -215,7 +216,8 @@ class Aligner:
 
         if "reverse" in cfg_data["preproc"]["pipe"]:
             if reverse_mode:
-                cfg_data["preproc"].setdefault("reverse", {})["p"] = 1.0
+                cfg_data["preproc"]["pipe_cfg"].setdefault("reverse", {})
+                cfg_data["preproc"]["pipe_cfg"]["reverse"]["p"] = 1.0
             else:
                 LOGGER.info("remove reverse function")
                 cfg_data["preproc"]["pipe"].remove("reverse")
@@ -431,7 +433,7 @@ class Aligner:
         return {"file_path": Path(file_path), "sega": AudioSegPreview.load(file_path)}
 
     def process(self, file_list: tp.List[str]):
-        parser = EasyDSParser(self._read_metadata)
+        parser = EasyDSParser(self._read_metadata, progress_bar=len(file_list) > 1)
         dataset = parser.run_from_path_list(
             path_list=file_list, n_processes=self._n_processes
         )

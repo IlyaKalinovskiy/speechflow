@@ -59,7 +59,7 @@ class AudioDSParser(BaseDSParser):
 
     @staticmethod
     @PipeRegistry.registry(inputs={"waveform"}, outputs={"audio_data"})
-    def wave_converter(
+    def audio_converter(
         metadata: Metadata, audio_format: str = "ogg"
     ) -> tp.List[Metadata]:
         """Convert audio fragment to compatible format for sending to ASR engines.

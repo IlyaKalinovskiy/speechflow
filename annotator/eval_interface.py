@@ -23,7 +23,7 @@ class AnnotatorEvaluationInterface:
         ckpt_stage2: tp.Union[str, Path],
         device: str = "cpu",
         last_word_correction: bool = False,
-        audio_duration_limit: float = 15,  # in seconds
+        audio_duration_limit: tp.Optional[float] = 15,  # in seconds
     ):
         self.use_reverse_mode = last_word_correction
 
@@ -228,7 +228,7 @@ class AnnotatorEvaluationInterface:
         text: str,
         audio_path: tp_PATH,
         lang: str,
-        speaker_name: str,
+        speaker_name: tp.Optional[str] = None,
     ) -> AudioSeg:
         ...
 
@@ -254,7 +254,6 @@ if __name__ == "__main__":
     )
 
     _lang = "RU"
-    _speaker_name = "Tatiana"
     _audio_path = get_root_dir() / "tests/data/test_audio.wav"
 
     _asr = OpenAIASR(lang=_lang, model_name="tiny")
@@ -267,5 +266,5 @@ if __name__ == "__main__":
         last_word_correction=False,
         audio_duration_limit=0,
     )
-    _sega = annotator.process(_text, _audio_path, _lang, _speaker_name)
+    _sega = annotator.process(_text, _audio_path, _lang)
     _sega.save("sega.tg", with_audio=True)

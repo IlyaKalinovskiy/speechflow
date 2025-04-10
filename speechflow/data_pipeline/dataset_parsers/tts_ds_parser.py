@@ -14,7 +14,7 @@ from speechflow.data_pipeline.core.dataset import Dataset
 from speechflow.data_pipeline.core.parser_types import Metadata, MetadataTransform
 from speechflow.data_pipeline.core.registry import PipeRegistry
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
-from speechflow.io import AudioSeg, AudioSegPreview
+from speechflow.io import AudioSeg, AudioSegPreview, tp_PATH
 from speechflow.logging import trace
 from speechflow.utils.versioning import version_check
 
@@ -32,7 +32,8 @@ class TTSDSParser(BaseDSParser):
         memory_bound: bool = False,
         chunk_size: tp.Optional[int] = None,
         raise_on_converter_exc: bool = False,
-        dump_path: tp.Optional[tp.Union[str, Path]] = None,
+        dump_path: tp.Optional[tp_PATH] = None,
+        progress_bar: bool = True,
     ):
         super().__init__(
             preproc_fn,
@@ -41,6 +42,7 @@ class TTSDSParser(BaseDSParser):
             chunk_size=chunk_size,
             raise_on_converter_exc=raise_on_converter_exc,
             dump_path=dump_path,
+            progress_bar=progress_bar,
         )
 
     def reader(

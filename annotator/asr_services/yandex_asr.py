@@ -111,7 +111,7 @@ class YandexASR(CloudASR):
             LOGGER.error(e)
 
     def _transcription(self, metadata: Metadata) -> Metadata:
-        metadata = AudioDSParser.wave_converter(metadata)[0]
+        metadata = AudioDSParser.audio_converter(metadata)[0]
 
         s3 = self._create_session()
         obj_name = f"{uuid.uuid4()}.ogg"
