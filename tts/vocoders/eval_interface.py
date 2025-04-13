@@ -298,11 +298,9 @@ class VocoderEvaluationInterface(VocoderLoader):
 if __name__ == "__main__":
     from speechflow.utils.fs import get_root_dir
 
-    test_file_path = get_root_dir() / "tests/data/test_audio.wav"
+    voc = VocoderEvaluationInterface(ckpt_path="/path/to/checkpoint")
 
-    voc = VocoderEvaluationInterface(
-        ckpt_path="mel_vocos_checkpoint_epoch=79_step=400000_val_loss=4.9470.ckpt"
-    )
+    test_file_path = get_root_dir() / "tests/data/test_audio.wav"
 
     voc_out = voc.resynthesize(test_file_path, lang="RU")
     voc_out.audio_chunk.save("resynt.wav", overwrite=True)

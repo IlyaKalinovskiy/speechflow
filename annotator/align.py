@@ -481,19 +481,23 @@ def _get_file_list(
     )
 
     if flist_path is None:
-        file_list = construct_file_list(
+        all_files = construct_file_list(
             data_root=data_root, with_subfolders=True, ext=ext
         )
     else:
-        file_list = []
+        all_files = []
         for path in flist_path:
-            file_list += Path(path).read_text(encoding="utf-8").split("\n")
+            lines = Path(path).read_text(encoding="utf-8").split("\n")
+            lines = [item.split("|")[0] for item in lines]
+            lines = [Path(item).with_suffix(ext) for item in lines]
 
-        file_list = [item.split("|")[0] for item in file_list]
-        file_list = [Path(item).with_suffix(ext) for item in file_list]
-        file_list = [item.as_posix() for item in file_list if item.exists()]
+            for item in lines:
+                if not item.is_absolute():
+                    item = Path(path).parent / item
+                if item.exists():
+                    all_files.append(item.as_posix())
 
-    return file_list
+    return all_files
 
 
 def main(

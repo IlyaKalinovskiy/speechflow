@@ -19,7 +19,6 @@ __all__ = ["TTSFeatures", "TTSFeaturesParams"]
 class TTSFeaturesParams(ParallelTTSParams):
     pretrain_path: tp.Optional[tp_PATH] = None
     freeze: bool = False
-    train_end_iter: tp.Optional[int] = None
     spectral_loss_alpha: float = 10.0
     spectral_loss_end_anneal_iter: tp.Optional[int] = None
 
@@ -119,10 +118,6 @@ class TTSFeatures(FeatureExtractor):
     def forward(self, inputs: VocoderForwardInput, **kwargs):
         losses = {}
         additional_content = {}
-
-        if self.params.train_end_iter is not None:
-            if inputs.global_step >= self.params.train_end_iter:
-                self.freeze = True
 
         if inputs.__class__.__name__ != "TTSForwardInputWithSSML":
 

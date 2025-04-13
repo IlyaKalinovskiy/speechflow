@@ -6,7 +6,7 @@ The goal of this project is to provide a comprehensive toolkit to solve the TTS 
 
 ### News
 
-- 14.04.2025: SpeechFlow 1.0 is released!
+- [14.04.2025] 🔥 SpeechFlow 1.0 is released!
 
 ### Installation
 
@@ -181,10 +181,77 @@ Our implementation can be studied [here](tts/forced_alignment/model/glow_tts.py)
 
 ```
 # single GPU
-python -m tts.acoustic_models.scripts.dump -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml -nproc=5 -ngpu=1 [-vs <languade>]
+python -m tts.acoustic_models.scripts.dump
+            -cd tts/acoustic_models/configs/prosody/prosody_data_24khz.yml
+            -nproc=5 -ngpu=1
+            [-vs <languade>]
 
 # multi GPU
-python -m tts.acoustic_models.scripts.dump -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml -nproc=20 -ngpu=4 [-vs <languade>]
+python -m tts.acoustic_models.scripts.dump
+            -cd tts/acoustic_models/configs/prosody/prosody_data_24khz.yml
+            -nproc=20 -ngpu=4
+            [-vs <languade>]
+```
+
+2. Training model
+```
+python -m tts.acoustic_models.scripts.train
+            -cd tts/acoustic_models/configs/prosody/prosody_data_24khz.yml
+            -c tts/acoustic_models/configs/prosody/prosody_model.yml
+            [-vs <languade>]
+```
+
+### Training TTS model
+
+1. Build a dump of the required features
+
+```
+# single GPU
+python -m tts.acoustic_models.scripts.dump
+            -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml
+            -nproc=5 -ngpu=1
+            [-vs <languade>]
+
+# multi GPU
+python -m tts.acoustic_models.scripts.dump
+            -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml
+            -nproc=20 -ngpu=4
+            [-vs <languade>]
+```
+
+2. Update datasets
+
+```
+python -m tts.acoustic_models.scripts.prosody_annotation
+            -ckpt /path/to/prosody_model_checkpoint
+            --textgrid_ext_new .TextGridStage3
+            -md=cuda -nproc=5 -ngpu=1
+            [-vs <languade>]
+```
+
+3. Training model
+
+1. Build a dump of the required features
+
+```
+# single GPU
+python -m tts.acoustic_models.scripts.dump
+            -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml
+            -nproc=5 -ngpu=1
+            [-vs <languade>]
+
+# multi GPU
+python -m tts.acoustic_models.scripts.dump
+            -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml
+            -nproc=20 -ngpu=4
+            [-vs <languade>]
+```
+
+```
+python -m tts.acoustic_models.scripts.train
+            -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml
+            -c tts/acoustic_models/configs/tts/cfm_bigvgan.yml
+            [-vs <languade>]
 ```
 
 2. Training model
@@ -192,12 +259,10 @@ python -m tts.acoustic_models.scripts.dump -cd tts/acoustic_models/configs/tts/t
 python -m tts.acoustic_models.scripts.dump -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml -nproc=20 -ngpu=4 [-vs <languade>]
 ```
 
-
-
-### Training TTS model
-
-
 ### Training prosody prediction model
 
+```
+python -m tts.acoustic_models.scripts.dump -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml -nproc=20 -ngpu=4 [-vs <languade>]
+```
 
-### Inference
+### [Inference example](tts/acoustic_models/scripts/eval.py#L107)

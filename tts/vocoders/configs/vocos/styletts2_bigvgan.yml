@@ -71,8 +71,7 @@ model:
   feature_extractor:
     class_name: TTSFeatures
     init_args:
-      train_end_iter: 200000
-      spectral_loss_end_anneal_iter: 200000
+      spectral_loss_end_anneal_iter: 2000000
 
       input: [transcription, transcription]
 

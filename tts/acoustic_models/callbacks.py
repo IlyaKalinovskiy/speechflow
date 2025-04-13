@@ -21,7 +21,8 @@ from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
     TTSTextProcessor,
 )
 from speechflow.utils.plotting import figure_to_ndarray, plot_1d, plot_spectrogram
-from tts.acoustic_models.interface.test_utterances_ru import UTTERANCE
+
+__all__ = ["TTSTrainingVisualizer", "ProsodyTrainingVisualizer"]
 
 LOGGER = logging.getLogger("root")
 
@@ -191,103 +192,6 @@ class TTSTrainingVisualizer(Callback):
             trainer.global_step,
             dataformats="CHW",
         )
-
-
-class TTSAudioSynthesizer(Callback):
-    def __init__(
-        self,
-        vocoder_path: tp.Union[str, Path],
-        text_path: Optional[tp.Union[str, Path]] = None,
-        num_samples: int = 3,
-    ):
-        from tts.acoustic_models.interface.eval_interface import TTSEvaluationInterface
-        from tts.vocoders.eval_interface import VocoderEvaluationInterface
-
-        vocoder_path = Path(vocoder_path)
-        if not vocoder_path.exists():
-            raise FileExistsError("Vocoder model not found!")
-
-        self.tts: tp.Optional[TTSEvaluationInterface] = None
-        self.vocoder = VocoderEvaluationInterface(vocoder_path, device="cpu")
-
-        if text_path is None:
-            self.text_for_synthesis = UTTERANCE[0]
-        else:
-            self.text_for_synthesis = Path(text_path).read_text(encoding="utf-8")
-
-        self.num_samples = num_samples
-        self.sr = self.vocoder.sample_rate
-
-    def on_save_checkpoint(self, pl_module: pl.LightningModule, *args):
-        from tts.acoustic_models.interface.eval_interface import TTSEvaluationInterface
-
-        all_checkpoints = glob.glob(
-            os.path.join(pl_module.default_root_dir, "_checkpoints/epoch*.ckpt")
-        )
-        if len(all_checkpoints) == 0:
-            return
-        else:
-            all_checkpoints.sort(key=self._extract_step)
-
-        if self.tts is None:
-            self.tts = TTSEvaluationInterface(
-                all_checkpoints[-1],
-                device=str(pl_module.model.device),
-                load_model=False,
-            )
-
-        self.tts.model = pl_module.model.model
-
-        all_outputs = []
-        for speaker_name in random.choices(self.tts.get_speakers(), k=self.num_samples):
-            try:
-                all_outputs.append(
-                    self.tts.synthesize(
-                        self.text_for_synthesis,
-                        self.tts.lang,
-                        speaker_name=speaker_name,
-                    )
-                )
-            except Exception as e:
-                LOGGER.warning(f"Exit callback with exception: {e}")
-                return
-
-        for idx, tts_output in enumerate(all_outputs):
-            try:
-                voc_output = self.vocoder.synthesize(tts_output)
-                output = np.concatenate([s.waveform.numpy() for s in voc_output], axis=1)  # type: ignore
-                self.log_waveform(
-                    pl_module,
-                    output,
-                    self.sr,
-                    idx,
-                    "_test_utterances",
-                    pl_module.global_step,
-                )
-            except Exception as e:
-                LOGGER.warning(f"Exit callback with exception: {e}")
-                return
-
-    @staticmethod
-    def log_waveform(
-        pl_module: pl.LightningModule,
-        waveform: npt.NDArray,
-        sample_rate: int,
-        index: int,
-        postfix: str,
-        step: int,
-    ):
-        pl_module.logger.experiment.add_audio(
-            f"spg_{index}/{postfix}",
-            waveform,
-            global_step=step,
-            sample_rate=sample_rate,
-        )
-
-    @staticmethod
-    def _extract_step(text):
-        """Regular expression extracting number of steps from checkpoint filename."""
-        return int(re.split(r"(epoch=)(\d+)(-step)", text)[2])
 
 
 class ProsodyTrainingVisualizer(Callback):

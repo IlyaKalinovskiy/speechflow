@@ -105,25 +105,10 @@ def synthesize(
 
 
 if __name__ == "__main__":
+    tts_model_path = "/path/to/checkpoint"
+    voc_model_path = "/path/to/checkpoint"
+    prosody_model_path = "/path/to/checkpoint"
     device = "cpu"
-    # vocos_checkpoint_epoch=40_step=370856_val_loss=5.7798.ckpt
-    tts_model_path = "M:\\Ilya\\JustAI\\epoch=104-step=250050.ckpt"  # "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=40_step=370856_val_loss=5.7798.ckpt"
-    tts_model_path = (
-        "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=40_step=370856_val_loss=5.7798.ckpt"
-    )
-    voc_model_path = (
-        "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=40_step=370856_val_loss=5.7798.ckpt"
-    )
-    # voc_model_path = "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=12_step=108342_val_loss=5.8525.ckpt"
-
-    tts_model_path = (
-        "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=18_step=395000_val_loss=6.4311.ckpt"
-    )
-    voc_model_path = (
-        "M:\\Ilya\\JustAI\\vocos_checkpoint_epoch=18_step=395000_val_loss=6.4311.ckpt"
-    )
-
-    prosody_model_path = "M:\\Ilya\\JustAI\\07_Apr_2025_16_43_34_prosody_predictor_epoch=20_step=131250_category_EER=0.3664.ckpt"
 
     tts = TTSEvaluationInterface(
         tts_ckpt_path=tts_model_path,
@@ -141,50 +126,28 @@ if __name__ == "__main__":
     tests = [
         {
             "lang": "RU",
-            "speaker_name": "Ksyusha",
-            "style_reference": Path("M:/Ilya/JustAI/30872.wav"),
+            "speaker_name": "Natasha",
+            "style_reference": "/path/to/reference_audio",
             "utterances": """
-
-    "Мы идем сейчас в парк?",
-    "Не пойти ли нам погулять?",
-    "Неужели нельзя было подготовиться к занятию лучше?",
-    "Разве ты об этом ничего не читал?",
-    "Разве можно останавливаться на полпути?",
-    "Кто знает ответ на заданный вопрос?",
-    "О чем вы тут шушукаетесь?",
-    "Для чего используется этот прибор?",
-
-
+                В городе было пасмурно и серо. Снег начался после полудня и шел в течение нескольких часов.
+                На дорогах и тротуарах образовался плотный снежный покров.
+                Некоторые горожане напоследок решили не лишать себя зимних забав и слепили снеговика.
             """,
         },
     ]
 
-    tests[0][
-        "utterances"
-    ] = """
-    Главная #особенность этой технологии —, создание замкнутого цикла обучения, где искусственный интеллект сам выступает и учеником, и учителем.
-    Система работает по принципу внутренней обратной свя+зи: одна часть модели генерирует ответы, а другая выступает «судьей», оценивая их качество и соответствие заданным критэ+риям.
-    Если ответ удовлетворяет требованиям, модель получает «вознаграждение» и запоминает успешную стратегию.
-            """
-
-    tts_opt = TTSOptions()
-    tts_opt.down_contur_ids = (3,)
-    tts_opt.up_contur_ids = (4,)
-
-    for r in range(10):
-        for idx, test in enumerate(tests):
-            audio_chunk = synthesize(
-                tts,
-                voc,
-                test["utterances"],
-                test["lang"],
-                speaker_name=test["speaker_name"],
-                speaker_reference=test["style_reference"],
-                style_reference=test["style_reference"],
-                tts_opt=tts_opt,
-                seed=get_seed(),
-            )
-            audio_chunk.save(
-                f"tts_result_{test['speaker_name']}_{idx}_r{r}.wav",
-                overwrite=True,
-            )
+    for idx, test in enumerate(tests):
+        audio_chunk = synthesize(
+            tts,
+            voc,
+            test["utterances"],
+            test["lang"],
+            speaker_name=test["speaker_name"],
+            speaker_reference=test["style_reference"],
+            style_reference=test["style_reference"],
+            seed=get_seed(),
+        )
+        audio_chunk.save(
+            f"tts_result_{test['speaker_name']}_test{idx}.wav",
+            overwrite=True,
+        )

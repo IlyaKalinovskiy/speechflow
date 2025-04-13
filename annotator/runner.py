@@ -370,13 +370,18 @@ def _run_segs_correction(
             else n_gpus * int(get_total_gpu_memory(0) // ANNOTATOR_TOTAL_GPU_MEM),
         )
     else:
-        file_list = []
+        all_files = []
         for path in flist_path:
-            file_list += Path(path).read_text(encoding="utf-8").split("\n")
+            lines = Path(path).read_text(encoding="utf-8").split("\n")
+            for item in lines:
+                item = Path(item.split("|")[0])
+                if not item.is_absolute():
+                    item = Path(path).parent / item
+                if item.exists():
+                    all_files.append(item.as_posix())
 
-        file_list = [item.split("|")[0] for item in file_list]
         parser.run_from_path_list(
-            file_list,
+            all_files,
             n_processes=n_processes
             if n_gpus == 0
             else n_gpus * int(get_total_gpu_memory(0) // ANNOTATOR_TOTAL_GPU_MEM),
