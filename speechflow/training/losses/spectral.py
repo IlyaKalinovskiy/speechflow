@@ -46,7 +46,7 @@ class Spectral(BaseSpectral):
         global_step: int,
         output: torch.Tensor,
         target: torch.Tensor,
-        mask: tp.Optional[torch.Tensor] = None,
+        mask: torch.Tensor,
     ) -> torch.Tensor:
         target = self._set_mask(target, mask)
         output = self._set_mask(output, mask)
@@ -61,7 +61,7 @@ class DiffSpectral(Spectral):
         global_step: int,
         output: torch.Tensor,
         target: torch.Tensor,
-        mask: tp.Optional[torch.Tensor] = None,
+        mask: torch.Tensor,
     ) -> torch.Tensor:
         target = target[:, 1:, :] - target[:, 0:-1, :]
         output = output[:, 1:, :] - output[:, 0:-1, :]
@@ -98,7 +98,7 @@ class SSIM(BaseSpectral):
         global_step: int,
         output: torch.Tensor,
         target: torch.Tensor,
-        mask: tp.Optional[torch.Tensor] = None,  # type: ignore
+        mask: torch.Tensor,
     ) -> torch.Tensor:
         t_shape = target.shape
         spec_len = 3 * math.floor(t_shape[-2] // 3)

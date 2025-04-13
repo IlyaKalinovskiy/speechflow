@@ -13,19 +13,19 @@ __all__ = [
 
 @dataclass
 class ProsodyPredictionTarget(MovableToDevice, Detachable):
-    binary: Tensor = None  # type: ignore
-    category: Tensor = None  # type: ignore
+    binary: Tensor = None
+    category: Tensor = None
 
 
 @dataclass
 class ProsodyPredictionInput(MovableToDevice, Detachable):
-    input_ids: Tensor = None  # type: ignore
-    attention_mask: Tensor = None  # type: ignore
-    binary: Tensor = None  # type: ignore
-    category: Tensor = None  # type: ignore
+    input_ids: Tensor = None
+    attention_mask: Tensor = None
+    binary: Tensor = None
+    category: Tensor = None
 
 
 @dataclass
 class ProsodyPredictionOutput(MovableToDevice, Detachable):
-    binary: Tensor = None  # type: ignore
-    category: Tensor = None  # type: ignore
+    binary: Tensor = None
+    category: Tensor = None

@@ -11,7 +11,6 @@ from pathlib import Path
 
 import git
 import torch
-import multilingual_text_parser
 
 from pytorch_lightning.callbacks import ModelCheckpoint
 
@@ -37,6 +36,7 @@ class ExperimentSaver:
         additional_files: tp.Optional[tp.Dict[str, str]] = None,
     ):
         self.expr_path = expr_path
+        self.expr_path.mkdir(parents=True, exist_ok=True)
         LOGGER.info(
             trace(self, message=f"Experiment folder: {self.expr_path.as_posix()}")
         )
@@ -67,13 +67,17 @@ class ExperimentSaver:
             "files": additional_files,
             "scripts": self.script_files,
             "commit_hash": commit_hash,
-            "versions": {
-                "speechflow": speechflow.__version__,
-                "libs": {
-                    "text_parser": multilingual_text_parser.__version__,
-                },
-            },
+            "versions": {"speechflow": speechflow.__version__, "libs": {}},
         }
+
+        try:
+            import multilingual_text_parser
+
+            self.to_save["versions"]["libs"][
+                "text_parser"
+            ] = multilingual_text_parser.__version__
+        except ImportError:
+            pass
 
     @property
     def checkpoints_dir(self) -> Path:
@@ -88,7 +92,11 @@ class ExperimentSaver:
         )
     ):
         root_dir = get_root_dir()
-        files = find_files(root_dir.as_posix(), extensions=extensions)
+        files = find_files(
+            root_dir.as_posix(),
+            extensions=extensions,
+            path_filter=lambda x: all(s not in x for s in ["conda", "python", "env"]),
+        )
         script_files = {}
         for file in files:
             script_files[file.replace(str(root_dir), "")] = Path(file).read_bytes()
@@ -134,7 +142,12 @@ class ExperimentSaver:
 
         return None
 
-    def get_checkpoint_callback(self, cfg: Config):
+    def get_checkpoint_callback(self, cfg: Config, prefix: tp.Optional[str] = None):
+        filename = cfg.get("filename", "{epoch}-{step}")
+
+        if prefix is not None:
+            cfg.filename = f"{prefix}_{filename}"
+
         checkpoint_callback = init_class_from_config(ModelCheckpoint, cfg)(
             dirpath=self.expr_path / ExperimentSaver._folder
         )
@@ -143,12 +156,24 @@ class ExperimentSaver:
     @staticmethod
     @check_path(assert_file_exists=True)
     def load_checkpoint(file_path: tp_PATH, map_location: str = "cpu") -> tp.Dict:
-        print(f"Load checkpoint from path: {file_path.as_posix()}")
+        if file_path.is_dir():
+            ckpt_path = ExperimentSaver.get_last_checkpoint(file_path)
+            if ckpt_path is None:
+                raise FileNotFoundError(
+                    f"Not found checkpoint in directory {file_path.as_posix()}"
+                )
+            else:
+                file_path = ckpt_path
+
+        LOGGER.info(f"Load checkpoint from {file_path.as_posix()}")
         if file_path.suffix in [".ckpt", ".pt"]:
             with ExperimentSaver.portable_pathlib():
-                return torch.load(file_path, map_location)
+                return torch.load(file_path, map_location, weights_only=False)
+        elif file_path.suffix in [".pkl"]:
+            with ExperimentSaver.portable_pathlib():
+                return pickle.loads(file_path.read_bytes())
         else:
-            raise NotImplementedError
+            raise NotImplementedError(f"Unknown checkpoint extension: {file_path.name}")
 
     @staticmethod
     @check_path(make_dir=True)

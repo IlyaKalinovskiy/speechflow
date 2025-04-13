@@ -5,10 +5,12 @@ import torch
 from torch import nn
 
 from speechflow.io import Config
+from speechflow.utils.init import init_class_from_config
 from tts.vocoders.data_types import VocoderForwardInput, VocoderForwardOutput
-from tts.vocoders.vocos.modules.backbone import Backbone
+from tts.vocoders.vocos.modules import VOCOS_BACKBONES, VOCOS_FEATURES, VOCOS_HEADS
+from tts.vocoders.vocos.modules.backbones import Backbone
 from tts.vocoders.vocos.modules.feature_extractors import FeatureExtractor
-from tts.vocoders.vocos.modules.heads import FourierHead
+from tts.vocoders.vocos.modules.heads import WaveformGenerator
 
 
 def instantiate_class(
@@ -33,6 +35,12 @@ def instantiate_class(
 
     module = __import__(class_module, fromlist=[class_name])
     args_class = getattr(module, class_name)
+
+    if "tts_cfg" in kwargs:
+        kwargs["tts_cfg"]["n_langs"] = kwargs.pop("n_langs")
+        kwargs["tts_cfg"]["n_speakers"] = kwargs.pop("n_speakers")
+        kwargs["tts_cfg"]["alphabet_size"] = 246
+
     return args_class(*args, **kwargs)
 
 
@@ -49,7 +57,7 @@ class Vocos(nn.Module):
         self,
         feature_extractor: FeatureExtractor,
         backbone: Backbone,
-        head: FourierHead,
+        head: WaveformGenerator,
     ):
         super().__init__()
         self.feature_extractor = feature_extractor
@@ -58,11 +66,26 @@ class Vocos(nn.Module):
 
     @classmethod
     def init_from_config(cls, cfg: Config) -> "Vocos":
-        feature_extractor = instantiate_class(args=(), init=cfg["feature_extractor"])
-        backbone = instantiate_class(args=(), init=cfg["backbone"])
-        head = instantiate_class(args=(), init=cfg["head"])
-        model = cls(feature_extractor=feature_extractor, backbone=backbone, head=head)
-        return model
+        feat_cls, feat_params_cls = VOCOS_FEATURES[cfg["feature_extractor"]["class_name"]]
+        feat_params = init_class_from_config(
+            feat_params_cls, cfg["feature_extractor"]["init_args"]
+        )()
+        feat = feat_cls(feat_params)
+
+        backbone_cls, backbone_params_cls = VOCOS_BACKBONES[cfg["backbone"]["class_name"]]
+        backbone_params = init_class_from_config(
+            backbone_params_cls, cfg["backbone"]["init_args"]
+        )()
+        backbone = backbone_cls(backbone_params)
+
+        if "pretrain_path" in cfg.head.init_args:
+            cfg.head.init_args.pretrain_path = None
+
+        head_cls, head_params_cls = VOCOS_HEADS[cfg["head"]["class_name"]]
+        head_params = init_class_from_config(head_params_cls, cfg["head"]["init_args"])()
+        head = head_cls(head_params)
+
+        return cls(feature_extractor=feat, backbone=backbone, head=head)
 
     @torch.inference_mode()
     def forward(self, audio_input: torch.Tensor, **kwargs: tp.Any) -> torch.Tensor:
@@ -97,13 +120,12 @@ class Vocos(nn.Module):
 
         """
         x = self.backbone(features_input, **kwargs)
-        audio_output = self.head(x)
+        audio_output = self.head(x, **kwargs)
         return audio_output
 
     @torch.no_grad()
     def inference(self, inputs: VocoderForwardInput, **kwargs) -> VocoderForwardOutput:
-        feat, losses, additional_content = self.feature_extractor(inputs, **kwargs)
+        feat, losses, ft_additional = self.feature_extractor(inputs, **kwargs)
+        kwargs.update(ft_additional)
         waveform, _, _ = self.decode(feat, **kwargs)
-        return VocoderForwardOutput(
-            waveform=waveform, additional_content=additional_content
-        )
+        return VocoderForwardOutput(waveform=waveform, additional_content=ft_additional)

@@ -14,8 +14,12 @@ LOGGER = logging.getLogger("root")
 class SimpleDSParser(BaseDSParser):
     """Simple database parser."""
 
-    def __init__(self, preproc_fn: tp.Optional[tp.Sequence[MetadataTransform]] = None):
-        super().__init__(preproc_fn)
+    def __init__(
+        self,
+        preproc_fn: tp.Optional[tp.Sequence[MetadataTransform]] = None,
+        progress_bar: bool = True,
+    ):
+        super().__init__(preproc_fn, progress_bar=progress_bar)
 
     def reader(
         self, file_path: Path, label: tp.Optional[str] = None
@@ -41,5 +45,5 @@ if __name__ == "__main__":
 
     _parser = SimpleDSParser()
 
-    _data = _parser.read_datasamples(file_list=_flist, data_root=_root, n_processes=1)
+    _data = _parser.read_datasamples(file_list=_flist, data_root=_root)
     print(_data.item(0))

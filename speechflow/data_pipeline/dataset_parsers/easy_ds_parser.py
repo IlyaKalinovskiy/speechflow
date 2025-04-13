@@ -23,8 +23,11 @@ class EasyDSParser(BaseDSParser):
         func: tp.Callable,
         memory_bound: bool = False,
         chunk_size: tp.Optional[int] = None,
+        progress_bar: bool = True,
     ):
-        super().__init__(memory_bound=memory_bound, chunk_size=chunk_size)
+        super().__init__(
+            memory_bound=memory_bound, chunk_size=chunk_size, progress_bar=progress_bar
+        )
         self._func = func
 
     def reader(
@@ -37,12 +40,12 @@ class EasyDSParser(BaseDSParser):
         return [self._func(metadata["file_path"])]
 
     def run_from_path_list(
-        self, path_list: tp.Union[tp.List[str], tp.List[Path]], n_processes: int = 0
+        self, path_list: tp.Union[tp.List[str], tp.List[Path]], n_processes: int = 1
     ) -> Dataset:
         return self.read_datasamples(path_list, n_processes=n_processes)
 
     def run_from_object_list(
-        self, items: tp.List[tp.Any], n_processes: int = 0
+        self, items: tp.List[tp.Any], n_processes: int = 1
     ) -> Dataset:
         if isinstance(items[0], (str, Path)):
             raise ValueError(
@@ -58,7 +61,7 @@ class EasyDSParser(BaseDSParser):
         file_extension: str = ".*",
         with_subfolders: bool = True,
         file_filter: tp.Optional[tp.Callable] = None,
-        n_processes: int = 0,
+        n_processes: int = 1,
     ) -> Dataset:
         from speechflow.io import construct_file_list
 

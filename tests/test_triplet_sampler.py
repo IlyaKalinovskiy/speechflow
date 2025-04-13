@@ -19,7 +19,7 @@ def generate_dataset() -> Dataset:
 
 def test_wave_select():
     data = generate_dataset()
-    sampler = SimpleSampler(is_use_neighbors=True)
+    sampler = SimpleSampler(use_neighbors=True)
     sampler.set_dataset(data)
     sampled_datasamples = sampler.sampling(batch_size=6)
 
@@ -29,7 +29,7 @@ def test_wave_select():
 
 def test_doubling_batch():
     data = generate_dataset()
-    sampler = SimpleSampler(is_use_neighbors=True)
+    sampler = SimpleSampler(use_neighbors=True)
     sampler.set_dataset(data)
     sampled_datasamples = sampler.sampling(batch_size=6)
 
@@ -38,7 +38,7 @@ def test_doubling_batch():
 
 def test_unique_filepath():
     data = generate_dataset()
-    sampler = SimpleSampler(is_use_neighbors=True)
+    sampler = SimpleSampler(use_neighbors=True)
     sampler.set_dataset(data)
     sampled_datasamples = sampler.sampling(batch_size=6)
 

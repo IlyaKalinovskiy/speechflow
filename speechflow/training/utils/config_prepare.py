@@ -1,4 +1,3 @@
-import shutil
 import typing as tp
 import logging
 
@@ -9,15 +8,15 @@ from pathlib import Path
 
 import pytorch_lightning as pl
 
-from speechflow.io import Config, check_path, tp_PATH, tp_PATH_LIST
+from speechflow.io import Config, change_config_file, check_path, tp_PATH, tp_PATH_LIST
 from speechflow.logging import trace
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.dictutils import find_field
-from speechflow.utils.gpu import get_freer_gpu
+from speechflow.utils.gpu_info import get_freer_gpu
 
-__all__ = ["train_arguments", "model_config_prepare"]
+__all__ = ["train_arguments", "config_prepare"]
 
-LOGGER = logging.getLogger()
+LOGGER = logging.getLogger("root")
 
 
 def _gpu_allocation(devices: str) -> tp.Union[int, tp.MutableSequence[int]]:
@@ -104,6 +103,24 @@ def train_arguments() -> "CustomArgumentParser":
         help="suffix for experiment folder name",
         type=str,
     )
+    arguments_parser.add_argument(
+        "-d", "--data_root", help="data root directory", type=Path
+    )
+    arguments_parser.add_argument(
+        "-bs",
+        "--batch_size",
+        help="batch size",
+        type=int,
+    )
+    arguments_parser.add_argument(
+        "-nproc",
+        "--n_processes",
+        help="number of workers for data processing",
+        type=int,
+    )
+    arguments_parser.add_argument(
+        "-ngpu", "--n_gpus", help="number of GPU device", type=int
+    )
     return arguments_parser
 
 
@@ -126,31 +143,42 @@ def _set_device(cfg_model: Config):
 
 
 @check_path(assert_file_exists=True)
-def model_config_prepare(
+def config_prepare(
     model_config_path: tp_PATH,
     data_config_path: tp.Optional[tp.Union[Path, tp_PATH_LIST]] = None,
     value_select: tp.Optional[tp.List[str]] = None,
     resume_from: tp.Optional[Path] = None,
     expr_suffix: tp.Optional[str] = None,
-) -> Config:
-    model_cfg = Config.create_from_file(model_config_path, value_select=value_select)
+    data_root: tp.Optional[Path] = None,
+    batch_size: tp.Optional[int] = None,
+    n_processes: tp.Optional[int] = None,
+    n_gpus: tp.Optional[int] = None,
+) -> tp.Tuple[Config, tp.Optional[tp.Union[Path, tp_PATH_LIST]]]:
+    # ------------------------------------------------------------------------------------
+    # ------------------ Prepare a model config file for the experiment ------------------
+    # ------------------------------------------------------------------------------------
 
-    env["MODEL_PROFILING"] = "1" if model_cfg.get("use_profiler", False) else ""
+    if batch_size is not None:
+        change_config_file(model_config_path, {"batch_size": batch_size})
 
-    _set_device(model_cfg)
+    cfg_model = Config.create_from_file(model_config_path, value_select=value_select)
+
+    env["MODEL_PROFILING"] = "1" if cfg_model.get("use_profiler", False) else ""
+
+    _set_device(cfg_model)
 
     date_now = datetime.now().strftime("%d_%b_%Y_%H_%M_%S")
-    model_cfg["experiment_name"] = f"{date_now}_{model_cfg['experiment_name']}"
+    cfg_model["experiment_name"] = f"{date_now}_{cfg_model['experiment_name']}"
 
     if expr_suffix:
-        model_cfg["experiment_name"] += f"_{expr_suffix}"
+        cfg_model["experiment_name"] += f"_{expr_suffix}"
 
-    experiment_path = Path(model_cfg["dirs"]["logging"]) / model_cfg["experiment_name"]
-    model_cfg.setdefault("experiment_path", experiment_path.as_posix())
+    experiment_path = Path(cfg_model["dirs"]["logging"]) / cfg_model["experiment_name"]
+    cfg_model.setdefault("experiment_path", experiment_path.as_posix())
 
-    if model_cfg["trainer"].get("resume_from_checkpoint"):
+    if cfg_model["trainer"].get("resume_from_checkpoint"):
         ckpt_path = ExperimentSaver.get_last_checkpoint(
-            model_cfg["trainer"]["resume_from_checkpoint"]
+            cfg_model["trainer"]["resume_from_checkpoint"]
         )
 
         new_ckpt_path = experiment_path / f"initial_checkpoint_{ckpt_path.name}"
@@ -164,56 +192,79 @@ def model_config_prepare(
             }
         ExperimentSaver.save_checkpoint(checkpoint, new_ckpt_path)
 
-        model_cfg["trainer"]["resume_from_checkpoint"] = new_ckpt_path.as_posix()
+        cfg_model["trainer"]["resume_from_checkpoint"] = (
+            new_ckpt_path.as_posix() if isinstance(new_ckpt_path, Path) else new_ckpt_path
+        )
 
     if resume_from:
-        assert model_config_path and data_config_path
-        model_cfg["experiment_path"] = resume_from.as_posix()
+        assert model_config_path and data_config_path and resume_from.is_dir()
+        cfg_model["experiment_path"] = resume_from.as_posix()
+        cfg_model["experiment_name"] = resume_from.name
         ckpt_path = ExperimentSaver.get_last_checkpoint(resume_from)
-        model_cfg["trainer"]["resume_from_checkpoint"] = ckpt_path.as_posix()
+        cfg_model["trainer"]["resume_from_checkpoint"] = (
+            ckpt_path.as_posix() if isinstance(ckpt_path, Path) else ckpt_path
+        )
+
+    if cfg_model["trainer"].get("finetune_epochs"):
+        checkpoint = ExperimentSaver.load_checkpoint(
+            cfg_model["trainer"]["resume_from_checkpoint"]
+        )
+        cfg_model["trainer"]["max_epochs"] = checkpoint["epoch"] + cfg_model[
+            "trainer"
+        ].pop("finetune_epochs")
+    else:
+        cfg_model["trainer"].pop("finetune_epochs", None)
+
+    if "finetune" in cfg_model:
+        try:
+            ckpt_path = cfg_model["finetune"].get("ckpt_path")
+            _, cfg_model_temp = ExperimentSaver.load_configs_from_checkpoint(ckpt_path)
+            cfg_model["model"]["params"].update(cfg_model_temp["model"]["params"])
+        except KeyError as e:
+            LOGGER.error(trace("model_config_prepare", e))
+
+    # -----------------------------------------------------------------------------------
+    # ------------------ Prepare a data config file for the experiment ------------------
+    # -----------------------------------------------------------------------------------
+
+    if isinstance(data_config_path, Path):
+        data_config_path = [data_config_path]
+
+    if any(item is not None for item in [data_root, n_processes, n_gpus]):
+        assert data_config_path, ValueError("data config path is not set!")
+        for idx, path in enumerate(data_config_path):
+            change_config_file(
+                path,
+                {"data_root": data_root, "n_processes": n_processes, "n_gpus": n_gpus},
+            )
 
     if (
-        model_cfg["trainer"].get("resume_from_checkpoint") is not None
-        or "finetuning" in model_cfg
+        cfg_model["trainer"].get("resume_from_checkpoint") is not None
+        or "finetune" in cfg_model
     ):
-        assert data_config_path
+        assert data_config_path, ValueError("data config path is not set!")
         try:
             assert model_config_path and data_config_path
-            ckpt_path = model_cfg["trainer"].get("resume_from_checkpoint")
+            ckpt_path = cfg_model["trainer"].get("resume_from_checkpoint")
 
-            if "finetuning" in model_cfg:
-                ckpt_path = model_cfg["finetuning"].get("checkpoint")
+            if "finetune" in cfg_model:
+                ckpt_path = cfg_model["finetune"].get("ckpt_path")
 
-            if isinstance(data_config_path, Path):
-                data_config_path = [data_config_path]
-
-            for path in data_config_path:
-                data_cfg = Config.create_from_file(path)
-                speaker_id_setter = find_field(data_cfg, "SpeakerIDSetter")
+            for idx, path in enumerate(data_config_path):
+                cfg_data = Config.create_from_file(path, value_select=value_select)
+                speaker_id_setter = find_field(cfg_data, "SpeakerIDSetter")
                 if (
                     speaker_id_setter is not None
                     and speaker_id_setter.get("resume_from_checkpoint") is None
                 ):
-                    speaker_id_setter["resume_from_checkpoint"] = ckpt_path
-                    shutil.copy(path, path.with_name(f"{path.name}_orig"))
-                    data_cfg.to_file(path)
+                    speaker_id_setter["resume_from_checkpoint"] = (
+                        ckpt_path.as_posix() if isinstance(ckpt_path, Path) else ckpt_path
+                    )
+                    new_path = path.with_name(f"{path.stem}_sid.yml")
+                    cfg_data.to_file(new_path)
+                    data_config_path[idx] = new_path
 
         except Exception as e:
             LOGGER.warning(trace("model_config_prepare", e))
 
-    if model_cfg["trainer"].get("finetune_epochs"):
-        checkpoint = ExperimentSaver.load_checkpoint(
-            model_cfg["trainer"]["resume_from_checkpoint"]
-        )
-        model_cfg["trainer"]["max_epochs"] = checkpoint["epoch"] + model_cfg[
-            "trainer"
-        ].pop("finetune_epochs")
-    else:
-        model_cfg["trainer"].pop("finetune_epochs", None)
-
-    if "finetuning" in model_cfg:
-        ckpt_path = model_cfg["finetuning"].get("checkpoint")
-        _, cfg_model_temp = ExperimentSaver.load_configs_from_checkpoint(ckpt_path)
-        model_cfg["model"]["params"].update(cfg_model_temp["model"]["params"])
-
-    return model_cfg
+    return cfg_model, data_config_path

@@ -15,10 +15,11 @@ LOGGER = logging.getLogger("root")
 
 class WorkerPool:
     def __init__(
-        self, server_addr: str, n_processes: int = 0, worker_type: tp.Any = BatchWorker
+        self, server_addr: str, n_processes: int = 1, worker_type: tp.Any = BatchWorker
     ):
+        lock = mp.Lock()
         n_processes = n_processes if n_processes else mp.cpu_count()
-        self._workers = [worker_type(server_addr) for _ in range(n_processes)]
+        self._workers = [worker_type(server_addr, lock=lock) for _ in range(n_processes)]
 
     @staticmethod
     @check_path(assert_file_exists=True)
@@ -32,16 +33,16 @@ class WorkerPool:
         )
         return init_class_from_config(WorkerPool, cfg)()
 
-    def start(self, timeout: float = 0.1, tick: float = 0.05):
+    def start(self):
         for w in self._workers:
-            w.start(timeout, tick)
+            w.start(check_start=False)
 
         while True:
             if any([w.exitcode is not None and w.exitcode > 0 for w in self._workers]):
                 raise RuntimeError(f"{self.__class__.__name__} fails to start!")
-            if all([w.is_started() for w in self._workers]):
+            if all([w.is_started() or w.is_finished() for w in self._workers]):
                 break
-            time.sleep(1)
+            time.sleep(0.1)
 
     def join(self):
         for w in self._workers:
@@ -49,7 +50,7 @@ class WorkerPool:
 
     def finish(self):
         for w in self._workers:
-            w.finish()
+            w.finish(timeout=0.01)
 
 
 if __name__ == "__main__":

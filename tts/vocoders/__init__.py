@@ -1,4 +1,4 @@
 from tts.vocoders import callbacks
 
 from .batch_processor import VocoderBatchProcessor
-from .vocos.experiment import *
+from .vocos.lightning_engine import *

@@ -5,11 +5,12 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from multilingual_text_parser.data_types import Doc
+
 from speechflow.data_pipeline.core import Batch, PipelineComponents
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
-from speechflow.data_pipeline.datasample_processors.text_processors import (
-    Text,
-    TextParser,
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
+    TTSTextProcessor,
 )
 from speechflow.io import AudioChunk
 from speechflow.training.saver import ExperimentSaver
@@ -74,7 +75,7 @@ class GlowTTSEvaluationInterface:
         self.batch_processor.device = self.device
 
         self.lang = find_field(cfg_data["preproc"], "lang")
-        self.text_parser = TextParser(lang=self.lang)
+        self.text_parser = TTSTextProcessor(lang=self.lang)
 
     @torch.inference_mode()
     def evaluate(self, batch: Batch) -> AlignerForwardOutput:
@@ -89,7 +90,7 @@ class GlowTTSEvaluationInterface:
         speaker: tp.Optional[tp.Union[int, str]] = None,
         lang: tp.Optional[tp.Union[int, str]] = None,
     ) -> AlignerForwardOutput:
-        text = self.text_parser.process(Text(text))
+        text = self.text_parser.process(Doc(text))
 
         if reference_audio is not None:
             if isinstance(reference_audio, Path):

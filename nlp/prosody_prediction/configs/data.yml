@@ -1,31 +1,32 @@
+### Data configuration ###
 
 dirs:
-  data_root: &data_root /data
-  dump_folder: &dump_folder dump_prosody
+  data_root: &data_root ../../../examples/simple_datasets/speech/SEGS
+  dump_folder: &dump_folder prosody_dump_24KHz
 
 file_search:
-  ext: .TextGrid_prosody
-  with_subfolders: True
+  ext: .TextGridStage3
+  with_subfolders: true
 
 data_server:
-  n_processes: { default: 1, debug: 1 }
-
+  n_processes: { default: 8, debug: 1 }
 
 dataset:
   subsets: [train, test]
-  split_type: auto
-  split_ratio: { default: 0.9, debug: 0.5 }
-  max_num_samples: { default: 0, debug: 100 }
+  split_type: auto  # auto, manual
+  split_ratio: { default: 0.999, debug: 0.5 }
+  max_num_samples: { default: 0, debug: 40 }
+  directory_filter:
+    include: { default: ~, ru: RU }
+    exclude: ["!"]
 
 parser:
   type: ProsodyParser
-  dump: !join [*data_root, *dump_folder]
-  tokenizer_name:
-    default: data/common/xlm-roberta-large/tokenizer,
-    ru: data/ru/homo_classifier/tokenizer,
-    en: data/en/roberta_large/tokenizer,
-    ml: data/common/xlm-roberta-large/tokenizer,
+  dump_path: !join [*data_root, *dump_folder]
   pipe: [combine_texts, check_prosody_tags]
+  tokenizer_name:
+    default: google-bert/bert-base-multilingual-cased
+    ru: ai-forever/sbert_large_nlu_ru
 
 collate:
   type: ProsodyPredictionCollate
@@ -38,7 +39,7 @@ sampler:
   train:
     type: WeightedSampler
     comb_by_len: True
-    epoch_size: 15000
+    epoch_size: 200000
     fields_to_compute_weight: [category]
     filter_tags: [-100]
     is_sequence: [category]

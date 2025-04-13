@@ -1,6 +1,6 @@
 ### Model configuration ###
 
-experiment_name: mnist_expr  # name for current experiment
+experiment_name: mnist_expr
 
 dirs:
   logging: _logs

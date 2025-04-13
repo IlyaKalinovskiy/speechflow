@@ -7,19 +7,19 @@ from torch import nn
 from torch.nn import functional as F
 from vector_quantize_pytorch import ResidualFSQ
 
-from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
-from tts.acoustic_models.modules.params import VariancePredictorParams
+from tts.acoustic_models.modules.component import Component
+from tts.acoustic_models.modules.data_types import MODEL_INPUT_TYPE
+from tts.acoustic_models.modules.params import EmbeddingParams
 
 __all__ = ["StyleEncoder", "StyleEncoderParams"]
 
 
-class StyleEncoderParams(VariancePredictorParams):
-    base_encoder_type: tp.Literal[
-        "SimpleStyle", "StyleSpeech", "StyleTTS2"
-    ] = "SimpleStyle"
+class StyleEncoderParams(EmbeddingParams):
+    base_encoder_type: tp.Literal["SimpleStyle", "StyleSpeech"] = "SimpleStyle"
     base_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
-    source: str = "spectrogram"
+    source: tp.Optional[str] = "spectrogram"
     source_dim: int = 80
+    style_emb_dim: int = 128
     random_chunk: bool = False
     min_spec_len: int = 256
     max_spec_len: int = 512
@@ -47,12 +47,12 @@ class StyleEncoder(Component):
             params, params.base_encoder_params
         )
 
-        self.encoder = enc_cls(enc_params, params.source_dim)
+        self.encoder = enc_cls(enc_params, params.source_dim or input_dim)
 
         if params.use_gmvae:
             self.gmvae = GMVAE(
                 self.encoder.output_dim,
-                self.encoder.output_dim,
+                self.params.style_emb_dim,
                 self.params.gmvae_n_components,
             )
         elif params.use_fsq:
@@ -64,7 +64,10 @@ class StyleEncoder(Component):
 
     @property
     def output_dim(self):
-        return self.encoder.output_dim
+        if self.params.use_gmvae:
+            return self.params.style_emb_dim
+        else:
+            return self.encoder.output_dim
 
     def encode(self, x, x_lengths, model_inputs: MODEL_INPUT_TYPE, **kwargs):
         if x.shape[1] > 1:
@@ -105,25 +108,26 @@ class StyleEncoder(Component):
                 )
                 return style_emb, {}, {}
 
-        x = self.get_condition(model_inputs, self.params.source, average_by_time=False)
-        if x.shape[1] == model_inputs.input_lengths.max():
-            x_lengths = model_inputs.input_lengths
-        elif model_inputs.output_lengths is None:
-            x_lengths = torch.LongTensor([x.shape[1]] * x.shape[0]).to(x.device)
-        elif x.shape[1] == model_inputs.output_lengths.max():
-            x_lengths = model_inputs.output_lengths
+        if self.params.source is not None:
+            x = self.get_condition(
+                model_inputs, self.params.source, average_by_time=False
+            )
 
         if self.params.base_encoder_type == "SimpleStyle":
-            assert x.shape[1] == 1
+            assert x.shape[1] == 1, ValueError(
+                "This style coder requires a biometric embedding."
+            )
+            x_lengths = None
         else:
-            assert x.shape[1] > 1
+            assert x.shape[1] > 1, ValueError(
+                "This style coder requires a mel spectrogram."
+            )
 
-        if self.params.random_chunk and x.shape[1] > 1:
-            name = f"{self.params.source.replace('linear_', '')}_lengths"
-            name = name.replace("prompt.", "")
-            if hasattr(model_inputs, name):
-                x_lengths = getattr(model_inputs, name)
+            x_lengths = model_inputs.get_feat_lengths(self.params.source)
+            if x_lengths is None:
+                x_lengths = torch.LongTensor([x.shape[1]] * x.shape[0]).to(x.device)
 
+        if self.training and self.params.random_chunk and x.shape[1] > 1:
             chunk, chunk_lengths = self.get_random_chunk(
                 x, x_lengths, self.params.min_spec_len, self.params.max_spec_len
             )

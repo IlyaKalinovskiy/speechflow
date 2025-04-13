@@ -60,8 +60,8 @@ class Tacotron2Encoder(Component):
         return self.params.encoder_output_dim
 
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
-        content = self.get_content(inputs)[0]
-        content_lengths = self.get_content_lengths(inputs)[0]
+        content = inputs.get_content()[0]
+        content_lengths = inputs.get_content_lengths()[0]
 
         x = self.feat_proj(content).transpose(2, 1)
         input_lengths = content_lengths

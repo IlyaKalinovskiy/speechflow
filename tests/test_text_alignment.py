@@ -1,4 +1,4 @@
-from multilingual_text_parser import Doc
+from multilingual_text_parser.data_types import Doc
 
 from annotator.utils import TextAlignment, TokenSeq
 

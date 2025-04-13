@@ -12,8 +12,8 @@ from tts.acoustic_models.modules.common import (
     InverseGradSpeakerIDPredictor,
     InverseGradSpeakerPredictor,
     InverseGradStylePredictor,
+    Regression,
 )
-from tts.acoustic_models.modules.common.blocks import Regression
 from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.data_types import ComponentInput, ComponentOutput
 from tts.acoustic_models.modules.params import EmbeddingParams
@@ -22,16 +22,16 @@ __all__ = ["AdditionalModules", "AdditionalModulesParams"]
 
 
 class AdditionalModulesParams(EmbeddingParams):
-    addm_apply_inverse_speaker_classifier: tp.Dict[str, int] = Field(
+    addm_apply_inverse_speaker_classifier: tp.Dict[str, tp.Optional[int]] = Field(
         default_factory=lambda: {}
     )
     addm_apply_inverse_speaker_emb: tp.Dict[str, int] = Field(default_factory=lambda: {})
     addm_apply_inverse_style_emb: tp.Dict[str, int] = Field(default_factory=lambda: {})
     addm_apply_inverse_1d_feature: tp.Dict[str, int] = Field(default_factory=lambda: {})
-    addm_apply_inverse_token_classifier: tp.Dict[str, int] = Field(
+    addm_apply_inverse_phoneme_classifier: tp.Dict[str, int] = Field(
         default_factory=lambda: {}
     )
-    addm_apply_token_classifier: tp.Dict[str, int] = Field(default_factory=lambda: {})
+    addm_apply_phoneme_classifier: tp.Dict[str, int] = Field(default_factory=lambda: {})
 
     addm_1d_features: tp.List[str] = ["energy", "pitch"]
 
@@ -53,7 +53,7 @@ class AdditionalModules(Component):
                 if emb_size is None:
                     emb_size = self.components_output_dim[name]()
                 self.inverse_speaker_classifier[name] = InverseGradSpeakerIDPredictor(
-                    in_dim=emb_size, n_speakers=params.n_speakers
+                    input_dim=emb_size, n_speakers=params.n_speakers
                 )
 
         if params.addm_apply_inverse_speaker_emb:
@@ -62,7 +62,7 @@ class AdditionalModules(Component):
                 if emb_size is None:
                     emb_size = self.components_output_dim[name]()
                 self.inverse_speaker_emb[name] = InverseGradSpeakerPredictor(
-                    in_dim=emb_size, target_dim=params.speaker_emb_dim
+                    input_dim=emb_size, target_dim=params.speaker_emb_dim
                 )
 
         if params.addm_apply_inverse_style_emb:
@@ -71,7 +71,7 @@ class AdditionalModules(Component):
                 if emb_size is None:
                     emb_size = self.components_output_dim[name]()
                 self.inverse_style_embedding[name] = InverseGradStylePredictor(
-                    in_dim=emb_size, target_dim=params.addm_style_emb_dim
+                    input_dim=emb_size, target_dim=params.addm_style_emb_dim
                 )
 
         if params.addm_apply_inverse_1d_feature:
@@ -82,28 +82,30 @@ class AdditionalModules(Component):
                     if emb_size is None:
                         emb_size = self.components_output_dim[name]()
                     self.inverse_1d_feature[feat][name] = InverseGrad1DPredictor(
-                        in_dim=emb_size
+                        input_dim=emb_size
                     )
 
-        if params.addm_apply_inverse_token_classifier:
+        if params.addm_apply_inverse_phoneme_classifier:
             self.inverse_phoneme_proj = nn.ModuleDict()
-            for name, emb_size in params.addm_apply_inverse_token_classifier.items():
+            for name, emb_size in params.addm_apply_inverse_phoneme_classifier.items():
                 if emb_size is None:
                     emb_size = self.components_output_dim[name]()
                 self.inverse_phoneme_proj[name] = nn.ModuleList()
                 for _ in range(params.n_symbols_per_token):
                     self.inverse_phoneme_proj[name].append(
-                        InverseGradPhonemePredictor(emb_size, params.n_symbols)
+                        InverseGradPhonemePredictor(emb_size, params.alphabet_size)
                     )
 
-        if params.addm_apply_token_classifier:
+        if params.addm_apply_phoneme_classifier:
             self.phoneme_proj = nn.ModuleDict()
-            for name, emb_size in params.addm_apply_token_classifier.items():
+            for name, emb_size in params.addm_apply_phoneme_classifier.items():
                 if emb_size is None:
                     emb_size = self.components_output_dim[name]()
                 self.phoneme_proj[name] = nn.ModuleList()
                 for _ in range(params.n_symbols_per_token):
-                    self.phoneme_proj[name].append(Regression(emb_size, params.n_symbols))
+                    self.phoneme_proj[name].append(
+                        Regression(emb_size, params.alphabet_size)
+                    )
 
     @property
     def output_dim(self):
@@ -112,6 +114,9 @@ class AdditionalModules(Component):
     def forward_step(self, inputs: ComponentInput) -> ComponentOutput:  # type: ignore
         if not self.training or self.params.addm_disable:
             return inputs
+
+        content = inputs.additional_content
+        losses = inputs.additional_losses
 
         def get_emb(_name: str):
             _emb = content.get(_name)
@@ -129,9 +134,6 @@ class AdditionalModules(Component):
                     _loss += _module(_t, _target)
 
             return _loss
-
-        content = inputs.additional_content
-        losses = inputs.additional_losses
 
         if (
             self.params.addm_apply_inverse_speaker_classifier
@@ -171,7 +173,7 @@ class AdditionalModules(Component):
                     if loss > 0:
                         losses[f"{feat_name}_{name}_inverse_1d_feature"] = 0.1 * loss
 
-        if self.params.addm_apply_inverse_token_classifier:
+        if self.params.addm_apply_inverse_phoneme_classifier:
             for name, module in self.inverse_phoneme_proj.items():
                 loss = 0
                 for idx, m in enumerate(module):
@@ -188,7 +190,7 @@ class AdditionalModules(Component):
 
                 losses[f"{name}_inverse_phoneme_classifier"] = 0.1 * loss
 
-        if self.params.addm_apply_token_classifier:
+        if self.params.addm_apply_phoneme_classifier:
             for name, module in self.phoneme_proj.items():
                 loss = 0
                 for idx, m in enumerate(module):

@@ -3,7 +3,7 @@ import shutil
 import typing as tp
 import logging
 import argparse
-import warnings
+import itertools
 
 from collections import defaultdict
 from pathlib import Path
@@ -13,22 +13,27 @@ import numpy as np
 import torch
 import numpy.typing as npt
 
-from annoy import AnnoyIndex
 from numpy.random import default_rng
-from scipy import interpolate
 from sklearn.cluster import FeatureAgglomeration
 from sklearn.metrics import pairwise_distances
 from tqdm import tqdm
 
 from speechflow.data_pipeline.collate_functions.tts_collate import TTSCollateOutput
 from speechflow.data_pipeline.core import Batch
+from speechflow.data_pipeline.datasample_processors.tts_processors import (
+    ContoursExtractor,
+)
 from speechflow.data_server.helpers import LoaderParams, init_data_loader_from_config
-from speechflow.io import Config, json_dump_to_file
+from speechflow.io import Config, change_config_file, json_dump_to_file
+from speechflow.logging import set_verbose_logging
 from speechflow.logging.server import LoggingServer
 
-LOGGER = logging.getLogger("root")
+try:
+    from annoy import AnnoyIndex
+except ImportError as e:
+    print(f"Annoy import failed: {e}")
 
-warnings.filterwarnings("ignore", category=UserWarning, module="russian_g2p")
+LOGGER = logging.getLogger("root")
 
 
 def parse_args():
@@ -67,69 +72,86 @@ def parse_args():
         "-vs", "--value_select", help="select specific values", nargs="+", type=str
     )
     arguments_parser.add_argument(
-        "-attr",
-        "--attributes",
-        help="select attributes for calc ranges",
-        nargs="+",
-        type=str,
-        default=["durations", "energy", "pitch", "rate"],
+        "-d", "--data_root", help="data root directory", type=Path
     )
     arguments_parser.add_argument(
         "-cont_len",
         "--contour_length",
         help="length of the contour",
         type=int,
-        default=100,
+        default=80,
     )
     arguments_parser.add_argument(
-        "-ssize", "--subset_size", help="size of subset", type=int, default=10000
+        "-ssize", "--subset_size", help="size of subset", type=int, default=10_000
     )
     arguments_parser.add_argument(
         "-n_cl", "--n_clusters", help="number of clusters", type=int, default=500
     )
     arguments_parser.add_argument(
-        "-mean_sp_emb",
-        "--speaker_emb_mean",
-        help="number of clusters",
-        type=bool,
-        default=True,
+        "-max_cnt",
+        "--max_contours_per_speaker",
+        help="number of contours per speaker",
+        type=int,
+        default=500,
+    )
+    arguments_parser.add_argument(
+        "-n_sp_avg",
+        "--num_speaker_emb_to_average",
+        help="number of speaker embeddings to average",
+        type=int,
+        default=20,
     )
     args = arguments_parser.parse_args()
     return args
 
 
-def update_config(cfg: Config, n_processes: int, n_gpus: int) -> Config:
+def update_config(
+    cfg: Config,
+    n_processes: int,
+    n_gpus: int,
+    remove_normalize: bool = True,
+    remove_augmentation: bool = True,
+    contours_clustering: bool = False,
+) -> Config:
     cfg["dataset"]["subsets"] = [cfg["dataset"]["subsets"][0]]
     cfg["dataset"]["split_ratio"] = {cfg["dataset"]["subsets"][0]: [0, 1]}
 
-    cfg["preproc"]["pipe"] = [
-        item for item in cfg["preproc"]["pipe"] if "norm" not in item
-    ]
-    cfg["preproc"]["pipe"] = [
-        item for item in cfg["preproc"]["pipe"] if "aug" not in item
-    ]
+    if not cfg["processor"]["dump"].get("full_dump", False):
+        if "trim" in cfg["preproc"]["pipe"]:
+            cfg["preproc"]["pipe"].remove("trim")
+
+        if remove_normalize and not contours_clustering:
+            cfg["preproc"]["pipe"] = [
+                item for item in cfg["preproc"]["pipe"] if "norm" not in item
+            ]
+
+        if remove_augmentation:
+            cfg["preproc"]["pipe"] = [
+                item for item in cfg["preproc"]["pipe"] if "aug" not in item
+            ]
 
     cfg["singleton_handlers"]["handlers"] = [
         item
         for item in cfg["singleton_handlers"]["handlers"]
-        if item not in ["StatisticsRange", "DatasetStatistics"]
+        if item not in ["StatisticsRange", "MeanBioEmbeddings", "DatasetStatistics"]
     ]
 
     cfg["sampler"] = {"type": "SimpleSampler"}
+
+    if contours_clustering:
+        cfg["sampler"]["comb_by_len"] = True
+
     cfg["collate"]["type"] = cfg["collate"]["type"].replace("WithPrompt", "")
     cfg["data_server"]["n_processes"] = n_processes
     cfg["data_server"]["n_gpus"] = n_gpus
-
-    if "dump" in cfg["processor"]:
-        cfg["processor"]["dump"]["skip_samples_without_dump"] = False
+    cfg["processor"]["output_collated_only"] = False
+    cfg["processor"]["dump"]["skip_samples_without_dump"] = False
 
     for item in cfg["preproc"]["pipe_cfg"].values():
         if item.get("type") == "VoiceBiometricProcessor":
             item.pop("mean_embeddings_file", None)
 
     cfg["singleton_handlers"]["SpeakerIDSetter"].pop("mean_embeddings_file", None)
-    if "MeanBioEmbeddings" in cfg["singleton_handlers"]["handlers"]:
-        cfg["singleton_handlers"]["handlers"].remove("MeanBioEmbeddings")
     if "mean_bio_embedding" in cfg["preproc"]["pipe"]:
         cfg["preproc"]["pipe"].remove("mean_bio_embedding")
 
@@ -149,13 +171,13 @@ def validate_dump(
     cfg["data_server"]["n_processes"] = n_processes
     cfg["data_server"]["n_gpus"] = 0
 
-    new_config_path = dump_folder / "cfg_validate.yml"
+    val_config_path = dump_folder / "cfg_validate.yml"
     cfg.to_file(dump_folder / "cfg_validate.yml")
 
     with LoggingServer.ctx(dump_folder):
         with init_data_loader_from_config(
             loader_params=LoaderParams(batch_size=batch_size, non_stop=False),
-            data_config_path=new_config_path,
+            data_config_path=val_config_path,
             value_select=value_select,
         ) as data_loaders:
             count = 0
@@ -170,7 +192,12 @@ def validate_dump(
             print("total samples:", count)
 
 
-def clustering(contours: np.array, subset_size: int = 10000, n_clusters: int = 500):
+def clustering(
+    contours: np.array,
+    subset_size: int = 10_000,
+    n_clusters: int = 500,
+    n_trees: int = 500,
+):
     """Function for contours clustering.
 
     1. First, a random subset of the given length is obtained.
@@ -193,38 +220,23 @@ def clustering(contours: np.array, subset_size: int = 10000, n_clusters: int = 5
     t = AnnoyIndex(contours.shape[1], "euclidean")
     for i, v in enumerate(subset):
         t.add_item(i, v)
-    t.build(500)
+
+    t.build(n_trees)
     return t, labels
 
 
-def contours_gathering(batch: Batch, contours: np.array, contour_length: int) -> np.array:
+def contours_gathering(
+    batch: Batch,
+    contours: tp.Dict[str, tp.Dict[str, list]],
+    contour_length: int,
+    max_contours_per_speaker: int = 500,
+) -> np.array:
     for ds in batch.data_samples:
-        frame_ts_word = np.concatenate([[0], np.cumsum(ds.word_lengths)]).astype(np.int64)
-        frame_ts = np.around(np.concatenate([[0], np.cumsum(ds.durations)])).astype(
-            np.int64
-        )
-        pitch = getattr(ds, "pitch", None)
-        tokens = [token.text for token in ds.sent.tokens if token.pos != "PUNCT"]
-
-        for idx, (start, end) in enumerate(zip(frame_ts_word[0:-1], frame_ts_word[1:])):
-            if idx < len(tokens):
-                if tokens[idx] not in ["<BOS>", "<EOS>", "<SIL>"]:
-                    frame = frame_ts[start : end + 1]
-                    first_ind = frame[0]
-                    last_ind = min(frame[-1], pitch.shape[0] - 1)
-                    contour = pitch[first_ind:last_ind]
-                    if contour.shape[0] == 1:
-                        contour = np.concatenate((contour, contour))
-                    x = np.arange(0, contour.shape[0])
-                    f = interpolate.interp1d(x, contour, fill_value="extrapolate")
-                    xnew = np.arange(
-                        0,
-                        contour.shape[0],
-                        contour.shape[0] / contour_length,
-                    )
-                    contour = f(xnew)[:contour_length][10:-10]
-                    contour = contour - contour.mean()
-                    contours.append(contour)
+        c = contours[ds.speaker_name].setdefault(ds.intonation_type, [])
+        if ds is not None and len(c) <= max_contours_per_speaker:
+            for contour, words_length in ContoursExtractor.extract(ds, contour_length):
+                if contour is not None:
+                    c.append(contour)
 
     return contours
 
@@ -263,19 +275,27 @@ def get_stat(values, quantile: float = 0.05, min_val: float = 1e-2):
 
 def main(
     data_config_path: Path,
-    batch_size: int,
-    n_processes: int,
-    n_gpus: int,
-    attributes: tp.List[str],  # attributes for calculate ranges
-    quantile: float = 0.05,  # quantile value for calculate ranges
-    file_name: str = "ranges.json",
+    batch_size: int = 16,
+    n_processes: int = 1,
+    n_gpus: int = 0,
     value_select: tp.Optional[tp.List[str]] = None,
-    num_data_servers: int = 1,
-    contour_length: int = 100,
-    subset_size: int = 10000,
+    data_root: tp.Optional[Path] = None,
+    attributes: tp.Optional[tp.Tuple[str]] = (
+        "durations",
+        "energy",
+        "pitch",
+        "rate",
+    ),  # attributes for calculate ranges
+    quantile: float = 0.05,  # quantile value for calculate ranges
+    contour_length: int = 80,
+    subset_size: int = 10_000,
     n_clusters: int = 500,
-    speaker_emb_mean: bool = True,
+    max_contours_per_speaker: int = 500,
+    num_speaker_emb_to_average: int = 20,
 ):
+    if data_root is not None:
+        change_config_file(data_config_path, {"data_root": data_root})
+
     cfg = Config.create_from_file(data_config_path, value_select=value_select)
 
     if "contours" in cfg["preproc"]["pipe"]:
@@ -284,13 +304,10 @@ def main(
     else:
         contours_clustering = False
 
-    if attributes == [""]:
-        attributes = []
-
-    if "dump" not in cfg["processor"]:
+    if "dump" not in cfg["processor"] or cfg["processor"]["dump"] is None:
         raise ValueError("section 'processor.dump' not configured")
 
-    dump_folder = Path(cfg["processor"]["dump"].get("folder_path"))
+    dump_folder = Path(cfg["processor"]["dump"].get("dump_path"))
     if dump_folder.exists():
         try:
             prev_cfg = Config.create_from_file(
@@ -301,13 +318,13 @@ def main(
             if (
                 prev_cfg["preproc"]["pipe"] != cfg["preproc"]["pipe"]
                 or prev_dump_cfg.get("fields") != curr_dump_cfg.get("fields")
-                or prev_dump_cfg.get("functions") != curr_dump_cfg.get("functions")
+                or prev_dump_cfg.get("handlers") != curr_dump_cfg.get("handlers")
             ):
                 if click.confirm(
                     f"The pipe configuration has been changed, do you want to remove the old dump? ({dump_folder.as_posix()})"
                 ):
                     LOGGER.warning(f"Remove dump folder {dump_folder.as_posix()}")
-                    shutil.rmtree(dump_folder, ignore_errors=False, onerror=None)
+                    shutil.rmtree(dump_folder, ignore_errors=False)
         except Exception as e:
             print(e)
 
@@ -320,16 +337,11 @@ def main(
             if value.get("type") == "PitchProcessor" and value.get("method") == "yingram":
                 value["method"] = "pyworld"
 
-    config_paths: tp.List[Path] = []
-    for idx, device in enumerate(range(num_data_servers)):  # legacy code
-        cfg = update_config(cfg, n_processes, n_gpus)
-        if idx == 0:
-            cfg["tag"] = "main"
+    cfg = update_config(cfg, n_processes, n_gpus, contours_clustering=contours_clustering)
+    dump_config_path = dump_folder / "cfg_for_dump.yml"
+    cfg.to_file(dump_config_path)
 
-        new_config_path = dump_folder / f"cfg_{idx}.yml"
-        cfg.to_file(new_config_path)
-        config_paths.append(new_config_path)
-
+    attributes = [] if attributes is None else list(attributes)
     attr_minmax: tp.Dict[str, tp.Dict] = {}
     for attr in attributes:
         attr_minmax[attr] = {
@@ -340,12 +352,12 @@ def main(
         }
 
     speaker_bio_embeddings: tp.Dict[str, tp.List[npt.NDArray]] = defaultdict(list)
-    contours: tp.List[npt.NDArray] = []
+    contours: tp.Dict[str, tp.Dict[str, list]] = defaultdict(dict)
 
     with LoggingServer.ctx(dump_folder):
         with init_data_loader_from_config(
             loader_params=LoaderParams(batch_size=batch_size, non_stop=False),
-            data_config_path=config_paths,
+            data_config_path=dump_config_path,
             value_select=value_select,
         ) as data_loaders:
             for data_loader in data_loaders.values():
@@ -363,19 +375,11 @@ def main(
                 if n_clusters > subset_size:
                     n_clusters = max(subset_size // 10, 2)
 
-                if len(data_loader) > subset_size:
-                    prob = subset_size // len(data_loader)
-                else:
-                    prob = 0
-
                 LOGGER.info(f"dump process: {data_loader.subset_name}")
                 sample_counter = 0
-                for _ in tqdm(range(len(data_loader) * len(config_paths))):
+                for _ in tqdm(range(len(data_loader))):
                     batch = next(data_loader)
-                    if batch.tag != "main":
-                        continue
-                    else:
-                        sample_counter += batch.size
+                    sample_counter += batch.size
 
                     collated: TTSCollateOutput = batch.collated_samples
                     assert collated is not None
@@ -410,15 +414,17 @@ def main(
                             attr_minmax[attr]["mean"][sp_name].append(val_mean[idx])
                             attr_minmax[attr]["var"][sp_name].append(val_var[idx])
 
-                    if speaker_emb_mean:
+                    if num_speaker_emb_to_average:
                         sp_embs = getattr(collated, "speaker_emb", None)
                         if sp_embs is not None:
                             sp_embs = sp_embs.cpu().numpy()
                             for idx, sp_name in enumerate(speaker_names):
                                 speaker_bio_embeddings[sp_name].append(sp_embs[idx])
 
-                    if contours_clustering and random.random() > prob:
-                        contours = contours_gathering(batch, contours, contour_length)
+                    if contours_clustering:
+                        contours = contours_gathering(
+                            batch, contours, contour_length, max_contours_per_speaker
+                        )
 
                 if data_loader.subset_name == "train":
                     lang_id_map_path = dump_folder / "lang_id_map.json"
@@ -442,14 +448,15 @@ def main(
                                 "var": float(np.median(to_array("var"))),
                             }
 
-                    ranges_path = dump_folder / file_name
+                    ranges_path = dump_folder / "ranges.json"
                     json_dump_to_file(ranges_path, all_speakers_ranges)
 
-                    if speaker_emb_mean:
+                    if num_speaker_emb_to_average:
                         mean_embeddings = {}
                         for idx, sp_name in enumerate(speaker_bio_embeddings):
                             mean_emb = random.choices(
-                                speaker_bio_embeddings[sp_name], k=20
+                                speaker_bio_embeddings[sp_name],
+                                k=num_speaker_emb_to_average,
                             )
                             mean_emb = np.mean(np.stack(mean_emb), axis=0)
                             mean_embeddings[sp_name] = mean_emb.tolist()
@@ -458,9 +465,16 @@ def main(
                         json_dump_to_file(mean_embeddings_path, mean_embeddings)
 
                     if contours_clustering:
-                        all_contours = np.stack(contours)
+                        all_contours = []
+                        for c in contours.values():
+                            all_contours += list(
+                                itertools.chain.from_iterable(c.values())
+                            )
+
                         a_index, labels = clustering(
-                            all_contours, subset_size=subset_size, n_clusters=n_clusters
+                            np.stack(all_contours),
+                            subset_size=subset_size,
+                            n_clusters=n_clusters,
                         )
 
                         index_filename = dump_folder / "index.ann"
@@ -470,7 +484,7 @@ def main(
                         np.save(labels_filename.as_posix(), labels)
 
                 if data_loader.dataset_size != sample_counter:
-                    print(
+                    LOGGER.info(
                         f"Not all data was dumped! "
                         f"(expected quantity: {data_loader.dataset_size}, actual quantity: {sample_counter})"
                     )
@@ -484,4 +498,5 @@ if __name__ == "__main__":
         dump.py -cd=../configs/tts/tts_data_24khz.yml -nproc=10 -ngpu=1
 
     """
+    set_verbose_logging()
     main(**parse_args().__dict__)

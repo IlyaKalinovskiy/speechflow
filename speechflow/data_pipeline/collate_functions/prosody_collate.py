@@ -2,30 +2,25 @@ import typing as tp
 
 from dataclasses import dataclass
 
-from torch import Tensor
-
 from speechflow.data_pipeline.core.base_collate_fn import BaseCollate, BaseCollateOutput
 from speechflow.data_pipeline.datasample_processors.data_types import (
     ProsodyPredictionDataSample,
 )
-from speechflow.training.utils.pad_utils import pad
+from speechflow.utils.pad_utils import pad_1d
 
 __all__ = ["ProsodyPredictionCollate", "ProsodyPredictionCollateOutput"]
 
 
 @dataclass
-class ProsodyPredictionCollateOutput(BaseCollateOutput):
-    attention_mask: tp.Optional[Tensor] = None
-    input_ids: tp.Optional[Tensor] = None
-    binary: tp.Optional[Tensor] = None
-    category: tp.Optional[Tensor] = None
+class ProsodyPredictionCollateOutput(BaseCollateOutput, ProsodyPredictionDataSample):
+    pass
 
 
 class ProsodyPredictionCollate(BaseCollate):
-    def __call__(  # type: ignore
+    def collate(  # type: ignore
         self, batch: tp.List[ProsodyPredictionDataSample]
     ) -> ProsodyPredictionCollateOutput:
-        collated = super().__call__(batch)  # type: ignore
+        collated = super().collate(batch)  # type: ignore
         collated = ProsodyPredictionCollateOutput(**collated.to_dict())  # type: ignore
 
         pad_symb_id = batch[0].pad_id
@@ -42,19 +37,20 @@ class ProsodyPredictionCollate(BaseCollate):
             input_ids.append(sample.input_ids)
 
         if batch[0].binary is not None:
-            binary, _ = pad(binary, pad_val=-100)
+            binary, _ = pad_1d(binary, pad_val=-100)
         else:
             binary = None
+
         if batch[0].category is not None:
-            category, _ = pad(category, pad_val=-100)
+            category, _ = pad_1d(category, pad_val=-100)
         else:
             category = None
 
-        input_ids, _ = pad(input_ids, pad_val=pad_symb_id)
-        attention_mask, _ = pad(attention_mask, pad_val=0)
+        input_ids, _ = pad_1d(input_ids, pad_val=pad_symb_id)
+        attention_mask, _ = pad_1d(attention_mask, pad_val=0)
 
-        collated.attention_mask = attention_mask
-        collated.input_ids = input_ids
         collated.binary = binary
         collated.category = category
+        collated.input_ids = input_ids
+        collated.attention_mask = attention_mask
         return collated

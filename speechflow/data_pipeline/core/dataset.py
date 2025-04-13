@@ -8,6 +8,8 @@ from pathlib import Path
 
 from tqdm import tqdm
 
+from speechflow.utils.checks import str_to_bool
+
 __all__ = ["Dataset", "DatasetItem"]
 
 
@@ -54,9 +56,9 @@ class DatasetItem:
 class Dataset:
     def __init__(self, data: tp.Optional[tp.Iterable] = None, use_serialize: bool = True):
         self._samples: tp.List[tp.Any] = []
-        self._is_use_serialize = use_serialize
+        self._use_serialize = use_serialize
         self._readonly_mode: bool = False
-        self._mem_save = bool(env.get("MEMORY_SAVE", False))
+        self._mem_save = str_to_bool(env.get("MEMORY_SAVE", "False"))
 
         if not data:
             return
@@ -78,13 +80,20 @@ class Dataset:
 
     @staticmethod
     def _find_filepath(obj: tp.Any) -> tp.Optional[str]:
-        for attr in ["file_path", "filepath", "wav_path"]:
+        for attr in ["file_path", "filepath"]:
             if isinstance(obj, tp.MutableMapping):
                 path = obj.get(attr, None)
             else:
                 path = getattr(obj, attr, None)
             if path is not None:
                 break
+        else:
+            for item in getattr(obj, "__dict__", {}).values():
+                if isinstance(item, Path):
+                    path = item
+                    break
+            else:
+                path = None
 
         if isinstance(path, Path):
             return path.as_posix()
@@ -106,7 +115,7 @@ class Dataset:
             meta["filepath"] = self._find_filepath(obj)
 
         try:
-            if self._is_use_serialize:
+            if self._use_serialize:
                 if not self._mem_save and hasattr(obj, "serialize"):
                     obj = obj.serialize(**kwargs)
                 elif obj.__class__.__name__ != "bytes":
@@ -119,7 +128,7 @@ class Dataset:
             return item.cache, item.meta
 
         obj = item.data
-        if not self._is_use_serialize:
+        if not self._use_serialize:
             return obj, item.meta
 
         try:
@@ -251,7 +260,7 @@ class Dataset:
 
 if __name__ == "__main__":
 
-    from multilingual_text_parser import Doc
+    from multilingual_text_parser.data_types import Doc
 
     from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
     from speechflow.logging.logger import create_logger

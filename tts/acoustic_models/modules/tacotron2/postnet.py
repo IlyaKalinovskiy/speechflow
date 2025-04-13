@@ -79,7 +79,7 @@ class Tacotron2Postnet(Component):
         return self.params.postnet_output_dim
 
     def forward_step(self, inputs: DecoderOutput) -> PostnetOutput:  # type: ignore
-        content = self.get_content(inputs)
+        content = inputs.get_content()
         x = content[-1].transpose(2, 1)
 
         i = 0

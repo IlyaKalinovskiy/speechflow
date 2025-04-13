@@ -29,22 +29,22 @@ def split_file_list(
 @check_path(assert_file_exists=True)
 def construct_file_list(
     data_root: tp_PATH,
-    ext: str = ".*",
+    ext: tp.Union[str, tp.Tuple[str, ...]] = ".*",
     with_subfolders: bool = False,
     path_filter: tp.Optional[tp.Callable] = None,
 ) -> tp.List[str]:
     flist = find_files(
-        data_root.as_posix(), extensions=(ext,) if type(ext) is str else ext
+        data_root.as_posix(), extensions=(ext,) if isinstance(ext, str) else ext
     )
     LOGGER.info(
-        trace("construct_file_list", f"find {len(flist)} *{ext} files in {data_root}")
+        trace("construct_file_list", f"find {len(flist)} {ext} files in {data_root}")
     )
 
     if not with_subfolders:
         flist = [p for p in flist if Path(p).parents[0] == data_root]
 
     if path_filter:
-        flist = [file for file in flist if path_filter(Path(file))]
+        flist = [file for file in flist if path_filter(file)]
 
     return flist
 
@@ -52,7 +52,7 @@ def construct_file_list(
 @check_path(assert_file_exists=True)
 def generate_file_list(
     data_root: tp_PATH,
-    ext: str = ".*",
+    ext: tp.Union[str, tp.Tuple[str, ...]] = ".*",
     with_subfolders: bool = False,
     path_filter: tp.Optional[tp.Callable] = None,
     separator: str = "|",
@@ -109,11 +109,15 @@ def read_file_list(
         elif isinstance(directory_filter, tp.MutableMapping):
             if directory_filter.get("include"):
                 include_paths = directory_filter.get("include", [])
+                if isinstance(include_paths, str):
+                    include_paths = [include_paths]
                 flist = [
                     item for item in flist if any(path in item for path in include_paths)
                 ]
             if directory_filter.get("exclude"):
                 exclude_paths = directory_filter.get("exclude", [])
+                if isinstance(exclude_paths, str):
+                    exclude_paths = [exclude_paths]
                 flist = [
                     item
                     for item in flist

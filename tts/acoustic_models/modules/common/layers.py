@@ -5,7 +5,11 @@ import torch.nn.functional as F
 
 from torch import nn
 
-__all__ = ["Conv", "LearnableSwish", "HighwayNetwork", "CondionalLayerNorm"]
+__all__ = [
+    "Conv",
+    "LearnableSwish",
+    "HighwayNetwork",
+]
 
 
 class Conv(nn.Module):
@@ -98,39 +102,4 @@ class HighwayNetwork(nn.Module):
         x2 = self.lin2(x)
         g = self.sigmoid(x2)
         y = g * F.relu(x1) + (1.0 - g) * x
-        return y
-
-
-class CondionalLayerNorm(nn.Module):
-    def __init__(self, normal_shape, speaker_emb_dim=256, epsilon: float = 1.0e-5):
-        super().__init__()
-        if isinstance(normal_shape, int):
-            self.normal_shape = normal_shape
-        self.speaker_emb_dim = speaker_emb_dim
-        self.epsilon = epsilon
-        self.W_scale = nn.Linear(self.speaker_emb_dim, self.normal_shape)
-        self.W_bias = nn.Linear(self.speaker_emb_dim, self.normal_shape)
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        torch.nn.init.constant_(self.W_scale.weight, 0.0)
-        torch.nn.init.constant_(self.W_scale.bias, 1.0)
-        torch.nn.init.constant_(self.W_bias.weight, 0.0)
-        torch.nn.init.constant_(self.W_bias.bias, 0.0)
-
-    def forward(self, x, speaker_emb):
-        mean = x.mean(dim=-1, keepdim=True)
-        var = ((x - mean) ** 2).mean(dim=-1, keepdim=True)
-        std = (var + self.epsilon).sqrt()
-        y = (x - mean) / std
-        scale = self.W_scale(speaker_emb)
-        bias = self.W_bias(speaker_emb)
-        if y.ndim == 3:
-            y *= scale.unsqueeze(1)
-            y += bias.unsqueeze(1)
-        elif y.ndim == 4:
-            y *= scale.unsqueeze(1).unsqueeze(1)
-            y += bias.unsqueeze(1).unsqueeze(1)
-        else:
-            raise NotImplementedError
         return y

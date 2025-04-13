@@ -3,12 +3,19 @@ import typing as tp
 
 import torch
 
-from tts.acoustic_models.modules.common.length_regulators import SoftLengthRegulator
+from torch.nn import functional as F
+
+from speechflow.utils.tensor_utils import (
+    apply_mask,
+    get_attention_mask,
+    get_mask_from_lengths,
+)
 from tts.acoustic_models.modules.embedding_calculator import EmbeddingCalculator
 from tts.acoustic_models.modules.params import EmbeddingParams
 from tts.forced_alignment.data_types import AlignerForwardInput, AlignerForwardOutput
 from tts.forced_alignment.model.blocks import (
     AlignmentEncoder,
+    Encoder,
     FlowSpecDecoder,
     TextEncoder,
 )
@@ -16,7 +23,6 @@ from tts.forced_alignment.model.utils import (
     binarize_attention,
     generate_path,
     maximum_path,
-    sequence_mask,
 )
 
 __all__ = ["GlowTTS", "GlowTTSParams"]
@@ -26,11 +32,6 @@ class GlowTTSParams(EmbeddingParams):
     """GlowTTS model parameters."""
 
     flow_type: str = "GlowTTS"  # GlowTTS
-
-    audio_feat: str = "mel"  # mel, ssl
-    audio_feat_size: int = 80
-
-    encoder_embedding_dim: int = 128
 
     inner_channels_enc: int = 192
     inner_channels_dec: int = 192
@@ -50,15 +51,23 @@ class GlowTTSParams(EmbeddingParams):
     n_split: int = 4
     n_sqz: int = 2
     dilation_rate: int = 1
-    p_dropout: float = 0.1
+    p_dropout: float = 0.05
 
+    use_ling_feat_emb: bool = False
+    use_lang_emb: bool = False
+    use_speaker_emb: bool = False
+    use_speech_quality_emb: bool = False
+    use_xpbert: bool = False
+    use_ssl: bool = False
+
+    # Nemo TTS Alignment (debugging required)
     use_alignment_encoder: bool = False
     alignment_encoder_n_att_channels: int = 128
     alignment_encoder_temperature: float = 0.0005
     alignment_encoder_dist_type: str = "l2"
 
-    use_mas_correction: bool = False
-    frames_per_sec: float = 172  # 22050 / 128
+    # For adjust attention
+    frames_per_sec: float = 125  # 16000 / 128
     max_phoneme_duration: float = 0.15
 
     def model_post_init(self, __context: tp.Any):
@@ -68,30 +77,15 @@ class GlowTTSParams(EmbeddingParams):
 class GlowTTS(EmbeddingCalculator):
     params: GlowTTSParams
 
-    def __init__(self, params: tp.Union[GlowTTSParams, dict], strict_init: bool = True):
-        super().__init__(GlowTTSParams.create(params, strict_init))
+    def __init__(self, cfg: tp.Union[GlowTTSParams, dict], strict_init: bool = True):
+        super().__init__(GlowTTSParams.create(cfg, strict_init))
         params = self.params
 
-        self.n_split = params.n_split
         self.n_sqz = params.n_sqz
-        self.out_channels = params.audio_feat_size
-
-        self.use_speaker_emb = (
-            params.use_onehot_speaker_emb
-            or params.use_learnable_speaker_emb
-            or params.use_dnn_speaker_emb
-            or params.use_mean_dnn_speaker_emb
-        )
-        self.speaker_emb_dim = (
-            params.speaker_emb_dim if self.use_speaker_emb else None  # type: ignore
-        )
 
         self.encoder = TextEncoder(
-            params.n_symbols,
-            params.n_langs,
-            params.n_symbols_per_token,
-            params.encoder_embedding_dim,
-            self.out_channels,
+            params.token_emb_dim,
+            params.mel_spectrogram_dim,
             params.inner_channels_enc,
             params.filter_channels,
             params.filter_channels_dp,
@@ -99,42 +93,52 @@ class GlowTTS(EmbeddingCalculator):
             params.n_layers_enc,
             params.kernel_size_enc,
             params.p_dropout,
+            ling_feat_dim=params.token_emb_dim if params.use_ling_feat_emb else None,
+            lang_emb_dim=params.token_emb_dim if params.use_lang_emb else None,
+            speaker_emb_dim=params.speaker_emb_dim if params.use_speaker_emb else None,
             window_size=params.window_size,
-            speaker_emb_dim=self.speaker_emb_dim,
-            prenet=True,
+            use_prenet=True,
+            use_xpbert=params.use_xpbert,
         )
 
         if params.flow_type == "GlowTTS":
             self.decoder = FlowSpecDecoder(
-                self.out_channels,
+                params.mel_spectrogram_dim,
                 params.inner_channels_dec,
                 params.kernel_size_dec,
                 params.dilation_rate,
                 params.n_blocks_dec,
                 params.n_layers_dec,
                 p_dropout=params.p_dropout,
-                n_split=self.n_split,
-                n_sqz=self.n_sqz,
-                speaker_emb_dim=256,
+                n_split=params.n_split,
+                n_sqz=params.n_sqz,
+                lang_emb_dim=params.token_emb_dim if params.use_lang_emb else None,
+                speaker_emb_dim=params.speaker_emb_dim
+                if params.use_speaker_emb
+                else None,
+                speech_quality_emb_dim=params.speech_quality_emb_dim
+                if params.use_speech_quality_emb
+                else None,
             )
         else:
             raise NotImplementedError(f"'{params.flow_type}' not implemented.")
 
-        self.lang_emb = torch.nn.Embedding(params.n_langs, self.speaker_emb_dim)
-        self.cond_proj = torch.nn.Linear(self.speaker_emb_dim * 2 + 4, 256)
-
-        proj_dim = self.out_channels
-        self.length_regulator = SoftLengthRegulator()
-        self.mel_proj = torch.nn.Sequential(
-            torch.nn.Linear(proj_dim, proj_dim * 2),
-            torch.nn.ReLU(),
-            torch.nn.Linear(proj_dim * 2, self.out_channels),
-        )
+        if params.use_ssl:
+            self.ssl_proj = torch.nn.Conv1d(
+                params.mel_spectrogram_dim, params.ssl_feat_dim, 1
+            )
+            self.ssl_encoder = Encoder(
+                hidden_dim=params.ssl_feat_dim,
+                filter_channels=params.filter_channels,
+                n_heads=2,
+                n_layers=4,
+                p_dropout=params.p_dropout,
+            )
 
         if params.use_alignment_encoder:
             self.alignment_encoder = AlignmentEncoder(
-                n_mel_channels=self.out_channels,
-                n_text_channels=params.encoder_embedding_dim * 4,
+                n_mel_channels=params.mel_spectrogram_dim,
+                n_text_channels=params.inner_channels_enc,
                 n_att_channels=params.alignment_encoder_n_att_channels,
                 temperature=params.alignment_encoder_temperature,
                 dist_type=params.alignment_encoder_dist_type,
@@ -142,19 +146,20 @@ class GlowTTS(EmbeddingCalculator):
         else:
             self.alignment_encoder = None
 
-    def preprocess(self, y, y_lengths, y_max_length):
+    def preprocess(self, y, y_lengths, y_max_length=None):
         if y_max_length is not None:
             y_max_length = (
                 torch.div(y_max_length, self.n_sqz, rounding_mode="trunc") * self.n_sqz
             )
             y = y[:, :, :y_max_length]
+
         y_lengths = torch.div(y_lengths, self.n_sqz, rounding_mode="trunc") * self.n_sqz
-        return y, y_lengths, y_max_length
+        return y, y_lengths
 
     def store_inverse(self):
         self.decoder.store_inverse()
 
-    def mas(self, x_m, x_logs, z, attn_mask, inputs, mas_correction):
+    def mas(self, x_m, x_logs, z, attn_mask, inputs, adjust_attention: bool = False):
         with torch.no_grad():
             x_s_sq_r = torch.exp(-2 * x_logs)
             logp1 = torch.sum(-0.5 * math.log(2 * math.pi) - x_logs, [1]).unsqueeze(
@@ -171,7 +176,7 @@ class GlowTTS(EmbeddingCalculator):
             )  # [b, t, 1]
             logp = logp1 + logp2 + logp3 + logp4  # [b, t, t']
 
-            if mas_correction or self.params.use_mas_correction:
+            if adjust_attention:
                 sil_mask = inputs.ling_feat.sil_mask.cpu().numpy()
                 spectral_flatness = inputs.spectral_flatness.cpu().numpy()
                 max_frames_per_phoneme = int(
@@ -191,107 +196,103 @@ class GlowTTS(EmbeddingCalculator):
         return attn.unsqueeze(1).detach()
 
     def calculate_losses(
-        self, y, z, attn, x_m, x_logs, logw, logdet, x_mask, x_lengths, y_lengths
+        self, z, attn, x_m, x_logs, logw, logdet, x_mask, x_lens, y_lens
     ):
         # [b, t', t], [b, t, d] -> [b, d, t']
-        y_m = torch.matmul(
+        z_m = torch.matmul(
             attn.squeeze(1).transpose(1, 2), x_m.transpose(1, 2)
         ).transpose(1, 2)
         # [b, t', t], [b, t, d] -> [b, d, t']
-        y_logs = torch.matmul(
+        z_logs = torch.matmul(
             attn.squeeze(1).transpose(1, 2), x_logs.transpose(1, 2)
         ).transpose(1, 2)
-        logw_ = torch.log(1e-8 + torch.sum(attn, -1)) * x_mask
+        logw_ = apply_mask(torch.log(1e-8 + torch.sum(attn, -1)), x_mask)
 
-        l_mle = 0.5 * math.log(2 * math.pi) + (
-            torch.sum(y_logs)
-            + 0.5 * torch.sum(torch.exp(-2 * y_logs) * (z - y_m) ** 2)
+        mle_loss = 0.5 * math.log(2 * math.pi) + (
+            torch.sum(z_logs)
+            + 0.5 * torch.sum(torch.exp(-2 * z_logs) * (z - z_m) ** 2)
             - torch.sum(logdet)
         ) / (
-            torch.sum(torch.div(y_lengths, self.n_sqz, rounding_mode="trunc"))
+            torch.sum(torch.div(y_lens, self.n_sqz, rounding_mode="trunc"))
             * self.n_sqz
-            * self.out_channels
+            * self.params.mel_spectrogram_dim
         )
-        l_length = torch.sum((logw - logw_) ** 2) / torch.sum(x_lengths)
-        return l_mle, l_length
+        duration_loss = torch.sum((logw - logw_) ** 2) / torch.sum(x_lens)
+        return mle_loss, duration_loss
 
-    def forward(self, inputs: AlignerForwardInput, mas_correction: bool = False) -> AlignerForwardOutput:  # type: ignore
-        x = inputs.transcription
-        lang_id = inputs.lang_id
-        text_lengths = inputs.input_lengths
+    def forward(self, inputs: AlignerForwardInput, adjust_attention: bool = False) -> AlignerForwardOutput:  # type: ignore
+        x = self.get_transcription_embeddings(inputs)  # type: ignore
+        x_lens = inputs.input_lengths
+        x_mask = get_mask_from_lengths(x_lens)
 
-        if self.params.audio_feat == "mel":
-            y = inputs.spectrogram
-        elif self.params.audio_feat == "ssl":
-            y = inputs.ssl_feat
-        else:
-            raise ValueError(f"{self.params.audio_feat} is not implemented.")
+        y = inputs.spectrogram.transpose(1, -1)
+        y_lens = inputs.spectrogram_lengths
+        y, y_lens = self.preprocess(y, y_lens, y.shape[2])
+        y_mask = get_mask_from_lengths(y_lens)
 
-        y = y.transpose(1, 2)
-        output_lengths = inputs.output_lengths
-
-        lang_emb = self.lang_emb(lang_id)
-        speaker_emb = self.get_speaker_embedding(inputs)  # type: ignore
         ling_feat_emb = self.get_ling_feat(inputs)  # type: ignore
+        lang_emb = self.get_lang_embedding(inputs)  # type: ignore
+        speaker_emb = self.get_speaker_embedding(inputs)  # type: ignore
+        speech_quality_emb = self.get_speech_quality_embedding(inputs)  # type: ignore
 
-        x_lengths, y_lengths = text_lengths.data, output_lengths.data
-        x, x_m, x_logs, logw, x_mask = self.encoder(
+        x, x_m, x_logs, logw = self.encoder(
             x,
-            lang_emb,
-            ling_feat_emb,
-            x_lengths,
-            g=speaker_emb,
-            sil_mask=inputs.ling_feat.sil_mask,
+            x_mask,
+            ling_feat_emb=ling_feat_emb,
+            lang_emb=lang_emb,
+            speaker_emb=speaker_emb,
         )
 
-        y_max_length = y.size(2)
-
-        y, y_lengths, y_max_length = self.preprocess(y, y_lengths, y_max_length)
-        y_mask = torch.unsqueeze(sequence_mask(y_lengths, y_max_length), 1).to(
-            x_mask.dtype
+        z, logdet = self.decoder(
+            y,
+            y_mask,
+            lang_emb=lang_emb,
+            speaker_emb=speaker_emb,
+            speech_quality_emb=speech_quality_emb,
         )
-        attn_mask = torch.unsqueeze(x_mask, -1) * torch.unsqueeze(y_mask, 2)
 
-        g = self.cond_proj(
-            torch.cat([speaker_emb, lang_emb, inputs.speech_quality_emb], dim=1)
-        )
-        z, logdet = self.decoder(y, y_mask, g=g.unsqueeze(-1))
+        additional_content = {}
 
-        attn = self.mas(x_m, x_logs, z, attn_mask, inputs, mas_correction)
+        if self.training and self.params.use_ssl:
+            z_enc = self.ssl_encoder(self.ssl_proj(z), y_mask).transpose(1, -1)
+            ssl_prediction_loss = F.mse_loss(z_enc, inputs.ssl_feat[:, : z_enc.shape[1]])
+            additional_content["ssl_prediction"] = z_enc
+        else:
+            ssl_prediction_loss = 0
 
-        l_mle, l_length = self.calculate_losses(
-            y, z, attn, x_m, x_logs, logw, logdet, x_mask, x_lengths, y_lengths
+        attn_mask = get_attention_mask(x_mask, y_mask)
+        attn = self.mas(x_m, x_logs, z, attn_mask, inputs, adjust_attention)
+
+        mle_loss, duration_loss = self.calculate_losses(
+            z, attn, x_m, x_logs, logw, logdet, x_mask, x_lens, y_lens
         )
 
         if self.alignment_encoder is not None:
             attn_soft, attn_logprob = self.alignment_encoder(
                 queries=z,
                 keys=x,
-                mask=(~x_mask).transpose(2, 1),
+                mask=(~x_mask).unsqueeze(1).transpose(2, 1),
                 attn_prior=attn.squeeze(1).transpose(1, 2),
             )
 
             try:
-                attn_hard = binarize_attention(
-                    attn_soft, inputs.input_lengths, inputs.output_lengths
-                )
+                attn_hard = binarize_attention(attn_soft, inputs.input_lengths, y_lens)
                 aligning_path = attn_hard.squeeze(1)
-            except:
+            except Exception:  # type: ignore
                 aligning_path = attn.squeeze(1).transpose(1, 2)
 
-            additional_content = {
-                "attn_soft": attn_soft,
-                "attn_logprob": attn_logprob,
-            }
+            additional_content["attn_soft"] = attn_soft
+            additional_content["attn_logprob"] = attn_logprob
         else:
             aligning_path = attn.squeeze(1).transpose(1, 2)
-            additional_content = None
 
         output = AlignerForwardOutput(
             aligning_path=aligning_path,
-            mle_loss=l_mle,
-            duration_loss=l_length,
+            mle_loss=mle_loss,
+            ssl_rec_loss=ssl_prediction_loss,
+            duration_loss=duration_loss,
             additional_content=additional_content,
+            output_lengths=y_lens,
         )
         return output
 
@@ -299,35 +300,20 @@ class GlowTTS(EmbeddingCalculator):
     def generate(self, inputs: AlignerForwardInput):  # type: ignore
         assert inputs.ling_feat
         x = inputs.transcription
-        text_lengths = inputs.input_lengths
-
-        if self.params.audio_feat == "mel":
-            y = inputs.spectrogram
-        elif self.params.audio_feat == "ssl":
-            y = inputs.ssl_feat
-        else:
-            raise ValueError(f"{self.params.audio_feat} is not implemented.")
-
-        y = y.transpose(1, 2)
-        output_lengths = inputs.output_lengths
+        x_lens = inputs.input_lengths
+        y = inputs.spectrogram.transpose(1, -1)
 
         speaker_emb = self.get_speaker_embedding(inputs)  # type: ignore
         ling_feat_emb = self.get_ling_feat(inputs)  # type: ignore
 
-        x_lengths, y_lengths = text_lengths.data, output_lengths.data
-        x_m, x_logs, logw, x_mask = self.encoder(
-            x, ling_feat_emb, x_lengths, g=speaker_emb
-        )
+        x_m, x_logs, logw, x_mask = self.encoder(x, ling_feat_emb, x_lens, g=speaker_emb)
 
-        w = torch.exp(logw) * x_mask
+        w = apply_mask(torch.exp(logw), x_mask)
         w_ceil = torch.ceil(w)
-        y_lengths = torch.clamp_min(torch.sum(w_ceil, [1, 2]), 1).long()
-        y_max_length = None
+        y_lens = torch.clamp_min(torch.sum(w_ceil, [1, 2]), 1).long()
 
-        y, y_lengths, y_max_length = self.preprocess(y, y_lengths, y_max_length)
-        z_mask = torch.unsqueeze(sequence_mask(y_lengths, y_max_length), 1).to(
-            x_mask.dtype
-        )
+        y, y_lens = self.preprocess(y, y_lens)
+        z_mask = get_mask_from_lengths(y_lens).unsqueeze(1)
         attn_mask = torch.unsqueeze(x_mask, -1) * torch.unsqueeze(z_mask, 2)
 
         attn = generate_path(w_ceil.squeeze(1), attn_mask.squeeze(1)).unsqueeze(1)

@@ -5,13 +5,13 @@ from pathlib import Path
 
 import numpy as np
 
-from multilingual_text_parser import Doc, Syntagma
+from multilingual_text_parser.data_types import Doc, Syntagma
 from praatio import tgio
 
 from speechflow.data_pipeline.core import BaseDSParser
 from speechflow.data_pipeline.core.parser_types import Metadata, MetadataTransform
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
-from speechflow.io import AudioChunk, AudioSeg, Timestamps
+from speechflow.io import AudioChunk, AudioSeg, Timestamps, tp_PATH
 
 __all__ = ["LibriSpeechDSParser"]
 
@@ -27,7 +27,8 @@ class LibriSpeechDSParser(BaseDSParser):
         memory_bound: bool = False,
         chunk_size: tp.Optional[int] = None,
         raise_on_converter_exc: bool = False,
-        dump: tp.Optional[tp.Union[str, Path]] = None,
+        dump_path: tp.Optional[tp_PATH] = None,
+        progress_bar: bool = True,
     ):
         from speechflow.data_pipeline.dataset_parsers import TTSDSParser
 
@@ -37,7 +38,8 @@ class LibriSpeechDSParser(BaseDSParser):
             memory_bound=memory_bound,
             chunk_size=chunk_size,
             raise_on_converter_exc=raise_on_converter_exc,
-            dump=dump,
+            dump_path=dump_path,
+            progress_bar=progress_bar,
         )
         self.tts_db = TTSDSParser()
 
@@ -88,7 +90,7 @@ class LibriSpeechDSParser(BaseDSParser):
         sent.lang = "EN"
 
         wave = AudioChunk(file_path.with_suffix(".flac").as_posix().replace("-align", ""))
-        sega = AudioSeg(wave, sent, sega_path=file_path)
+        sega = AudioSeg(wave, sent)
         sega.set_phoneme_timestamps(Timestamps(np.asarray(tm_by_phones)))
 
         metadata = {"file_path": file_path, "label": label, "sega": sega}

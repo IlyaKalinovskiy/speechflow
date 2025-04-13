@@ -13,20 +13,25 @@ import torch
 import numpy.typing as npt
 import pytorch_lightning as pl
 
+from matplotlib import pyplot as plt
 from pytorch_lightning import Callback
+from sklearn.manifold import TSNE
 
-from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
+    TTSTextProcessor,
+)
 from speechflow.utils.plotting import figure_to_ndarray, plot_1d, plot_spectrogram
-from tts.acoustic_models.interface.test_utterances_ru import UTTERANCE
 
-LOGGER = logging.getLogger()
+__all__ = ["TTSTrainingVisualizer", "ProsodyTrainingVisualizer"]
+
+LOGGER = logging.getLogger("root")
 
 
 class TTSTrainingVisualizer(Callback):
     def __init__(
         self, lang: str = "RU", additional_plots: tp.Optional[tp.Tuple[str]] = None
     ):
-        self._text_parser = TextProcessor(lang=lang)
+        self._text_parser = TTSTextProcessor(lang=lang)
         self._additional_plots = additional_plots
 
     def on_validation_batch_end(
@@ -116,13 +121,13 @@ class TTSTrainingVisualizer(Callback):
                         )
 
         if "predicted_phonemes" in outputs.additional_content:
-            ph_target = targets.transcription[random_idx]
+            ph_target = targets.transcription_id[random_idx]
             if ph_target.ndim == 2:
                 ph_target = ph_target[:, 0]
 
-            ph_target = [self._text_parser.to_symbol(int(i)) for i in ph_target]
+            ph_target = [self._text_parser.id_to_symbol(int(i)) for i in ph_target]
             ph_predicted = outputs.additional_content["predicted_phonemes"][random_idx]
-            ph_predicted = [self._text_parser.to_symbol(int(i)) for i in ph_predicted]
+            ph_predicted = [self._text_parser.id_to_symbol(int(i)) for i in ph_predicted]
             pl_module.logger.experiment.add_text(
                 "decoder/ph_target", " ".join(ph_target), trainer.global_step
             )
@@ -189,96 +194,94 @@ class TTSTrainingVisualizer(Callback):
         )
 
 
-class TTSAudioSynthesizer(Callback):
+class ProsodyTrainingVisualizer(Callback):
     def __init__(
         self,
-        vocoder_path: tp.Union[str, Path],
-        text_path: Optional[tp.Union[str, Path]] = None,
-        num_samples: int = 3,
+        n_classes: tp.Optional[int] = 8,
+        eps: tp.Optional[int] = None,
     ):
-        from tts.acoustic_models.interface.eval_interface import TTSEvaluationInterface
-        from tts.vocoders.eval_interface import VocoderEvaluationInterface
+        self.n_classes = n_classes
+        self.eps = eps
 
-        vocoder_path = Path(vocoder_path)
-        if not vocoder_path.exists():
-            raise FileExistsError("Vocoder model not found!")
-
-        self.tts: tp.Optional[TTSEvaluationInterface] = None
-        self.vocoder = VocoderEvaluationInterface(vocoder_path, device="cpu")
-
-        if text_path is None:
-            self.text_for_synthesis = UTTERANCE[0]
-        else:
-            self.text_for_synthesis = Path(text_path).read_text(encoding="utf-8")
-
-        self.num_samples = num_samples
-        self.sr = self.vocoder.sample_rate
-
-    def on_save_checkpoint(self, pl_module: pl.LightningModule, *args):
-        from tts.acoustic_models.interface.eval_interface import TTSEvaluationInterface
-
-        all_checkpoints = glob.glob(
-            os.path.join(pl_module.default_root_dir, "_checkpoints/epoch*.ckpt")
-        )
-        if len(all_checkpoints) == 0:
+    def on_validation_batch_end(
+        self,
+        trainer: pl.Trainer,
+        pl_module: pl.LightningModule,
+        outputs,
+        batch,
+        batch_idx,
+        dataloader_idx=0,
+    ):
+        if batch_idx != 0:
             return
-        else:
-            all_checkpoints.sort(key=self._extract_step)
 
-        if self.tts is None:
-            self.tts = TTSEvaluationInterface(
-                all_checkpoints[-1], device=pl_module.model.device.type, load_model=False
+        vq_enc = pl_module.model.encoder.vq_encoder
+        if hasattr(vq_enc, "vq"):
+            codebook = vq_enc.vq.codebook.weight
+        elif hasattr(vq_enc, "rlfq"):
+            codebook = vq_enc.rlfq.codebooks[0]
+        elif hasattr(vq_enc, "rfsq"):
+            codebook = vq_enc.rfsq.codebooks[0]
+        else:
+            raise NotImplementedError
+
+        embeddings = codebook.cpu().detach().numpy()
+
+        mapping = self.clustering(embeddings, n_classes=self.n_classes)
+        if len(mapping) > 0:
+            pl_module.logger.experiment.add_image(
+                "vq_gaussian_clusters",
+                mapping,
+                trainer.global_step,
+                dataformats="CHW",
             )
 
-        self.tts.model = pl_module.model.model
-
-        all_outputs = []
-        for speaker_name in random.choices(self.tts.get_speakers(), k=self.num_samples):
-            try:
-                all_outputs.append(
-                    self.tts.synthesize(
-                        self.text_for_synthesis,
-                        self.tts.lang,
-                        speaker_name=speaker_name,
-                    )
-                )
-            except Exception as e:
-                LOGGER.warning(f"Exit callback with exception: {e}")
-                return
-
-        for idx, tts_output in enumerate(all_outputs):
-            try:
-                voc_output = self.vocoder.synthesize(tts_output)
-                output = np.concatenate([s.waveform.numpy() for s in voc_output], axis=1)  # type: ignore
-                self.log_waveform(
-                    pl_module,
-                    output,
-                    self.sr,
-                    idx,
-                    "_test_utterances",
-                    pl_module.global_step,
-                )
-            except Exception as e:
-                LOGGER.warning(f"Exit callback with exception: {e}")
-                return
+        mapping = self.clustering(embeddings, eps=self.eps)
+        if len(mapping) > 0:
+            pl_module.logger.experiment.add_image(
+                "vq_dbscan_clusters",
+                mapping,
+                trainer.global_step,
+                dataformats="CHW",
+            )
 
     @staticmethod
-    def log_waveform(
-        pl_module: pl.LightningModule,
-        waveform: npt.NDArray,
-        sample_rate: int,
-        index: int,
-        postfix: str,
-        step: int,
+    def clustering(
+        embeddings: np.array,
+        n_classes: tp.Optional[int] = None,
+        eps: tp.Optional[int] = None,
     ):
-        pl_module.logger.experiment.add_audio(
-            f"spg_{index}/{postfix}",
-            waveform,
-            global_step=step,
-            sample_rate=sample_rate,
-        )
+        from sklearn.cluster import DBSCAN
+        from sklearn.mixture import GaussianMixture
 
-    @staticmethod
-    def _extract_step(text):
-        """Regular expression extracting number of steps from checkpoint filename."""
-        return int(re.split(r"(epoch=)(\d+)(-step)", text)[2])
+        """
+        Function for clustering of embeddings from the codebook
+        1. Outliers are obtained by DBSCAN
+        2. Outliers are clustered by GaussianMixture clustering
+        3. Indices from the codebook are mapped with the corresponding classes
+        """
+
+        if n_classes:
+            classes = GaussianMixture(n_components=n_classes).fit_predict(embeddings)
+        elif eps:
+            classes = DBSCAN(eps=eps, min_samples=2).fit_predict(embeddings)
+        else:
+            classes = np.zeros(embeddings.shape[0])
+
+        tsne_ak_2d = TSNE(n_components=2, init="pca", n_iter=3000, random_state=32)
+        projections = tsne_ak_2d.fit_transform(embeddings)
+
+        fig = plt.figure(figsize=(16, 9))
+
+        unique = list(set(classes))
+        colors = [plt.cm.jet(float(i + 1) / (max(unique) + 1)) for i in unique]
+        for i, u in enumerate(unique):
+            points = projections[np.where(classes == u)]
+            plt.scatter(points[:, 0], points[:, 1], c=colors[i], label=str(u))
+
+        plt.legend()
+        fig.canvas.draw()
+        array = figure_to_ndarray(fig)
+        plt.close()
+
+        return array

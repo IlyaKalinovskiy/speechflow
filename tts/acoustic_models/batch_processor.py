@@ -35,7 +35,7 @@ class TTSBatchProcessor(BaseBatchProcessor):
         batch_tag: tp.Optional[str] = None,
         batch_idx: tp.Optional[int] = None,
         global_step: tp.Optional[int] = None,
-    ) -> (TTSForwardInput, TTSTarget, tp.List[DataSample]):
+    ) -> (TTSForwardInput, TTSTarget):
         for name in [
             "word_lengths",
             "word_invert_lengths",
@@ -48,41 +48,38 @@ class TTSBatchProcessor(BaseBatchProcessor):
         _input: TTSForwardInput = init_class_from_config(
             TTSForwardInput, collated.to_dict(), check_keys=False
         )(
-            batch_tag=batch_tag,
-            batch_idx=batch_idx,
-            global_step=global_step,
             waveform=collated.mu_law_waveform,
-            aggregate_mel=collated.aggregated.get("mel"),
+            waveform_lengths=collated.mu_law_waveform_lengths,
+            symbols=collated.transcription_text,
+            transcription=collated.transcription_id,
+            transcription_by_frames=collated.transcription_id_by_frames,
+            mel_spectrogram=collated.mel,
+            linear_spectrogram=collated.magnitude,
             aggregate_energy=collated.aggregated.get("energy"),
-            aggregate_spectral_flatness=collated.aggregated.get("spectral_flatness"),
-            aggregate_spectral_envelope=collated.aggregated.get("spectral_envelope"),
             aggregate_pitch=collated.aggregated.get("pitch"),
             aggregate_curv_energy=collated.aggregated.get("curv_energy"),
             aggregate_curv_pitch=collated.aggregated.get("curv_pitch"),
+            aggregate_spectral_flatness=collated.aggregated.get("spectral_flatness"),
+            aggregate_spectral_envelope=collated.aggregated.get("spectral_envelope"),
             prosody=collated.aggregated.get("pitch_contour"),
             additional_inputs=collated.additional_fields,
             input_lengths=collated.transcription_lengths,
             output_lengths=collated.spectrogram_lengths,
+            batch_tag=batch_tag,
+            batch_idx=batch_idx,
+            global_step=global_step,
         )
 
         _target: TTSTarget = init_class_from_config(
             TTSTarget, collated.to_dict(), check_keys=False
         )(
+            symbols=collated.transcription_text,
+            transcription=collated.transcription_id,
+            input_lengths=collated.transcription_lengths,
+            output_lengths=collated.spectrogram_lengths,
             batch_tag=batch_tag,
             batch_idx=batch_idx,
             global_step=global_step,
-            spectrogram=collated.mel_spectrogram,
-            aggregate_mel=collated.aggregated.get("mel"),
-            aggregate_energy=collated.aggregated.get("energy"),
-            aggregate_spectral_flatness=collated.aggregated.get("spectral_flatness"),
-            aggregate_spectral_envelope=collated.aggregated.get("spectral_envelope"),
-            aggregate_pitch=collated.aggregated.get("pitch"),
-            aggregate_curv_energy=collated.aggregated.get("curv_energy"),
-            aggregate_curv_pitch=collated.aggregated.get("curv_pitch"),
-            prosody=collated.aggregated.get("pitch_contour"),
-            additional_inputs=collated.additional_fields,
-            input_lengths=collated.transcription_lengths,
-            output_lengths=collated.spectrogram_lengths,
         )
 
         return _input.to(self.device), _target.to(self.device)
@@ -93,7 +90,10 @@ class TTSBatchProcessor(BaseBatchProcessor):
         collated: TTSCollateOutput = batch.collated_samples  # type: ignore
 
         inputs, targets = self.process_collated(
-            collated=collated, batch_tag=batch.tag, batch_idx=batch_idx
+            collated=collated,
+            batch_tag=batch.tag,
+            batch_idx=batch_idx,
+            global_step=global_step,
         )
 
         return inputs, targets, batch.data_samples
@@ -108,12 +108,16 @@ class TTSBatchProcessorWithPrompt(TTSBatchProcessor):
             LOGGER.info(trace(self, message="collated is not TTSCollateOutputWithPrompt"))
 
         _input, _target, data_samples = super().__call__(batch)
-        _prompt, *_ = super().process_collated(
-            collated.prompt, batch_idx=batch_idx, batch_tag=batch.tag
-        )
-
         _input = TTSForwardInputWithPrompt(**_input.to_dict())
-        _input.prompt = _prompt
+
+        if collated.prompt is not None:
+            _prompt, *_ = super().process_collated(
+                collated.prompt,
+                batch_tag=batch.tag,
+                batch_idx=batch_idx,
+                global_step=global_step,
+            )
+            _input.prompt = _prompt
 
         return _input.to(self.device), _target.to(self.device), batch.data_samples
 
@@ -127,7 +131,9 @@ class TTSBatchProcessorWithSSML(TTSBatchProcessor):
     ) -> (TTSForwardInputWithSSML, TTSTarget, tp.List[DataSample]):
         collated: TTSCollateOutputWithSSML = batch.collated_samples  # type: ignore
         if not isinstance(collated, TTSCollateOutputWithSSML):
-            LOGGER.info(trace(self, message="collated is not TTSCollateOutputWithSSML"))
+            LOGGER.info(
+                trace(self, message="collated is not TTSCollateOutputWithSSML type")
+            )
 
         _input, _target, data_samples = super().__call__(batch)
 

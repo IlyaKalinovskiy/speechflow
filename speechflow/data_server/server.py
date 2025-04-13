@@ -9,42 +9,49 @@ from dataclasses import dataclass
 
 import psutil
 
+from strenum import StrEnum
+
 from speechflow.concurrency import ProcessWorker
 from speechflow.data_pipeline.core import DataPipeline
 from speechflow.data_server.patterns import ZMQPatterns, ZMQServer
 from speechflow.data_server.pool import WorkerPool
+from speechflow.data_server.system_messages import DataClientMessages as DCM
+from speechflow.data_server.system_messages import DataServerMessages as DSM
 from speechflow.io import Config, check_path, tp_PATH
-from speechflow.logging import log_to_file, trace
-from speechflow.utils.gpu import get_freer_gpu
+from speechflow.logging import is_verbose_logging, log_to_file, trace
+from speechflow.utils.gpu_info import get_freer_gpu
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.profiler import Profiler
 from speechflow.utils.serialize import Serialize
 from speechflow.utils.sockopt import find_free_port
 
-__all__ = ["DataServer"]
+__all__ = ["DataServer", "SubscriberTypes"]
 
 LOGGER = logging.getLogger("root")
+
+
+class SubscriberTypes(StrEnum):
+    CLIENT = "client"
+    WORKER = "worker"
+    LOADER = "loader"
 
 
 @dataclass
 class SamplingStatus:
     num_batch_in_processing: int = 0
+    num_batch_send: int = 0
     is_last_batch: bool = False
-    batches: tp.List = None  # type: ignore
-    async_mode: bool = True
     subset: str = None  # type: ignore
-
-    def __post_init__(self):
-        self.batches = []
 
 
 class DataServer(ProcessWorker):
     def __init__(
         self,
         data_pipeline: DataPipeline,
-        n_processes: int = 0,
+        n_processes: int = 1,
         n_gpus: tp.Union[int, tp.List[int]] = 0,
         server_addr: tp.Optional[str] = None,
+        synchronize_loaders: bool = False,
     ):
         ProcessWorker.__init__(self)
         self._addr_for_clients = (
@@ -52,11 +59,13 @@ class DataServer(ProcessWorker):
         )
         self._addr_for_workers = f"127.0.0.1:{find_free_port()}"
         self._pipe = data_pipeline
+        self._pipe_serialize = Serialize.dump(data_pipeline)
         self._n_processes = n_processes if n_processes else mp.cpu_count()
         self._zmq_server: ZMQServer = None  # type: ignore
-        self._async_supported = True
+        self._synchronize_loaders = synchronize_loaders
         self._work_queues: tp.Dict[str, SamplingStatus] = defaultdict(SamplingStatus)
         self._uid_map: tp.Dict[bytes, str] = {}
+        self._sync_samplers = {}
 
         self._subscribers: tp.Dict[str, int] = {}
         self._info_for_worker = None
@@ -78,7 +87,7 @@ class DataServer(ProcessWorker):
 
     @property
     def num_workers(self) -> int:
-        return self._subscribers.get("worker", 0)
+        return self._subscribers.get(SubscriberTypes.WORKER, 0)
 
     @staticmethod
     def init_gpus(num_gpu: int) -> tp.List[int]:
@@ -117,6 +126,8 @@ class DataServer(ProcessWorker):
         self._zmq_server = ZMQPatterns.server(
             self._addr_for_clients, self._addr_for_workers
         )
+
+        self._pipe = Serialize.load(self._pipe_serialize)
         self._pipe.init_components()
         self._pipe.load_data(n_processes=self._n_processes)
 
@@ -128,7 +139,7 @@ class DataServer(ProcessWorker):
         self._zmq_server.close()
         LOGGER.info(trace(self, message=f"Finish DataServer {self._addr_for_clients}"))
 
-    def status_info(self, timeout: float = 600):
+    def status_info(self, timeout: int = 3600):
         if self._timer.get_time() > timeout:
             mem = psutil.virtual_memory()
             info = (
@@ -144,155 +155,211 @@ class DataServer(ProcessWorker):
             self._timer.reset()
 
     def send_info_message(self, message, text: str, subset: tp.Optional[str] = None):
-        info = f"info: {text}"
-        message = [message[0], b"", info.encode()]
-        self._zmq_server.frontend.send_multipart(message)
-        if text not in ["true", "request queue exceeded"]:
+        subscriber_uid = self._get_subscriber_uid(message)
+        client_uid = self._uid_map.get(subscriber_uid, uuid.uuid4().hex)[:6]
+        info = f"[{client_uid}] info: {text}"
+
+        response = []
+        for m in message:
+            if m and m[0] != 0:
+                response.append(info.encode())
+                break
+            else:
+                response.append(m)
+
+        self._zmq_server.frontend_send_multipart(response)
+
+        if is_verbose_logging():
             log_to_file(trace(self, f"{subset}: {info}" if subset else info))
 
     def is_reject_request(self, message, queue_info: SamplingStatus) -> bool:
         if self.num_workers == 0:
-            self.send_info_message(message, "workers not found", queue_info.subset)
+            self.send_info_message(message, DSM.NO_WORKERS, queue_info.subset)
             return True
 
         if self._total_batch_in_processing >= 4 * self.num_workers:
-            self.send_info_message(message, "server overload", queue_info.subset)
+            self.send_info_message(message, DSM.OVERLOAD, queue_info.subset)
             return True
 
-        if queue_info.num_batch_in_processing > 0:
-            self.send_info_message(message, "request queue exceeded", queue_info.subset)
+        if (
+            not queue_info.is_last_batch
+            and queue_info.num_batch_in_processing > self.num_workers
+        ):
+            self.send_info_message(message, DSM.QUEUE_EXCEEDED, queue_info.subset)
             return True
 
-        if queue_info.is_last_batch:
-            self.send_info_message(message, "epoch complete", queue_info.subset)
+        if (
+            queue_info.is_last_batch
+            and queue_info.num_batch_in_processing > self.num_workers
+        ):
+            self.send_info_message(
+                message,
+                f"{DSM.EPOCH_ENDING}"
+                f" [num_batch_in_processing={queue_info.num_batch_in_processing}]",
+                queue_info.subset,
+            )
+            return True
+
+        if queue_info.is_last_batch and queue_info.num_batch_in_processing == 0:
+            self.send_info_message(message, DSM.EPOCH_COMPLETE, queue_info.subset)
             return True
 
         return False
 
     def gen_response(self, message):
         request = Serialize.load(message[-1])
-        if message[0] not in self._uid_map:
-            self._uid_map[message[0]] = request.get("client_uid", uuid.uuid4().hex)
+        subscriber_uid = self._get_subscriber_uid(message)
+        client_uid = request.get("client_uid")
 
-        if request["message"] == "info":
+        if client_uid is not None:
+            self._uid_map.setdefault(subscriber_uid, client_uid)
+        else:
+            client_uid = uuid.uuid4().hex
+
+        if request["message"] == DCM.INFO:
             response = {
                 "subscriber_id": self._subscribers.setdefault(request["sub_type"], 0),
-                "async_supported": self._async_supported,
                 "addr_for_workers": self._addr_for_workers,
+                "subsets": self._info_for_loader.get("subsets", []),
             }
-            if request["sub_type"] == "loader":
+            if request["sub_type"] == SubscriberTypes.CLIENT:
+                pass
+            elif request["sub_type"] == SubscriberTypes.LOADER:
                 response.update(self._info_for_loader)
-            else:
+                if self._synchronize_loaders:
+                    samplers = self._sync_samplers.setdefault(client_uid, {})
+                    for subset in self._pipe.subsets:
+                        samplers[subset] = self._pipe[subset].sampler.copy()
+            elif request["sub_type"] == SubscriberTypes.WORKER:
                 response.update(self._info_for_worker)
                 if self._gpus:
                     idx = response["subscriber_id"] % len(self._gpus)
                     response.update({"device": f"cuda:{self._gpus[idx]}"})
+            else:
+                raise RuntimeError(
+                    f"Subscriber type {request['sub_type']} is not supported!"
+                )
 
             message[-1] = Serialize.dump(response)
-            self._zmq_server.frontend.send_multipart(message)
+            self._zmq_server.frontend_send_multipart(message)
             self._subscribers[request["sub_type"]] += 1
 
-        elif request["message"] == "is_ready":
-            queue_info = self._work_queues[self._uid_map[message[0]]]
+        elif request["message"] == DCM.IS_READY:
+            queue_info = self._work_queues[client_uid]
             if not self.is_reject_request(message, queue_info):
-                self.send_info_message(message, "true", queue_info.subset)
+                self.send_info_message(
+                    message,
+                    f"{DSM.READY}: {queue_info.num_batch_send}",
+                    queue_info.subset,
+                )
 
-        elif request["message"] == "batch":
+        elif request["message"] == DCM.GET_BATCH:
             subset = request["subset_name"]
             batch_size = request["batch_size"]
             batch_num = request.get("batch_num", 1)
 
-            queue_info = self._work_queues[self._uid_map[message[0]]]
-            queue_info.async_mode = request.get("async_mode", True)
+            queue_info = self._work_queues[client_uid]
             queue_info.subset = subset
             if self.is_reject_request(message, queue_info):
                 return
 
+            if self._synchronize_loaders:
+                sampler = self._sync_samplers[client_uid][subset]
+            else:
+                sampler = self._pipe[subset].sampler
+
             batch_list = []
-            sampler = self._pipe[subset].sampler
             for _ in range(batch_num):
                 if self._total_batch_in_processing >= 4 * self.num_workers:
                     break
 
                 batch_list.append(sampler.sampling(batch_size))
-                self._total_batch_in_processing += 1
 
                 if sampler.is_last_batch:
                     queue_info.is_last_batch = True
                     break
 
             message.insert(1, b"")
-            queue_info.num_batch_in_processing += len(batch_list)
 
             for samples in batch_list:
-                self._zmq_server.backend.send_multipart(
+                is_ok = self._zmq_server.backend_send_multipart(
                     message + Serialize.dumps(samples)
                 )
+                if is_ok:
+                    queue_info.num_batch_in_processing += 1
+                    self._total_batch_in_processing += 1
 
-        elif request["message"] in ["receiving_completed", "abort_processing", "reset"]:
-            status = self._work_queues[self._uid_map[message[0]]]
-            if status.batches:
-                self._zmq_server.frontend.send_multipart(message + status.batches)
-
+        elif request["message"] == DCM.EPOCH_COMPLETE:
+            status = self._work_queues[client_uid]
             status.is_last_batch = False
-            status.batches = []
             status.num_batch_in_processing = 0
-            self.send_info_message(message, "queue cleared", status.subset)
 
-            if request["message"] == "abort_processing":
-                self._total_batch_in_processing = 0
-                self.send_info_message(
-                    message, "abort processing the current batch", status.subset
-                )
+        elif request["message"] in [DCM.ABORT, DCM.RESET]:
+            status = self._work_queues[client_uid]
+            status.num_batch_in_processing = 0
+            status.num_batch_send = 0
 
-            if request["message"] == "reset":
+            if request["message"] == DCM.ABORT:
+                self.send_info_message(message, DSM.ABORT, status.subset)
+
+            if request["message"] == DCM.RESET:
+                status.is_last_batch = False
                 self._total_batch_in_processing = 0
                 self._pipe[request["subset_name"]].sampler.reset()
-                self.send_info_message(message, "reset sampler state", status.subset)
+                self.send_info_message(message, DSM.RESET, status.subset)
+                for item in self._sync_samplers.values():
+                    item[request["subset_name"]].reset()
 
     def do_work_once(self):
         try:
             self._zmq_server.pool(timeout=10)
 
             if self._zmq_server.is_frontend_ready():
-                message = self._zmq_server.frontend.recv_multipart()
+                message = self._zmq_server.frontend_recv_multipart()
                 self.gen_response(message)
 
             if self._zmq_server.is_backend_ready():
-                message = self._zmq_server.backend.recv_multipart()
-                self._total_batch_in_processing = max(
-                    0, self._total_batch_in_processing - 1
-                )
+                message = self._zmq_server.backend_recv_multipart()
+                subscriber_uid = self._get_subscriber_uid(message)
+                client_uid = self._uid_map.get(subscriber_uid, uuid.uuid4().hex)
 
-                queue_info = self._work_queues.get(self._uid_map[message[0]])
+                queue_info = self._work_queues.get(client_uid)
                 if queue_info is None:
-                    self.send_info_message(message, "batch skipped")
+                    self.send_info_message(message, DSM.SKIP_BATCH)
                     return
 
                 queue_info.num_batch_in_processing = max(
                     0, queue_info.num_batch_in_processing - 1
                 )
+                self._total_batch_in_processing = max(
+                    0, self._total_batch_in_processing - 1
+                )
 
-                if queue_info.async_mode:
-                    self._zmq_server.frontend.send_multipart(message)
-                else:
-                    if queue_info.num_batch_in_processing == 0:
-                        self._zmq_server.frontend.send_multipart(
-                            message + queue_info.batches
-                        )
-                        queue_info.batches = []
-                    else:
-                        queue_info.batches.append(message[2])
+                self._zmq_server.frontend_send_multipart(message)
+                queue_info.num_batch_send += 1
+
+                if queue_info.num_batch_in_processing == 0 and queue_info.is_last_batch:
+                    self.send_info_message(message, DSM.EPOCH_COMPLETE, queue_info.subset)
 
                 self._batch_counter += 1
 
             self.status_info()
 
-        except KeyboardInterrupt:
-            LOGGER.error(trace(self, "Interrupt received, stopping ..."))
-            self.finish()
+        except KeyboardInterrupt as e:
+            raise e
         except Exception as e:
             LOGGER.error(trace(self, e))
+
+    @staticmethod
+    def _get_subscriber_uid(message: tp.List[bytes]):
+        client_uid = []
+        for m in message:
+            if m and m[0] != 0:
+                break
+            if m:
+                client_uid.append(m)
+
+        return client_uid[-1]
 
 
 if __name__ == "__main__":

@@ -6,6 +6,8 @@ from itertools import combinations, product
 import torch
 import torch.nn as nn
 
+__all__ = ["VectorQuantizer", "VectorQuantizerOutput"]
+
 
 @dataclass
 class VectorQuantizerOutput:
@@ -26,8 +28,8 @@ class VectorQuantizer(nn.Module):
         self._embedding_dim = embedding_dim
         self._num_embeddings = codebook_size
 
-        self._embedding = nn.Embedding(self._num_embeddings, self._embedding_dim)
-        self._embedding.weight.data.uniform_(
+        self.codebook = nn.Embedding(self._num_embeddings, self._embedding_dim)
+        self.codebook.weight.data.uniform_(
             -1 / self._num_embeddings, 1 / self._num_embeddings
         )
 
@@ -67,8 +69,8 @@ class VectorQuantizer(nn.Module):
         # Compute distances between encoded audio frames and embedding vectors
         distances = (
             torch.sum(flat_input**2, dim=1, keepdim=True)
-            + torch.sum(self._embedding.weight**2, dim=1)
-            - 2 * torch.matmul(flat_input, self._embedding.weight.t())
+            + torch.sum(self.codebook.weight**2, dim=1)
+            - 2 * torch.matmul(flat_input, self.codebook.weight.t())
         )
 
         """
@@ -97,7 +99,7 @@ class VectorQuantizer(nn.Module):
         if not self.training and compute_distances_if_possible:
             _embedding_distances = [
                 torch.dist(items[0], items[1], 2).to(device)
-                for items in combinations(self._embedding.weight, r=2)
+                for items in combinations(self.codebook.weight, r=2)
             ]
             embedding_distances = torch.tensor(_embedding_distances).to(device)
         else:
@@ -107,7 +109,7 @@ class VectorQuantizer(nn.Module):
         if not self.training and compute_distances_if_possible:
             _frames_vs_embedding_distances = [
                 torch.dist(items[0], items[1], 2).to(device)
-                for items in product(flat_input, self._embedding.weight.detach())
+                for items in product(flat_input, self.codebook.weight.detach())
             ]
             frames_vs_embedding_distances = (
                 torch.tensor(_frames_vs_embedding_distances)
@@ -118,11 +120,11 @@ class VectorQuantizer(nn.Module):
             frames_vs_embedding_distances = None
 
         # Quantize and unflatten
-        quantized = torch.matmul(encodings, self._embedding.weight).view(input_shape)
+        quantized = torch.matmul(encodings, self.codebook.weight).view(input_shape)
         # TODO: Check if the more readable self._embedding.weight.index_select(dim=1, index=encoding_indices) works better
 
         concatenated_quantized = (
-            self._embedding.weight[torch.argmin(distances, dim=1).detach().cpu()]
+            self.codebook.weight[torch.argmin(distances, dim=1).detach().cpu()]
             if not self.training or record_codebook_stats
             else None
         )
@@ -160,7 +162,7 @@ class VectorQuantizer(nn.Module):
                 "perplexity": perplexity,
                 "distances": distances.view(batch_size, time, -1),
                 "encodings": encodings.view(batch_size, time, -1),
-                "encoding_indices": encoding_indices,
+                "encoding_indices": encoding_indices.view(batch_size, time, -1),
                 "encoding_distances": encoding_distances,
                 "embedding_distances": embedding_distances,
                 "frames_vs_embedding_distances": frames_vs_embedding_distances,
@@ -179,8 +181,8 @@ class VectorQuantizer(nn.Module):
         # Compute distances between encoded audio frames and embedding vectors
         distances = (
             torch.sum(flat_input**2, dim=1, keepdim=True)
-            + torch.sum(self._embedding.weight**2, dim=1)
-            - 2 * torch.matmul(flat_input, self._embedding.weight.t())
+            + torch.sum(self.codebook.weight**2, dim=1)
+            - 2 * torch.matmul(flat_input, self.codebook.weight.t())
         )
 
         """
@@ -196,7 +198,7 @@ class VectorQuantizer(nn.Module):
 
         # Quantize and unflatten
         output_shape = torch.Size([1, encodings.shape[0], 256])
-        quantized = torch.matmul(encodings, self._embedding.weight).view(
+        quantized = torch.matmul(encodings, self.codebook.weight).view(
             output_shape
         )  # TODO input_shape
         # TODO: Check if the more readable self._embedding.weight.index_select(dim=1, index=encoding_indices) works better
@@ -209,4 +211,4 @@ class VectorQuantizer(nn.Module):
 
     @property
     def embedding(self):
-        return self._embedding
+        return self.codebook

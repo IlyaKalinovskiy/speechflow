@@ -6,6 +6,7 @@ import hashlib
 import logging
 import argparse
 
+from copy import deepcopy
 from functools import partial
 from os import environ as env
 from pathlib import Path
@@ -16,7 +17,8 @@ from speechflow.data_pipeline.core import Batch, DataSample, PipeRegistry
 from speechflow.data_pipeline.core.abstract import AbstractDataProcessor
 from speechflow.data_pipeline.core.dataset import DatasetItem
 from speechflow.io import Config, check_path, tp_PATH
-from speechflow.logging import log_to_file, trace
+from speechflow.logging import is_verbose_logging, trace
+from speechflow.utils.checks import str_to_bool
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.profiler import ProfilerManager
 
@@ -49,59 +51,71 @@ class DataProcessingError(RuntimeError):
 
 
 class DumpProcessor:
-    @check_path(assert_file_exists=True)
+    @check_path
     def __init__(
         self,
         data_root: tp_PATH,
-        folder_path: tp_PATH,
+        dump_path: tp_PATH,
         mode: str = "file_path",
         fields: tp.Optional[tp.Union[str, tp.List[str]]] = None,
-        functions: tp.Optional[tp.Union[str, tp.List[str]]] = None,
+        handlers: tp.Optional[tp.Union[str, tp.List[str]]] = None,
+        full_dump: bool = False,
+        track_broken_samples: bool = False,
         skip_samples_without_dump: bool = False,
-        update_functions: tp.Optional[tp.Union[str, tp.List[str]]] = None,
+        update_handlers: tp.Optional[tp.Union[str, tp.List[str]]] = None,
     ):
         """
-        :param update_functions: functions that will be updated in the dump, remaining functions will not be
+        :param update_handlers: handlers that will be updated in the dump, remaining handlers will not be
         recalculated.
         """
-        self._verbose_logging = bool(env.get("VERBOSE", False))
+        self.use_verbose_logging = is_verbose_logging()
 
         self.data_root = data_root
-        self.folder_path = folder_path
+        self.dump_path = dump_path
+        self.dump_files_path = dump_path / "files"
         self.mode = mode
+        self.full_dump = full_dump
+        self.track_broken_samples = track_broken_samples
         self.skip_samples_without_dump = skip_samples_without_dump
 
-        (self.folder_path / "files").mkdir(parents=True, exist_ok=True)
+        if not self.dump_files_path.exists():
+            self.dump_files_path.mkdir(parents=True)
+
+        if next(self.dump_files_path.iterdir(), None) is None:
+            self.skip_samples_without_dump = False
 
         if fields is not None:
             self.fields = fields if isinstance(fields, tp.MutableSequence) else [fields]
         else:
             self.fields = []
 
-        if functions is not None:
-            self.preproc_functions = (
-                functions if isinstance(functions, tp.MutableSequence) else [functions]
+        if handlers is not None:
+            self.preproc_handlers = (
+                handlers if isinstance(handlers, tp.MutableSequence) else [handlers]
             )
         else:
-            self.preproc_functions = []
+            self.preproc_handlers = []
 
-        if update_functions is not None:
-            self.update_functions = (
-                update_functions
-                if isinstance(update_functions, tp.MutableSequence)
-                else [update_functions]
+        if update_handlers is not None:
+            self.update_handlers = (
+                update_handlers
+                if isinstance(update_handlers, tp.MutableSequence)
+                else [update_handlers]
             )
         else:
-            self.update_functions = []
+            self.update_handlers = []
 
-        for func in self.update_functions:
-            if func not in self.preproc_functions:
-                self.preproc_functions.append(func)
+        for func in self.update_handlers:
+            if func not in self.preproc_handlers:
+                self.preproc_handlers.append(func)
 
-        self.skip_flist_path = self.folder_path / "skip_samples.txt"
-        self.skip_samples = self._load_skip_samples(self.skip_flist_path)
+        if track_broken_samples:
+            self.skip_flist_path = self.dump_path / "skip_samples.txt"
+            self.skip_samples = self._load_skip_samples(self.skip_flist_path)
+        else:
+            self.skip_samples = []
 
-        self.preproc_functions_storage: tp.Dict = {}
+        self.preproc_handlers_storage: tp.Dict = {}
 
     @staticmethod
     def _load_skip_samples(path: Path) -> tp.List[str]:
@@ -113,7 +127,10 @@ class DumpProcessor:
     def _get_sample_path(self, sample: DataSample) -> str:
         path = sample.file_path.as_posix()
         path = path.replace(self.data_root.as_posix(), "")
-        return path
+        try:
+            return path[: path.rindex(".")]
+        except ValueError:
+            return path
 
     def _get_filename(self, sample: DataSample) -> Path:
         if self.mode == "uid":
@@ -124,7 +141,7 @@ class DumpProcessor:
         else:
             raise NotImplementedError
 
-        file_path = self.folder_path / "files" / f"{name}.pkl"
+        file_path = self.dump_files_path / f"{name}.pkl"
         return file_path
 
     @staticmethod
@@ -149,13 +166,16 @@ class DumpProcessor:
         hash_params: str,
     ):
         file_path = self._get_filename(sample)
-        preloaded_data = self.preproc_functions_storage.get(file_path)
+        if self.full_dump and file_path.exists():
+            return True
+
+        preloaded_data = self.preproc_handlers_storage.get(file_path)
         preloaded_data_key = f"{func_name}|{hash_params}"
         if (
             isinstance(preloaded_data, tp.Mapping)
             and preloaded_data.get(preloaded_data_key) is not None
         ):
-            saved_fields = preloaded_data.get(preloaded_data_key, {})
+            saved_fields = preloaded_data[preloaded_data_key]
             if all(field in saved_fields for field in func_fields):
                 sample.update(saved_fields)
                 return True
@@ -169,9 +189,9 @@ class DumpProcessor:
     ) -> bool:
         func_name, func_fields, hash_params = self.get_name_and_fields(fn)
 
-        if func_name in self.preproc_functions and self._load_preproc_data(
-            sample, func_name, func_fields, hash_params
-        ):
+        if (
+            self.full_dump or func_name in self.preproc_handlers
+        ) and self._load_preproc_data(sample, func_name, func_fields, hash_params):
             return False
 
         if func_fields and all(
@@ -183,7 +203,7 @@ class DumpProcessor:
         return True
 
     def load_samples(self, samples: tp.List[DataSample]) -> tp.List[DataSample]:
-        if not self._verbose_logging:
+        if not self.use_verbose_logging:
             num_samples = len(samples)
             samples = [
                 s for s in samples if self._get_sample_path(s) not in self.skip_samples
@@ -199,12 +219,12 @@ class DumpProcessor:
             samples = [s for s in samples if self._get_filename(s).exists()]
             if num_samples != len(samples):
                 message = f"{num_samples - len(samples)} samples thrown out because no dump was found for them!"
-                log_to_file(trace(self, message=message))
+                LOGGER.debug(trace(self, message=message))
 
         for sample in samples:
             file_path = self._get_filename(sample)
             if not file_path.exists():
-                message = f"Dump for {sample.file_path.as_posix()} not found."
+                message = f"dump for {sample.file_path.as_posix()} not found."
                 LOGGER.debug(trace(self, message=message))
                 continue
 
@@ -219,25 +239,29 @@ class DumpProcessor:
                 continue
 
             dumped_fields = dump_data["fields"]
+
+            sample.update(dumped_fields)
+
+            if self.full_dump:
+                continue
+
             if len(dumped_fields) != len(self.fields):
                 message = (
                     f"Not all fields are calculated for {sample.file_path.as_posix()}!"
                 )
                 LOGGER.debug(trace(self, message=message))
 
-            sample.update(dumped_fields)
-
-            dumped_functions = dump_data.get("functions", None)
-            if dumped_functions:
-                for func_name, func_dump_fields in dumped_functions.items():
+            dumped_handlers = dump_data.get("handlers", None)
+            if dumped_handlers:
+                for func_name, func_dump_fields in dumped_handlers.items():
                     if "|" in func_name:
                         func_name, hash_params = func_name.split("|")
                     else:
                         hash_params = None
 
-                    if func_name in self.update_functions:
+                    if func_name in self.update_handlers:
                         continue
-                    file_path_storage = self.preproc_functions_storage.setdefault(
+                    file_path_storage = self.preproc_handlers_storage.setdefault(
                         file_path, {}
                     )
                     file_path_storage[f"{func_name}|{hash_params}"] = func_dump_fields
@@ -248,26 +272,27 @@ class DumpProcessor:
         for sample in samples:
             file_path = self._get_filename(sample)
 
-            if file_path.exists() and not self.update_functions:
+            if file_path.exists() and not self.update_handlers:
                 continue
 
-            dump_data = {
-                k: v
-                for k, v in sample.to_dict().items()
-                if k in self.fields and v is not None
-            }
-            if len(dump_data) != len(self.fields):
-                message = (
-                    f"Not all fields are calculated for {sample.file_path.as_posix()}!"
-                )
-                LOGGER.debug(trace(self, message=message))
+            if self.full_dump:
+                dump_data = sample.to_dict()
+            else:
+                dump_data = {
+                    k: v
+                    for k, v in sample.to_dict().items()
+                    if k in self.fields and v is not None
+                }
+                if len(dump_data) != len(self.fields):
+                    message = f"Not all fields are calculated for {sample.file_path.as_posix()}!"
+                    LOGGER.debug(trace(self, message=message))
 
             all_dump_data = {"fields": dump_data}
-            if self.preproc_functions_storage:
-                all_dump_data["functions"] = self.preproc_functions_storage[file_path]
+            if self.preproc_handlers_storage:
+                all_dump_data["handlers"] = self.preproc_handlers_storage[file_path]
 
                 message = (
-                    f"dump functions with keys: {list(all_dump_data['functions'].keys())}"
+                    f"dump handlers with keys: {list(all_dump_data['handlers'].keys())}"
                 )
                 LOGGER.debug(trace(self, message=message))
 
@@ -276,10 +301,11 @@ class DumpProcessor:
         self.clear_storage()
 
     def skip(self, sample: DataSample):
-        path = self._get_sample_path(sample)
-        with codecs.open(self.skip_flist_path.as_posix(), "a", "utf-8") as f:
-            f.write(f"{path}\n")
-        self.skip_samples = self._load_skip_samples(self.skip_flist_path)
+        if self.track_broken_samples:
+            path = self._get_sample_path(sample)
+            with codecs.open(self.skip_flist_path.as_posix(), "a", "utf-8") as f:
+                f.write(f"{path}\n")
+            self.skip_samples = self._load_skip_samples(self.skip_flist_path)
 
     def update_storage(
         self,
@@ -295,11 +321,11 @@ class DumpProcessor:
                 for k, v in sample.to_dict().items()
                 if k in func_fields and v is not None
             }
-            file_path_storage = self.preproc_functions_storage.setdefault(file_path, {})
-            file_path_storage[f"{func_name}|{hash_params}"] = dump_data
+            file_path_storage = self.preproc_handlers_storage.setdefault(file_path, {})
+            file_path_storage[f"{func_name}|{hash_params}"] = deepcopy(dump_data)
 
     def clear_storage(self):
-        self.preproc_functions_storage = {}
+        self.preproc_handlers_storage = {}
 
 
 class DataProcessor(AbstractDataProcessor):
@@ -326,8 +352,8 @@ class DataProcessor(AbstractDataProcessor):
         else:
             self._dump_proc = None  # type: ignore
 
-        self._verbose_logging = bool(env.get("VERBOSE", False))
-        self._use_profiler = bool(env.get("DATAPIPE_PROFILING", False))
+        self.use_verbose_logging = is_verbose_logging()
+        self.use_profiler = str_to_bool(env.get("DATAPIPE_PROFILING", "False"))
 
     @staticmethod
     def apply(
@@ -346,10 +372,10 @@ class DataProcessor(AbstractDataProcessor):
                 sample = fn(sample)
 
             if dump_proc:
-                if func_name in dump_proc.preproc_functions:
+                if func_name in dump_proc.preproc_handlers:
                     if (
-                        dump_proc.update_functions
-                        and func_name not in dump_proc.update_functions
+                        dump_proc.update_handlers
+                        and func_name not in dump_proc.update_handlers
                     ):
                         continue
                     dump_proc.update_storage([sample], func_name, fields, hash_params)
@@ -366,15 +392,20 @@ class DataProcessor(AbstractDataProcessor):
             out_samples = []
             for sample in in_samples:
                 try:
-                    processed_samples = DataProcessor.apply(
-                        sample, preproc_fn, self._dump_proc, self._use_profiler
+                    processed_samples = self.apply(
+                        sample, preproc_fn, self._dump_proc, self.use_profiler
                     )
                     out_samples.extend(processed_samples)
                 except Exception as e:
+                    fpath = (
+                        sample.file_path.as_posix()
+                        if isinstance(sample.file_path, Path)
+                        else sample.file_path
+                    )
                     trace_message = trace(
-                        DataProcessor,
+                        self,
                         exception=e,
-                        message=f"Filepath: {sample.file_path}",
+                        message=f"Filepath: {fpath}",
                     )
                     LOGGER.error(trace_message)
                     if not skip_corrupted_samples:
@@ -384,8 +415,6 @@ class DataProcessor(AbstractDataProcessor):
                         )
                     if self._dump_proc:
                         self._dump_proc.skip(sample)
-
-            out_samples = out_samples
         else:
             out_samples = in_samples
 
@@ -407,7 +436,7 @@ class DataProcessor(AbstractDataProcessor):
 
             if self._dump_proc:
                 with ProfilerManager(
-                    "load_samples", group="DUMP", enable=self._use_profiler
+                    "load_samples", group="DUMP", enable=self.use_profiler
                 ):
                     in_samples = self._dump_proc.load_samples(in_samples)
                     if len(in_samples) == 0:
@@ -418,11 +447,11 @@ class DataProcessor(AbstractDataProcessor):
 
             if self._dump_proc:
                 with ProfilerManager(
-                    "dump_samples", group="DUMP", enable=self._use_profiler
+                    "dump_samples", group="DUMP", enable=self.use_profiler
                 ):
                     self._dump_proc.dump_samples(out_samples)
 
-            with ProfilerManager("collated", group="PIPE", enable=self._use_profiler):
+            with ProfilerManager("collated", group="PIPE", enable=self.use_profiler):
                 collated_samples = (
                     self._collate_fn(out_samples) if self._collate_fn else None
                 )
@@ -437,8 +466,6 @@ class DataProcessor(AbstractDataProcessor):
 
         except Exception as e:
             LOGGER.error(trace(self, e))
-            log_to_file(e)
-            return None
 
 
 if __name__ == "__main__":
@@ -451,7 +478,7 @@ if __name__ == "__main__":
         "-d", "--data_root", help="path to dataset", type=Path, required=True
     )
     arguments_parser.add_argument(
-        "-f", "--folder_path", help="path to dump folder", type=Path, required=True
+        "-f", "--dump_path", help="path to dump folder", type=Path, required=True
     )
     arguments_parser.add_argument(
         "-ext",
@@ -463,9 +490,9 @@ if __name__ == "__main__":
     args = arguments_parser.parse_args()
 
     flist = construct_file_list(args.data_root, ext=args.file_extension)
-    dlist = construct_file_list(args.folder_path, ext=".pkl")
+    dlist = construct_file_list(args.dump_path, ext=".pkl")
 
-    dump_proc = DumpProcessor(folder_path=args.folder_path, data_root=args.data_root)
+    dump_proc = DumpProcessor(dump_path=args.dump_path, data_root=args.data_root)
 
     for file_path_ in flist[:100]:
         fname_ = dump_proc._get_filename(DataSample(file_path=Path(file_path_))).name

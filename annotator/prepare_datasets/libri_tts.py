@@ -14,7 +14,7 @@ def _flac_to_wav(path: Path):
 
 
 if __name__ == "__main__":
-    arguments_parser = argparse.ArgumentParser(description="Prepare Libri TTS dataset")
+    arguments_parser = argparse.ArgumentParser(description="Prepare LibriTTS dataset")
     arguments_parser.add_argument(
         "-d", "--data_root", help="path to dataset", type=Path, required=True
     )

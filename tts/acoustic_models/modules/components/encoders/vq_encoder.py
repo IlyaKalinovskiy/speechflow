@@ -4,7 +4,6 @@ import torch
 
 from pydantic import Field
 from torch import nn
-from torch.nn import functional as F
 from vector_quantize_pytorch import ResidualFSQ, ResidualLFQ
 
 from tts.acoustic_models.modules.common.layers import Conv
@@ -24,8 +23,8 @@ from tts.acoustic_models.modules.params import EncoderParams
 __all__ = [
     "VQEncoder",
     "VQEncoderParams",
-    "VQEncoderWithTokenContext",
-    "VQEncoderWithTokenContextParams",
+    "VQEncoderWithClassificationAdaptor",
+    "VQEncoderWithClassificationAdaptorParams",
 ]
 
 
@@ -33,7 +32,7 @@ class VQEncoderParams(EncoderParams):
     vq_type: tp.Literal["vq", "rvq", "rfsq", "rlfq"] = "vq"
     vq_encoder_type: str = "RNNEncoder"
     vq_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
-    vq_num_quantizers: int = 4
+    vq_num_quantizers: int = 1
     vq_codebook_size: int = 256
     vq_by_phonemes: bool = False
 
@@ -100,7 +99,7 @@ class VQEncoder(Component):
         return self.encoder.output_dim
 
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
-        x, x_lens, x_mask = self.get_content_and_mask(inputs)
+        x, x_lens, x_mask = inputs.get_content_and_mask()
 
         x = ComponentInput.copy_from(inputs).set_content(x, x_lens)
         output: ComponentOutput = self.encoder(x)
@@ -124,10 +123,14 @@ class VQEncoder(Component):
                 assert not isinstance(vq_output.content, list)
 
                 for k, v in vq_output.additional_content.items():
-                    inputs.additional_content[f"{k}_rvq{idx}_encoder_{self.id}"] = v
+                    inputs.additional_content[
+                        f"{k}_{self.params.vq_type}{idx}_encoder_{self.id}"
+                    ] = v
 
                 for k, v in vq_output.additional_losses.items():
-                    inputs.additional_losses[f"{k}_rvq{idx}_encoder_{self.id}"] = v
+                    inputs.additional_losses[
+                        f"{k}_{self.params.vq_type}{idx}_encoder_{self.id}"
+                    ] = v
 
                 quantized = vq_output.content
                 residual = residual - quantized.detach()
@@ -138,24 +141,26 @@ class VQEncoder(Component):
             z, indices = self.rfsq(z.transpose(1, -1))
         elif self.params.vq_type == "rlfq":
             z, indices, commit_loss = self.rlfq(z.transpose(1, -1))
-            inputs.additional_losses[f"rlfq_encoder_{self.id}"] = commit_loss.sum()
+            inputs.additional_losses[
+                f"{self.params.vq_type}_encoder_{self.id}"
+            ] = commit_loss.sum()
 
-        inputs.additional_content[f"vq_latents"] = y
-        inputs.additional_content[f"vq_codes"] = indices
-        inputs.additional_content[f"vq_z"] = z
+        inputs.additional_content["vq_latents"] = y
+        inputs.additional_content["vq_codes"] = indices
+        inputs.additional_content["vq_z"] = z
 
         return EncoderOutput.copy_from(inputs).set_content(z)
 
 
-class VQEncoderWithTokenContextParams(VQEncoderParams):
+class VQEncoderWithClassificationAdaptorParams(VQEncoderParams):
     n_convolutions: int = 3
     kernel_size: int = 5
 
 
-class VQEncoderWithTokenContext(VQEncoder):
-    params: VQEncoderWithTokenContextParams
+class VQEncoderWithClassificationAdaptor(VQEncoder):
+    params: VQEncoderWithClassificationAdaptorParams
 
-    def __init__(self, params: VQEncoderWithTokenContextParams, input_dim: int):
+    def __init__(self, params: VQEncoderWithClassificationAdaptorParams, input_dim: int):
         super().__init__(params, input_dim)
 
         convolutions = []
@@ -171,26 +176,27 @@ class VQEncoderWithTokenContext(VQEncoder):
                     w_init_gain="relu",
                 ),
                 nn.BatchNorm1d(self.output_dim),
+                nn.SiLU(),
             )
             convolutions.append(conv_layer)
 
         self.convolutions = nn.ModuleList(convolutions)
 
-        self.components_output_dim["token_context"] = lambda: self.output_dim
+        self.components_output_dim["adaptor_context"] = lambda: self.output_dim
 
     def forward_step(self, x: ComponentInput) -> EncoderOutput:
         result: EncoderOutput = super().forward_step(x)
 
         content = result.content
-        token_context = result.additional_content.setdefault(
-            f"token_context_{self.id}", []
+        adaptor_context = result.additional_content.setdefault(
+            f"adaptor_context_{self.id}", []
         )
 
         if self.training:
             ctx = content.transpose(2, 1)
             for conv in self.convolutions:
-                ctx = F.relu(conv(ctx))
+                ctx = conv(ctx)
 
-            token_context.append(ctx.transpose(2, 1))
+            adaptor_context.append(ctx.transpose(2, 1))
 
         return result

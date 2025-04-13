@@ -35,15 +35,17 @@ class WeightedSampler(RandomSampler):
     def __init__(
         self,
         fields_to_compute_weight: tp.List[str],
-        chunks_ratio: tp.Optional[tp.List] = None,
         comb_by_len: bool = False,
-        is_use_neighbors: bool = False,
-        epoch_size: int = 1000,
-        print_stat: bool = False,
-        filter_tags: tp.Optional[tp.List] = None,
+        use_neighbors: bool = False,
+        use_dynamic_batch: bool = False,
+        max_batch_length: int = 1000,  # in milliseconds for AudioDataSample
+        epoch_size: tp.Optional[int] = None,
+        chunks_ratio: tp.Optional[tp.List] = None,
         is_sequence: tp.Optional[tp.List] = None,
+        filter_tags: tp.Optional[tp.List] = None,
+        print_stat: bool = False,
     ):
-        super().__init__(comb_by_len, is_use_neighbors)
+        super().__init__(comb_by_len, use_neighbors, use_dynamic_batch, max_batch_length)
         self._fields_to_compute_weight = fields_to_compute_weight
         self._chunks_ratio = chunks_ratio
         self._epoch_size_w = epoch_size
@@ -51,20 +53,22 @@ class WeightedSampler(RandomSampler):
 
         self._chunks_size = None
         self._probs = None
-        self._filter_tags = filter_tags if filter_tags is not None else []
         self._is_sequence = is_sequence if is_sequence is not None else []
+        self._filter_tags = filter_tags if filter_tags is not None else []
 
     def set_dataset(self, data: Dataset):
         super().set_dataset(data)
 
         if self._epoch_size_w:
             self._epoch_size = self._epoch_size_w
+        else:
+            self._epoch_size = len(data)
 
         try:
             probs = self.compute_probs(self._fields_to_compute_weight)
         except Exception as e:
             LOGGER.warning(trace(self, e, "error initializing weighted sampler!"))
-            probs = np.ones((self._dataset_size, 1)) / self._dataset_size
+            probs = np.ones((1, self._dataset_size)) / self._dataset_size
 
         probs_num = probs.shape[0]
         epoch_size = min(self._epoch_size, self._dataset_size)
@@ -137,7 +141,7 @@ class WeightedSampler(RandomSampler):
         data_slice = self.dataset.slice(fields)
         weights = np.zeros((len(fields), len(self)))
 
-        for i, field in enumerate(tqdm(fields, desc=f"Compute probs", leave=False)):
+        for i, field in enumerate(tqdm(fields, desc="Compute probs", leave=False)):
             labels = data_slice.get(field)
             if field in self._is_sequence:
                 assert isinstance(labels[0], (np.ndarray, np.generic, torch.Tensor))

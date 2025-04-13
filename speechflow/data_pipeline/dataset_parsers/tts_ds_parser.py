@@ -1,6 +1,5 @@
 import typing as tp
 import logging
-import itertools
 
 from pathlib import Path
 
@@ -15,7 +14,7 @@ from speechflow.data_pipeline.core.dataset import Dataset
 from speechflow.data_pipeline.core.parser_types import Metadata, MetadataTransform
 from speechflow.data_pipeline.core.registry import PipeRegistry
 from speechflow.data_pipeline.datasample_processors.data_types import TTSDataSample
-from speechflow.io import AudioSeg
+from speechflow.io import AudioSeg, AudioSegPreview, tp_PATH
 from speechflow.logging import trace
 from speechflow.utils.versioning import version_check
 
@@ -33,21 +32,23 @@ class TTSDSParser(BaseDSParser):
         memory_bound: bool = False,
         chunk_size: tp.Optional[int] = None,
         raise_on_converter_exc: bool = False,
-        dump: tp.Optional[tp.Union[str, Path]] = None,
+        dump_path: tp.Optional[tp_PATH] = None,
+        progress_bar: bool = True,
     ):
         super().__init__(
             preproc_fn,
-            input_fields={"file_path", "sega", "label"},
+            input_fields={"file_path", "label", "sega"},
             memory_bound=memory_bound,
             chunk_size=chunk_size,
             raise_on_converter_exc=raise_on_converter_exc,
-            dump=dump,
+            dump_path=dump_path,
+            progress_bar=progress_bar,
         )
 
     def reader(
         self, file_path: Path, label: tp.Optional[str] = None
     ) -> tp.List[Metadata]:
-        sega = AudioSeg.load(file_path)
+        sega = AudioSegPreview.load(file_path)
 
         if "text_parser_version" in sega.meta:
             version_check(multilingual_text_parser, sega.meta["text_parser_version"])
@@ -56,29 +57,43 @@ class TTSDSParser(BaseDSParser):
         return [metadata]
 
     def converter(self, metadata: Metadata) -> tp.List[TTSDataSample]:
-        sega: AudioSeg = metadata["sega"]
+        sega: tp.Union[AudioSeg, AudioSegPreview] = metadata["sega"]
 
-        word_ts, phoneme_ts = sega.get_timestamps(relative=True)
-        datasample = TTSDataSample(
-            file_path=metadata.get("file_path", Path()),
-            label=metadata.get("label", ""),
-            audio_chunk=sega.audio_chunk,
-            lang=sega.sent.lang,
-            sent=sega.sent,
-            word_timestamps=word_ts,
-            phoneme_timestamps=phoneme_ts,
-            speaker_name=sega.meta.get("speaker_name"),
-            intonation_type=metadata.get("intonation_type"),  # type: ignore
-            index=(metadata.get("index_text"), metadata.get("index_wave")),
-        )
-        return [datasample]
+        if isinstance(sega, AudioSeg):
+            word_ts, phoneme_ts = sega.get_timestamps(relative=True)
+            ds = TTSDataSample(
+                file_path=metadata.get("file_path", Path()),
+                label=metadata.get("label", ""),
+                audio_chunk=sega.audio_chunk,
+                sent=sega.sent,
+                lang=sega.sent.lang,
+                speaker_name=sega.meta.get("speaker_name"),
+                intonation_type=metadata.get("intonation_type"),  # type: ignore
+                index=(metadata.get("index_text"), metadata.get("index_wave")),
+                word_timestamps=word_ts,
+                phoneme_timestamps=phoneme_ts,
+            )
+        elif isinstance(sega, AudioSegPreview):
+            ds = TTSDataSample(
+                file_path=metadata.get("file_path", Path()),
+                label=metadata.get("label", ""),
+                audio_chunk=sega.audio_chunk,
+                lang=sega.sent.lang,
+                speaker_name=sega.meta.get("speaker_name"),
+                intonation_type=metadata.get("intonation_type"),  # type: ignore
+                index=(metadata.get("index_text"), metadata.get("index_wave")),
+            )
+        else:
+            raise NotImplementedError
+
+        return [ds]
 
     @staticmethod
     @PipeRegistry.registry(inputs={"sega"}, outputs={"sega"})
     def insert_index(metadata: Metadata):
-        sega: AudioSeg = metadata["sega"]
+        sega: AudioSegPreview = metadata["sega"]
 
-        index_text = sega.meta.get("orig_wav_path")
+        index_text = sega.meta.get("orig_audio_path")
         index_wave = sega.audio_chunk.file_path.parent
 
         metadata["index_text"] = index_text
@@ -148,9 +163,7 @@ class TTSDSParser(BaseDSParser):
         min_duration = min_duration if min_duration else 0
         max_duration = max_duration if max_duration else 1e9
 
-        sega: AudioSeg = metadata["sega"]
-        file_path = metadata["file_path"]
-        label = metadata.get("label")
+        sega: AudioSegPreview = metadata["sega"]
 
         metadata_to_return = []
         if min_duration <= sega.duration <= max_duration:
@@ -164,7 +177,10 @@ class TTSDSParser(BaseDSParser):
                 )
             )
 
+        """
         if bruteforce:
+            file_path = metadata["file_path"]
+            label = metadata.get("label")
             splitted_segs = sega.split_into_syntagmas(min_offset=min_bruteforce_offset)
             for part_sega in splitted_segs:
                 new_suffix = ".TextGridStage2_" + part_sega.meta["split_idxs"]
@@ -174,36 +190,8 @@ class TTSDSParser(BaseDSParser):
                     "sega": part_sega,
                 }
                 metadata_to_return.append(metadata)
-
+        """
         return metadata_to_return
-
-    @staticmethod
-    @PipeRegistry.registry(inputs={"sega"}, outputs={"sega"})
-    def check_num_words(
-        metadata: Metadata,
-        min_words: tp.Optional[int] = None,
-        max_words: tp.Optional[int] = None,
-    ) -> tp.List[Metadata]:
-        """
-        :return: list of Metadata
-
-        """
-        min_words = min_words if min_words else 1
-        max_words = max_words if max_words else 42000
-
-        sega: AudioSeg = metadata["sega"]
-
-        num_words = len(sega.sent.get_attr("phonemes", with_punct=False))
-        if min_words <= num_words <= max_words:
-            return [metadata]
-        else:
-            LOGGER.warning(
-                trace(
-                    "TTSDSParser",
-                    f"skip {str(metadata['file_path'])} " f"with num_words = {num_words}",
-                )
-            )
-            return []
 
     @staticmethod
     @PipeRegistry.registry(inputs={"sega"}, outputs={"sega"})
@@ -220,18 +208,21 @@ class TTSDSParser(BaseDSParser):
         :return: list of Metadata
 
         """
-        sega: AudioSeg = metadata["sega"]
+        sega: AudioSegPreview = metadata["sega"]
         is_valid = True
 
         if min_len:
-            phonemes = list(itertools.chain.from_iterable(sega.sent.get_phonemes()))
+            phonemes = sega.sent.phonemes
             is_valid = sega.audio_chunk.duration >= min_len * len(phonemes)
 
         if max_len:
             assert sega.ts_by_phonemes
-            longer_phoneme = np.diff(
-                np.concatenate([x.intervals for x in sega.ts_by_phonemes])
-            ).max()
+            if isinstance(sega.ts_by_phonemes, list):
+                ts_phonemes = np.concatenate(sega.ts_by_phonemes)
+            else:
+                ts_phonemes = np.asarray(sega.ts_by_phonemes, dtype=np.float32)
+
+            longer_phoneme = np.diff(ts_phonemes).max()
             is_valid = longer_phoneme < max_len
 
         if is_valid:
@@ -248,7 +239,7 @@ class TTSDSParser(BaseDSParser):
         add_fade: bool = False,
         fade_threshold: float = 0.05,
     ) -> tp.List[Metadata]:
-        sega: AudioSeg = metadata["sega"]
+        sega: AudioSegPreview = metadata["sega"]
         audio_begin = sega.ts_bos
         audio_end = sega.ts_eos
 
@@ -280,7 +271,7 @@ class TTSDSParser(BaseDSParser):
             assert sega.ts_by_words
             left_dura = sega.ts_by_words.begin - sega.audio_chunk.begin
             right_dura = sega.audio_chunk.end - sega.ts_by_words.end
-            left_dura = 0.0 if left_dura < fade_threshold else left_dura
+            left_dura = 0.0 if left_dura < fade_threshold else left_dura / 2
             right_dura = 0.0 if right_dura < fade_threshold else right_dura / 2
             sega.audio_chunk.fade_duration = (left_dura, right_dura)
 
@@ -295,8 +286,8 @@ class TTSDSParser(BaseDSParser):
         if intonation_types is None:
             intonation_types = INTONATION_TYPES
 
-        sega: AudioSeg = metadata["sega"]
-        src_wav_path = sega.meta.get("orig_wav_path")
+        sega: AudioSegPreview = metadata["sega"]
+        src_wav_path = sega.meta.get("orig_audio_path")
 
         if not sega.meta.get("intonation_type"):
             if "?" in sega.sent.text:
@@ -330,7 +321,7 @@ class TTSDSParser(BaseDSParser):
         if intonation_types is None:
             intonation_types = INTONATION_TYPES
 
-        sega: AudioSeg = metadata["sega"]
+        sega: AudioSegPreview = metadata["sega"]
         for mark in punctuation_marks:
             if mark in sega.sent.text and mark in intonation_types:
                 metadata["intonation_type"] = intonation_types[mark]
@@ -354,5 +345,5 @@ if __name__ == "__main__":
 
     _parser = TTSDSParser()
 
-    _data = _parser.read_datasamples(file_list=_flist, data_root=_root, n_processes=1)
-    print(_data.item(0).sent)
+    _data = _parser.read_datasamples(file_list=_flist, data_root=_root)
+    print(_data.item(0).file_path)

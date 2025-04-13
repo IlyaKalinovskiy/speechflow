@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import masked_fill
+from speechflow.utils.tensor_utils import masked_fill
 from tts.acoustic_models.modules.tacotron2.layers import ConvNorm, LinearNorm
 
 __all__ = ["Attention", "Prenet"]

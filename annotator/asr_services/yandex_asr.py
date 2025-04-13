@@ -111,13 +111,13 @@ class YandexASR(CloudASR):
             LOGGER.error(e)
 
     def _transcription(self, metadata: Metadata) -> Metadata:
-        metadata = AudioDSParser.wave_converter(metadata)[0]
+        metadata = AudioDSParser.audio_converter(metadata)[0]
 
         s3 = self._create_session()
         obj_name = f"{uuid.uuid4()}.ogg"
         s3.upload_fileobj(metadata["audio_data"], self._credentials.bucket_name, obj_name)
 
-        md = {"wav_path": metadata["wav_path"]}
+        md = {"audio_path": metadata["audio_path"]}
         try:
             obj_url = s3.generate_presigned_url(
                 "get_object",

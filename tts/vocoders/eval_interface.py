@@ -4,24 +4,23 @@ from copy import deepcopy
 from dataclasses import dataclass
 from os import environ as env
 
-import numpy as np
 import torch
 import numpy.typing as npt
 
-from speechflow.data_pipeline.collate_functions.spectrogram_collate import (
-    SpectrogramCollateOutput,
-)
+from speechflow.data_pipeline.collate_functions.tts_collate import TTSCollateOutput
 from speechflow.data_pipeline.core import PipelineComponents
 from speechflow.data_pipeline.datasample_processors import SignalProcessor
 from speechflow.data_pipeline.datasample_processors.data_types import (
     AudioDataSample,
-    SpectrogramDataSample,
+    TTSDataSample,
 )
 from speechflow.io import AudioChunk, Config, check_path, tp_PATH
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.dictutils import find_field
 from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
 from tts.vocoders.data_types import VocoderForwardInput, VocoderForwardOutput
+from tts.vocoders.denoiser import Denoiser
+from tts.vocoders.vocos.modules.feature_extractors.tts import TTSFeatures
 from tts.vocoders.vocos.pretrained import Vocos
 
 __all__ = ["VocoderEvaluationInterface", "VocoderOptions"]
@@ -29,7 +28,8 @@ __all__ = ["VocoderEvaluationInterface", "VocoderOptions"]
 
 @dataclass
 class VocoderOptions:
-    pass
+    denoiser_strength: float = 0.005
+    denoiser_use_energies: bool = True
 
     def copy(self) -> "VocoderOptions":
         return deepcopy(self)
@@ -42,6 +42,7 @@ class VocoderLoader:
         ckpt_path: tp_PATH,
         device: str = "cpu",
         ckpt_preload: tp.Optional[dict] = None,
+        **kwargs,
     ):
         env["DEVICE"] = device
 
@@ -52,43 +53,73 @@ class VocoderLoader:
         else:
             checkpoint = ckpt_preload
 
-        self.data_cfg, model_cfg = ExperimentSaver.load_configs_from_checkpoint(
+        self.cfg_data, cfg_model = ExperimentSaver.load_configs_from_checkpoint(
             checkpoint
         )
-        self.data_cfg["collate"]["type"] = "SpectrogramCollate"
 
-        self.pipe = self._load_data_pipeline(self.data_cfg)
+        if "hubert_model_path" in kwargs:
+            self.cfg_data.preproc.pipe_cfg.ssl.ssl_params.pretrain_path = kwargs[
+                "hubert_model_path"
+            ]
+        if "hubert_vocab_path" in kwargs:
+            self.cfg_data.preproc.pipe_cfg.ssl.ssl_params.vocab_path = kwargs[
+                "hubert_vocab_path"
+            ]
+
+        self.pipe = self._load_data_pipeline(self.cfg_data)
         self.pipe_for_reference = self.pipe.with_ignored_handlers(
             ignored_data_handlers={"SSLProcessor"}
         )
-        self.lang_id_map = checkpoint.get("lang_id_map", {})
-        self.speaker_id_map = checkpoint.get("speaker_id_map", {})
 
-        model_cfg["model"]["feature_extractor"]["init_args"].n_langs = len(
+        self.lang_id_map = checkpoint.get("lang_id_map", {})
+        if self.lang_id_map is None:
+            self.lang_id_map = {}
+
+        self.speaker_id_map = checkpoint.get("speaker_id_map", {})
+        if self.speaker_id_map is None:
+            self.speaker_id_map = {}
+
+        cfg_model["model"]["feature_extractor"]["init_args"].n_langs = len(
             self.lang_id_map
         )
-        model_cfg["model"]["feature_extractor"]["init_args"].n_speakers = len(
+        cfg_model["model"]["feature_extractor"]["init_args"].n_speakers = len(
             self.speaker_id_map
         )
 
+        self.sample_rate = find_field(self.cfg_data, "sample_rate")
+        self.hop_len = find_field(self.cfg_data, "hop_len")
+        self.n_mels = find_field(self.cfg_data, "n_mels")
+        self.preemphasis_coef = self.find_preemphasis_coef(self.cfg_data)
+
         # Load model
         if self._check_vocos_signature(checkpoint):
-            self.model = self._load_vocos_model(model_cfg, checkpoint)
+            self.model = self._load_vocos_model(cfg_model, checkpoint)
         else:
             raise NotImplementedError
 
         self.device = torch.device(device) if isinstance(device, str) else device
         self.model.to(self.device)
 
+        if not isinstance(self.model.feature_extractor, TTSFeatures):
+            self.denoiser = Denoiser(
+                self._get_bias_audio(),
+                fft_size=find_field(self.cfg_data, "n_fft"),
+                win_size=find_field(self.cfg_data, "win_len"),
+                hop_size=find_field(self.cfg_data, "hop_len"),
+            ).to(self.device)
+        else:
+            self.denoiser = None
+
     @staticmethod
     def _check_vocos_signature(checkpoint: tp.Dict) -> bool:
         return "Vocos" in checkpoint["files"]["model.yml"]
 
     @staticmethod
-    def _load_data_pipeline(data_cfg: Config) -> PipelineComponents:
-        data_cfg["processor"].pop("dump", None)
-        data_cfg["singleton_handlers"]["handlers"] = []
-        pipe = PipelineComponents(Config(data_cfg).trim("ml"), data_subset_name="test")
+    def _load_data_pipeline(cfg_data: Config) -> PipelineComponents:
+        cfg_data["processor"].pop("dump", None)
+        if "singleton_handlers" in cfg_data:
+            cfg_data.pop("singleton_handlers")
+        pipe = PipelineComponents(Config(cfg_data).trim("ml"), data_subset_name="test")
         return pipe.with_ignored_fields(
             ignored_data_fields={"sent", "phoneme_timestamps"}
         ).with_ignored_handlers(
@@ -96,8 +127,8 @@ class VocoderLoader:
         )
 
     @staticmethod
-    def _load_vocos_model(model_cfg: Config, checkpoint: tp.Dict[str, tp.Any]) -> Vocos:
-        model = Vocos.init_from_config(model_cfg["model"])
+    def _load_vocos_model(cfg_model: Config, checkpoint: tp.Dict[str, tp.Any]) -> Vocos:
+        model = Vocos.init_from_config(cfg_model["model"])
         model.eval()
 
         state_dict: tp.Dict[str, tp.Any] = checkpoint["state_dict"]
@@ -106,33 +137,30 @@ class VocoderLoader:
             for k, v in state_dict.items()
             if "discriminators" not in k and "loss" not in k
         }
-        try:
+
+        state_dict = {
+            k.replace("head.dac_", "head.dac_model."): v for k, v in state_dict.items()
+        }
+
+        if isinstance(model.feature_extractor, TTSFeatures):
+            state_dict = {
+                k: v
+                for k, v in state_dict.items()
+                if not k.startswith("feature_extractor")
+            }
+            model.load_state_dict(state_dict, strict=False)
+        else:
             model.load_state_dict(state_dict)
-        except:
-            state_dict = {k.replace("lstms.", "rnns."): v for k, v in state_dict.items()}
-            model.load_state_dict(state_dict)
+
+        if hasattr(model.head, "remove_weight_norm"):
+            model.head.remove_weight_norm()
 
         return model
 
-
-class VocoderEvaluationInterface(VocoderLoader):
-    @check_path(assert_file_exists=True)
-    def __init__(
-        self,
-        ckpt_path: tp_PATH,
-        device: str = "cpu",
-        ckpt_preload: tp.Optional[dict] = None,
-    ):
-        super().__init__(ckpt_path, device, ckpt_preload)
-        self.sample_rate = find_field(self.data_cfg, "sample_rate")
-        self.hop_size = find_field(self.data_cfg, "hop_len")
-        self.n_mels = find_field(self.data_cfg, "n_mels")
-        self.preemphasis_coef = self.find_preemphasis_coef(self.data_cfg)
-
     @staticmethod
-    def find_preemphasis_coef(data_cfg: Config):
+    def find_preemphasis_coef(cfg_data: Config):
         beta = None
-        for item in data_cfg["preproc"]["pipe_cfg"].values():
+        for item in cfg_data["preproc"]["pipe_cfg"].values():
             if isinstance(item, dict) and item.get("type", None) == "SignalProcessor":
                 if "preemphasis" in item.get("pipe", []):
                     if item["pipe_cfg"].get("preemphasis"):
@@ -141,25 +169,44 @@ class VocoderEvaluationInterface(VocoderLoader):
                         beta = 0.97
         return beta
 
+    @torch.no_grad()
+    def _get_bias_audio(self, num_frames: int = 80):
+        zero_input = VocoderForwardInput(
+            spectrogram=torch.zeros((1, num_frames, self.n_mels)),
+            spectrogram_lengths=torch.LongTensor([num_frames]),
+        ).to(self.device)
+        return self.model.inference(zero_input).waveform
+
+
+class VocoderEvaluationInterface(VocoderLoader):
     @torch.inference_mode()
     def evaluate(
-        self, inputs: VocoderForwardInput, opt: VocoderOptions
+        self,
+        inputs: VocoderForwardInput,
+        opt: VocoderOptions,
     ) -> VocoderForwardOutput:
-        inputs.to(self.device)
-        outputs = self.model.inference(inputs)
-        outputs.waveform_length = inputs.spectrogram_lengths * self.hop_size
+        outputs = self.model.inference(inputs.to(self.device))
 
         waveforms = []
-        for idx in range(outputs.waveform_length.shape[0]):
-            waveform = outputs.waveform[idx].cpu().numpy()
-            waveforms.append(waveform[: outputs.waveform_length[idx]])
+        for signal, spec_len in zip(outputs.waveform, inputs.spectrogram_lengths):
+            signal_len = spec_len * self.hop_len
+            waveforms.append(signal[:signal_len])
 
-        waveforms = np.concatenate(waveforms)
+        waveform = torch.cat(waveforms).unsqueeze(0)
+
+        if self.denoiser is not None and opt.denoiser_strength > 0:
+            waveform = self.denoiser(
+                waveform,
+                strength=opt.denoiser_strength,
+                use_energies=opt.denoiser_use_energies,
+            )
+
+        waveform = waveform.cpu().numpy()[0]
 
         if self.preemphasis_coef is not None:
-            waveforms = self.inv_preemphasis(waveforms, self.preemphasis_coef)
+            waveform = self.inv_preemphasis(waveform, self.preemphasis_coef)
 
-        outputs.audio_chunk = AudioChunk(data=waveforms, sr=self.sample_rate)
+        outputs.audio_chunk = AudioChunk(data=waveform, sr=self.sample_rate)
         return outputs
 
     @staticmethod
@@ -179,9 +226,12 @@ class VocoderEvaluationInterface(VocoderLoader):
         opt: VocoderOptions = VocoderOptions(),
     ) -> VocoderForwardOutput:
         voc_in = VocoderForwardInput.init_from_tts(tts_input, tts_output)
-        voc_in.lang_id = torch.LongTensor([self.lang_id_map.get(lang, 0)])
-        voc_in.speaker_id = torch.LongTensor([self.speaker_id_map.get(speaker_name, 0)])
-        voc_in.to(self.device)
+        if lang is not None:
+            voc_in.lang_id = torch.LongTensor([self.lang_id_map.get(lang, 0)])
+        if speaker_name is not None:
+            voc_in.speaker_id = torch.LongTensor(
+                [self.speaker_id_map.get(speaker_name, 0)]
+            )
         return self.evaluate(voc_in, opt)
 
     @check_path(assert_file_exists=True)
@@ -196,45 +246,46 @@ class VocoderEvaluationInterface(VocoderLoader):
         audio_chunk = (
             AudioChunk(file_path=wav_path).load(sr=self.sample_rate).volume(1.25)
         )
-        ds = SpectrogramDataSample(audio_chunk=audio_chunk)
+        ds = TTSDataSample(audio_chunk=audio_chunk)
         batch = self.pipe.datasample_to_batch([ds])
-        collated: SpectrogramCollateOutput = batch.collated_samples  # type: ignore
+        collated: TTSCollateOutput = batch.collated_samples  # type: ignore
 
         if ref_wav_path is not None:
             ref_audio_chunk = AudioChunk(file_path=ref_wav_path).load(sr=self.sample_rate)
-            ref_ds = SpectrogramDataSample(audio_chunk=ref_audio_chunk)
+            ref_ds = TTSDataSample(audio_chunk=ref_audio_chunk)
             ref_batch = self.pipe_for_reference.datasample_to_batch([ref_ds])
-            ref_collated: SpectrogramCollateOutput = ref_batch.collated_samples  # type: ignore
+            ref_collated: TTSCollateOutput = ref_batch.collated_samples  # type: ignore
             collated.speaker_emb = ref_collated.speaker_emb
             collated.speaker_emb_mean = ref_collated.speaker_emb_mean
+            collated.spectrogram = ref_collated.spectrogram
+            collated.spectrogram_lengths = ref_collated.spectrogram_lengths
             collated.averages = ref_collated.averages
             collated.speech_quality_emb = ref_collated.speech_quality_emb
             collated.additional_fields = ref_collated.additional_fields
 
-        if self.model.__class__.__name__ == "Vocos":
-            collated.averages["energy"] = collated.averages["energy"] * 0 + 25
-            collated.averages["pitch"] = collated.averages["pitch"] * 0 + 115
+        if collated.speech_quality_emb is not None:
             collated.speech_quality_emb = collated.speech_quality_emb * 0 + 5
 
+        if self.model.__class__.__name__ == "Vocos":
             _input = VocoderForwardInput(
-                mel_spectrogram=collated.mel_spectrogram,
+                spectrogram=collated.spectrogram,
                 spectrogram_lengths=collated.spectrogram_lengths,
                 ssl_feat=collated.ssl_feat,
                 ssl_feat_lengths=collated.ssl_feat_lengths,
+                xpbert_feat=collated.xpbert_feat,
+                xpbert_feat_lengths=collated.xpbert_feat_lengths,
                 speaker_emb=collated.speaker_emb,
                 speaker_emb_mean=collated.speaker_emb,
-                # energy=collated.energy,
-                # pitch=collated.pitch,
                 speech_quality_emb=collated.speech_quality_emb,
                 averages=collated.averages,
                 additional_inputs=collated.additional_fields,
-                input_lengths=collated.spectrogram_lengths,
-                output_lengths=collated.spectrogram_lengths,
+                # energy=collated.energy,
+                # pitch=collated.pitch,
             )
 
-            if lang is not None:
+            if self.lang_id_map and lang is not None:
                 _input.lang_id = torch.LongTensor([self.lang_id_map[lang]])
-            if speaker_name is not None:
+            if self.speaker_id_map and speaker_name is not None:
                 _input.speaker_id = torch.LongTensor([self.speaker_id_map[speaker_name]])
 
             _output = self.evaluate(_input, opt)
@@ -245,40 +296,11 @@ class VocoderEvaluationInterface(VocoderLoader):
 
 
 if __name__ == "__main__":
-    if 1:
-        from speechflow.utils.fs import get_root_dir
+    from speechflow.utils.fs import get_root_dir
 
-        test_file_path = get_root_dir() / "tests/data/test_audio.wav"
+    voc = VocoderEvaluationInterface(ckpt_path="/path/to/checkpoint")
 
-        voc = VocoderEvaluationInterface(
-            ckpt_path="mel_vocos_checkpoint_epoch=79_step=400000_val_loss=4.9470.ckpt"
-        )
+    test_file_path = get_root_dir() / "tests/data/test_audio.wav"
 
-        voc_out = voc.resynthesize(test_file_path, lang="RU")
-        voc_out.audio_chunk.save("resynt.wav", overwrite=True)
-    else:
-        from pathlib import Path
-
-        from tqdm import tqdm
-
-        root_dir = Path("/data3/i.kalinovskiy")
-        voc_path = root_dir / "vocos_checkpoint_epoch=22_step=575000_val_loss=10.0199.ckpt"
-        test_files = root_dir / "eng_spontan/wav_16k"
-        result_path = root_dir / "eng_spontan/result"
-        ref_file = root_dir / "4922.wav"
-
-        voc = VocoderEvaluationInterface(voc_path, device="cuda:0")
-        Path(result_path).mkdir(parents=True, exist_ok=True)
-
-        file_list = list(Path(test_files).glob("*.wav"))
-        for wav_file in tqdm(file_list):
-            result_file_name = Path(result_path) / wav_file.name
-            if result_file_name.exists():
-                continue
-
-            try:
-                voc_out = voc.resynthesize(wav_file, ref_file, lang="EN")
-                voc_out.audio_chunk.save(result_file_name, overwrite=True)
-                print(voc_out.additional_content["vq_codes"].squeeze().cpu().numpy())
-            except Exception as e:
-                print(e)
+    voc_out = voc.resynthesize(test_file_path, lang="RU")
+    voc_out.audio_chunk.save("resynt.wav", overwrite=True)

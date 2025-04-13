@@ -17,7 +17,7 @@ from speechflow.data_pipeline.core.registry import PipeRegistry
 from speechflow.data_pipeline.datasample_processors.data_types import (
     ProsodyPredictionDataSample,
 )
-from speechflow.io import AudioSeg
+from speechflow.io import AudioSeg, tp_PATH
 from speechflow.logging import trace
 from speechflow.utils.versioning import version_check
 
@@ -34,7 +34,8 @@ class ProsodyParser(BaseDSParser):
         preproc_fn: tp.Optional[tp.Sequence[MetadataTransform]] = None,
         memory_bound: bool = False,
         raise_on_converter_exc: bool = False,
-        dump: tp.Optional[tp.Union[str, Path]] = None,
+        dump_path: tp.Optional[tp_PATH] = None,
+        progress_bar: bool = True,
         tokenizer_name: str = None,
     ):
         super().__init__(
@@ -42,7 +43,8 @@ class ProsodyParser(BaseDSParser):
             input_fields={"file_path", "sega", "label"},
             memory_bound=memory_bound,
             raise_on_converter_exc=raise_on_converter_exc,
-            dump=dump,
+            dump_path=dump_path,
+            progress_bar=progress_bar,
         )
 
         if not tokenizer_name:
@@ -79,9 +81,13 @@ class ProsodyParser(BaseDSParser):
         sents = metadata["sents"]
         prosody_labels, tokens = [], []
         for sent in sents:
-            for token in sent.tokens:
+            for idx, token in enumerate(sent.tokens):
                 tokens.append(token.text)
+                if idx == 0 or token.is_capitalize:
+                    tokens[-1] = f"{tokens[-1][0].upper()}{tokens[-1][1:]}"
+
                 prosody_labels.append(int(token.prosody) if token.prosody else -1)
+
         tokenized_inputs = tokenizer(
             tokens,
             is_split_into_words=True,
@@ -90,6 +96,7 @@ class ProsodyParser(BaseDSParser):
             truncation=True,
             max_length=512,
         )
+
         word_ids = tokenized_inputs.word_ids()  # Map tokens to their respective word.
         previous_word_idx = None
         binary_label_ids = []
@@ -106,7 +113,7 @@ class ProsodyParser(BaseDSParser):
             previous_word_idx = word_idx
 
         datasample = ProsodyPredictionDataSample(
-            file_path=metadata.get("file_path", Path()),
+            file_path=metadata["file_path"],
             lang=sents[0].lang,
             attention_mask=tokenized_inputs["attention_mask"].flatten(),
             input_ids=tokenized_inputs["input_ids"].flatten(),
@@ -145,43 +152,57 @@ class ProsodyParser(BaseDSParser):
     def combine_texts(all_metadata: tp.List[Metadata]) -> tp.List[Metadata]:
         """Combines original texts and cuts them by 100 words to fit in a model."""
 
-        metadata_by_wav = defaultdict(list)
-        for metadata in tqdm(all_metadata, desc="Getting original wav"):
-            orig_wav = metadata["sega"].meta["orig_wav_path"]
-            wav_chunk = metadata["sega"].meta["orig_audio_chunk"]
-            if orig_wav in metadata_by_wav and any(
-                m["wav_chunk"] == wav_chunk for m in metadata_by_wav[orig_wav]
-            ):
-                continue
-            metadata_by_wav[orig_wav].append(
-                {
-                    "metadata": metadata,
-                    "wav_chunk": wav_chunk,
-                }
-            )
+        metadata_by_audio = defaultdict(list)
+        for metadata in tqdm(all_metadata, desc="Getting original audio"):
+            try:
+                meta = metadata["sega"].meta
+
+                # TODO: support legacy models
+                if "orig_wav_path" in meta:
+                    orig_audio = meta["orig_wav_path"]
+                else:
+                    orig_audio = meta["orig_audio_path"]
+
+                audio_chunk = meta["orig_audio_chunk"]
+                if orig_audio in metadata_by_audio and any(
+                    m["audio_chunk"] == audio_chunk for m in metadata_by_audio[orig_audio]
+                ):
+                    continue
+
+                metadata_by_audio[orig_audio].append(
+                    {
+                        "metadata": metadata,
+                        "audio_chunk": audio_chunk,
+                    }
+                )
+            except Exception as e:
+                LOGGER.error(trace("combine_texts", e))
 
         metadata_processed = []
-        for orig_wav in tqdm(metadata_by_wav, desc="Combining texts"):
-            sorted_samples = sorted(
-                metadata_by_wav[orig_wav], key=lambda d: d["wav_chunk"][0]
-            )
-            combined_metadata = {
-                "file_path": Path(orig_wav),
-                "sents": [],
-                "label": sorted_samples[0]["metadata"]["label"],
-            }
-            tokens_num = 0
-            for sample in sorted_samples:
-                combined_metadata["sents"].append(sample["metadata"]["sega"].sent)
-                tokens_num += len(sample["metadata"]["sega"].sent.tokens)
-                if tokens_num > 100:
-                    metadata_processed.append(combined_metadata)
-                    tokens_num = 0
-                    combined_metadata = {
-                        "file_path": Path(orig_wav),
-                        "sents": [],
-                        "label": sorted_samples[0]["metadata"]["label"],
-                    }
-            metadata_processed.append(combined_metadata)
+        for orig_audio in tqdm(metadata_by_audio, desc="Combining texts"):
+            try:
+                sorted_samples = sorted(
+                    metadata_by_audio[orig_audio], key=lambda d: d["audio_chunk"][0]
+                )
+                combined_metadata = {
+                    "file_path": Path(orig_audio),
+                    "sents": [],
+                    "label": sorted_samples[0]["metadata"]["label"],
+                }
+                tokens_num = 0
+                for sample in sorted_samples:
+                    combined_metadata["sents"].append(sample["metadata"]["sega"].sent)
+                    tokens_num += len(sample["metadata"]["sega"].sent.tokens)
+                    if tokens_num > 100:
+                        metadata_processed.append(combined_metadata)
+                        tokens_num = 0
+                        combined_metadata = {
+                            "file_path": Path(orig_audio),
+                            "sents": [],
+                            "label": sorted_samples[0]["metadata"]["label"],
+                        }
+                metadata_processed.append(combined_metadata)
+            except Exception as e:
+                LOGGER.error(trace("combine_texts", e))
 
         return metadata_processed

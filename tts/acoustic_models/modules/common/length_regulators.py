@@ -5,7 +5,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import get_lengths_from_durations, stack
+from speechflow.utils.tensor_utils import get_lengths_from_durations, stack
 
 __all__ = ["LengthRegulator", "SoftLengthRegulator"]
 
@@ -106,7 +106,6 @@ class SoftLengthRegulator(nn.Module):
                 mask_down = frames_decoder_shifted >= 0
                 mask_up = torch.roll(mask_down, -1, dims=1)
                 mask = torch.bitwise_xor(mask_down, mask_up)
-                mask[:, -1, :] = ~mask[:, -1, :]
                 attention_weights = mask.float()
             else:
                 attention_weights = torch.softmax(

@@ -19,9 +19,7 @@ def wave_preprocessing(wav_path: Path, target_dbfs: float = -30.0):
 
     audio_chunk = AudioChunk(wav_path)
     assert audio_chunk.sr >= 16000
-
-    audio_chunk.load(dtype=np.float32)
-    audio_chunk.astype(dtype=np.int16, inplace=True)
+    audio_chunk.load(dtype=np.int16)
 
     audio_segment = AudioSegment(
         audio_chunk.data.tobytes(),
@@ -39,7 +37,7 @@ def text_preprocessing(meta: dict, folder: Path):
     wav_path = folder / meta["audio_filepath"]
     text = meta["text"]
 
-    assert wav_path.exists(), RuntimeError("wav file not found!")
+    assert wav_path.exists(), FileNotFoundError(f"File {wav_path.as_posix()} not found!")
     text_path = wav_path.with_suffix(".txt")
 
     return wav_path, text_path, text

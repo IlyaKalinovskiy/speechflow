@@ -34,16 +34,17 @@ sdk_data = [path.relative_to("speechflow").as_posix() for path in flist]
 
 setup(
     name="speechflow",
-    version=f"{about['__version__']}-compiled",
+    version=f"{about['__version__']}",
     description="Library for experiments with tts-related pipelines.",
     packages=packages,
-    python_requires=">=3.8",
+    python_requires=">=3.10",
     install_requires=_get_requirements(),
     package_data={"speechflow": sdk_data},
     # https://nuitka.net/doc/user-manual.html#use-case-5-setuptools-wheels
     command_options={
         "nuitka": {
             "--python-flag": "no_docstrings",
+            "--module-parameter": "torch-disable-jit=no",
             "--nofollow-import-to": [
                 "tests.*",
             ],

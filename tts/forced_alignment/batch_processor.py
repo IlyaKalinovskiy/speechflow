@@ -23,19 +23,20 @@ class AlignerBatchProcessor(BaseBatchProcessor):
             speaker_id=collated.speaker_id,
             speaker_emb=collated.speaker_emb,
             speech_quality_emb=collated.speech_quality_emb,
-            transcription=collated.transcription,
+            transcription=collated.transcription_id,
             transcription_lengths=collated.transcription_lengths,
             ling_feat=collated.ling_feat,
-            spectrogram=collated.mel_spectrogram,
+            spectrogram=collated.spectrogram,
+            spectrogram_lengths=collated.spectrogram_lengths,
             spectral_flatness=collated.spectral_flatness,
-            ssl_feat=collated.ssl_feat,
+            ssl_feat=collated.ssl_feat,  # type: ignore
             ssl_feat_lengths=collated.ssl_feat_lengths,
             input_lengths=collated.transcription_lengths,
             output_lengths=collated.spectrogram_lengths,
         )
 
         _target: AlignerForwardTarget = AlignerForwardTarget(
-            transcription=collated.transcription,
+            transcription=collated.transcription_id,
             input_lengths=collated.transcription_lengths,
             output_lengths=collated.spectrogram_lengths,
         )

@@ -1,6 +1,1 @@
-from .tokenlevel_durations import (
-    TokenLevelDP,
-    TokenLevelDPParams,
-    TokenLevelDPWithDiscriminator,
-    TokenLevelDPWithDiscriminatorParams,
-)
+from .token_level_dp import *

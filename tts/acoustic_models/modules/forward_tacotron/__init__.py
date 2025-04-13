@@ -1,12 +1,5 @@
-from tts.acoustic_models.modules.forward_tacotron.decoder import (
-    ForwardDecoder,
-    ForwardDecoderParams,
-)
-from tts.acoustic_models.modules.forward_tacotron.encoder import (
-    ForwardEncoder,
-    ForwardEncoderParams,
-)
-from tts.acoustic_models.modules.forward_tacotron.postnet import (
-    ForwardPostnet,
-    ForwardPostnetParams,
-)
+# https://github.com/spring-media/ForwardTacotron
+
+from .decoder import *
+from .encoder import *
+from .postnet import *

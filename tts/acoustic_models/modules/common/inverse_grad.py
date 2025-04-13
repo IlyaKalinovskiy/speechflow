@@ -45,11 +45,11 @@ class RevGradLayer(nn.Module):
 
 
 class InverseGradSpeakerIDPredictor(nn.Module):
-    def __init__(self, in_dim, n_speakers, hidden_dim=256):
+    def __init__(self, input_dim, n_speakers, hidden_dim=256):
         super().__init__()
         self.predictor = nn.Sequential(
             RevGradLayer(),
-            nn.Linear(in_dim, hidden_dim),
+            nn.Linear(input_dim, hidden_dim),
             nn.BatchNorm1d(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
@@ -65,11 +65,11 @@ class InverseGradSpeakerIDPredictor(nn.Module):
 
 
 class InverseGradSpeakerPredictor(nn.Module):
-    def __init__(self, in_dim, target_dim, hidden_dim=256):
+    def __init__(self, input_dim, target_dim, hidden_dim=256):
         super().__init__()
         self.predictor = nn.Sequential(
             RevGradLayer(),
-            nn.Linear(in_dim, hidden_dim),
+            nn.Linear(input_dim, hidden_dim),
             nn.BatchNorm1d(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
@@ -89,11 +89,11 @@ class InverseGradStylePredictor(InverseGradSpeakerPredictor):
 
 
 class InverseGrad1DPredictor(nn.Module):
-    def __init__(self, in_dim, hidden_dim=256):
+    def __init__(self, input_dim, hidden_dim=256):
         super().__init__()
         self.predictor = nn.Sequential(
             RevGradLayer(),
-            nn.Linear(in_dim, hidden_dim),
+            nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -105,11 +105,11 @@ class InverseGrad1DPredictor(nn.Module):
 
 
 class InverseGradPhonemePredictor(nn.Module):
-    def __init__(self, in_dim, n_phonemes, hidden_dim=256):
+    def __init__(self, input_dim, n_phonemes, hidden_dim=256):
         super().__init__()
         self.predictor = nn.Sequential(
             RevGradLayer(),
-            nn.Linear(in_dim, hidden_dim),
+            nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, n_phonemes),
         )

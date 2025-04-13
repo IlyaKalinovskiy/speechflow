@@ -22,7 +22,7 @@ class AccuracyCallback(Callback):
 
             for idx, out in enumerate(outputs.logits[:]):
                 pred_label = torch.argmax(out).item()
-                true_label = targets.labels[idx].item()
+                true_label = targets.label[idx].item()
                 _correct += pred_label == true_label
                 _all += 1
 

@@ -1,10 +1,11 @@
 import typing as tp
 
+from pydantic import Field
 from torch import nn
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import apply_mask
-from tts.acoustic_models.modules.common import VarianceEmbedding
+from speechflow.utils.tensor_utils import apply_mask
+from tts.acoustic_models.modules.common import CONDITIONAL_TYPES, VarianceEmbedding
 from tts.acoustic_models.modules.common.layers import Conv
 from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.data_types import (
@@ -17,33 +18,39 @@ from tts.acoustic_models.modules.params import EncoderParams
 __all__ = [
     "SFEncoder",
     "SFEncoderParams",
-    "SFEncoderWithTokenContext",
-    "SFEncoderWithTokenContextParams",
+    "SFEncoderWithClassificationAdaptor",
+    "SFEncoderWithClassificationAdaptorParams",
 ]
 
 
 class SFEncoderParams(EncoderParams):
-    base_encoder_type: str = "FFTEncoder"
-    base_encoder_params: dict = None  # type: ignore
+    # base encoder params
+    base_encoder_type: str = "RNNEncoder"
+    base_encoder_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
+
+    # condition
     condition: tp.Tuple[str, ...] = ()
     condition_dim: int = 0
-    condition_type: tp.Literal["cat", "adanorm"] = "cat"
+    condition_type: tp.Optional[CONDITIONAL_TYPES] = None
+
+    # embedding bucketize
     var_as_embedding: tp.Tuple[bool, bool] = (False, False)
-    var_intervals: tp.Tuple[tp.Tuple[float, float], tp.Tuple[float, float]] = (
-        (0, 1.5),
-        (0, 1.5),
+    var_interval: tp.Tuple[tp.Tuple[float, float], tp.Tuple[float, float]] = (
+        (0, 150),
+        (0, 880),
     )
-    var_n_bins: tp.Tuple[int, int] = (384, 384)
+    var_n_bins: tp.Tuple[int, int] = (256, 256)
     var_embedding_dim: tp.Tuple[int, int] = (64, 64)
-    var_log_scale: tp.Tuple[bool, bool] = (False, False)
+    var_log_scale: tp.Tuple[bool, bool] = (False, True)
 
     def model_post_init(self, __context: tp.Any):
         if self.base_encoder_params is None:
             self.base_encoder_params = {}
 
-        self.base_encoder_params.setdefault("condition", self.condition)
-        self.base_encoder_params.setdefault("condition_dim", self.condition_dim)
-        self.base_encoder_params.setdefault("condition_type", self.condition_type)
+        if self.condition:
+            self.base_encoder_params.setdefault("condition", self.condition)
+            self.base_encoder_params.setdefault("condition_dim", self.condition_dim)
+            self.base_encoder_params.setdefault("condition_type", self.condition_type)
 
 
 class SFEncoder(Component):
@@ -56,13 +63,15 @@ class SFEncoder(Component):
 
         base_enc_cls, base_enc_params_cls = TTS_ENCODERS[params.base_encoder_type]
         base_enc_params = base_enc_params_cls.init_from_parent_params(
-            params, params.base_encoder_params
+            params,
+            params.base_encoder_params,
+            strict=False,
         )
 
         in_dim_e = 1
         if params.var_as_embedding[0]:
             self.energy_embeddings = VarianceEmbedding(
-                interval=params.var_intervals[0],
+                interval=params.var_interval[0],
                 n_bins=params.var_n_bins[0],
                 emb_dim=params.var_embedding_dim[0],
                 log_scale=params.var_log_scale[0],
@@ -74,7 +83,7 @@ class SFEncoder(Component):
         in_dim_p = 1
         if params.var_as_embedding[0]:
             self.pitch_embeddings = VarianceEmbedding(
-                interval=params.var_intervals[1],
+                interval=params.var_interval[1],
                 n_bins=params.var_n_bins[1],
                 emb_dim=params.var_embedding_dim[1],
                 log_scale=params.var_log_scale[1],
@@ -97,19 +106,27 @@ class SFEncoder(Component):
         return self.encoder.output_dim
 
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
-        x, x_lens, x_mask = self.get_content_and_mask(inputs)
+        x, x_lens, x_mask = inputs.get_content_and_mask()
+
+        if (
+            self.training
+            or "energy_postprocessed" not in inputs.model_inputs.additional_inputs
+        ):
+            energy = inputs.model_inputs.energy
+            pitch = inputs.model_inputs.pitch
+        else:
+            energy = inputs.model_inputs.additional_inputs["energy_postprocessed"]
+            pitch = inputs.model_inputs.additional_inputs["pitch_postprocessed"]
 
         if self.energy_embeddings is not None:
-            energy = inputs.model_inputs.pitch
             energy_embs = self.energy_embeddings(energy)
         else:
-            energy_embs = inputs.model_inputs.energy.unsqueeze(-1)
+            energy_embs = energy.unsqueeze(-1)
 
         if self.pitch_embeddings is not None:
-            pitch = inputs.model_inputs.pitch
             pitch_embs = self.pitch_embeddings(pitch)
         else:
-            pitch_embs = inputs.model_inputs.pitch.unsqueeze(-1)
+            pitch_embs = pitch.unsqueeze(-1)
 
         x_src = apply_mask(self.pre_source(x.transpose(1, -1)).transpose(1, -1), x_mask)
         x_ftr_e = apply_mask(
@@ -121,21 +138,21 @@ class SFEncoder(Component):
 
         x_src = ComponentInput.copy_from(inputs).set_content(x_src, x_lens)
         output: ComponentOutput = self.source_encoder(x_src)
-        y_src = output.content
+        y_src = output.get_content()[0]
 
         x_ftr_e = ComponentInput.copy_from(inputs).set_content(x_ftr_e, x_lens)
         output: ComponentOutput = self.filter_encoder_e(x_ftr_e)
-        y_ftr_e = output.content
+        y_ftr_e = output.get_content()[0]
 
         x_ftr_p = ComponentInput.copy_from(inputs).set_content(x_ftr_p, x_lens)
         output: ComponentOutput = self.filter_encoder_p(x_ftr_p)
-        y_ftr_p = output.content
+        y_ftr_p = output.get_content()[0]
 
         y = ComponentInput.copy_from(inputs).set_content(
             y_src + y_ftr_e + y_ftr_p, x_lens
         )
         output: ComponentOutput = self.encoder(y)
-        y = output.content
+        y = output.get_content()[0]
 
         outputs = EncoderOutput.copy_from(inputs).set_content(y)
         outputs.additional_content[f"{self.__class__.__name__}_{self.id}_src"] = y_src
@@ -144,15 +161,15 @@ class SFEncoder(Component):
         return outputs
 
 
-class SFEncoderWithTokenContextParams(SFEncoderParams):
+class SFEncoderWithClassificationAdaptorParams(SFEncoderParams):
     n_convolutions: int = 3
     kernel_size: int = 5
 
 
-class SFEncoderWithTokenContext(SFEncoder):
-    params: SFEncoderWithTokenContextParams
+class SFEncoderWithClassificationAdaptor(SFEncoder):
+    params: SFEncoderWithClassificationAdaptorParams
 
-    def __init__(self, params: SFEncoderWithTokenContextParams, input_dim: int):
+    def __init__(self, params: SFEncoderWithClassificationAdaptorParams, input_dim: int):
         super().__init__(params, input_dim)
 
         convolutions = []
@@ -168,22 +185,24 @@ class SFEncoderWithTokenContext(SFEncoder):
                     w_init_gain="relu",
                 ),
                 nn.BatchNorm1d(self.output_dim),
+                nn.SiLU(),
             )
             convolutions.append(conv_layer)
 
         self.conv_module = nn.ModuleList(convolutions)
-        self.components_output_dim["token_context"] = lambda: self.output_dim
+        self.components_output_dim["adaptor_context"] = lambda: self.output_dim
 
     def forward_step(self, x: ComponentInput) -> EncoderOutput:
         result: EncoderOutput = super().forward_step(x)
 
-        token_context = result.additional_content.setdefault("token_context", [])
+        adaptor_context = result.additional_content.setdefault(
+            f"adaptor_context_{self.id}", []
+        )
 
-        ctx = result.content
-        ctx = ctx.transpose(1, 2)
+        ctx = x.get_content(0).transpose(1, 2)
         for conv in self.conv_module:
-            ctx = F.relu(conv(ctx))
+            ctx = conv(ctx)
 
-        token_context.append(ctx.transpose(2, 1))
+        adaptor_context.append(ctx.transpose(2, 1))
 
         return result

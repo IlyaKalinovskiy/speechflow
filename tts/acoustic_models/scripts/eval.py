@@ -2,6 +2,8 @@ import typing as tp
 
 from pathlib import Path
 
+from tqdm import tqdm
+
 from speechflow.utils.plotting import plot_durations_and_signals, plot_tensor
 from speechflow.utils.profiler import Profiler
 from speechflow.utils.seed import get_seed
@@ -9,10 +11,11 @@ from tts.acoustic_models.data_types import TTSForwardInput, TTSForwardOutput
 from tts.acoustic_models.interface.eval_interface import (
     TTSContext,
     TTSEvaluationInterface,
+    TTSOptions,
 )
-from tts.acoustic_models.models.prosody_reference import REFERENECE_TYPE
+from tts.acoustic_models.interface.prosody_reference import REFERENECE_TYPE
 from tts.acoustic_models.modules.common.length_regulators import SoftLengthRegulator
-from tts.vocoders.eval_interface import VocoderEvaluationInterface
+from tts.vocoders.eval_interface import VocoderEvaluationInterface, VocoderOptions
 
 
 def plotting(tts_in: TTSForwardInput, tts_out: TTSForwardOutput, doc, signals=("pitch",)):
@@ -25,6 +28,9 @@ def plotting(tts_in: TTSForwardInput, tts_out: TTSForwardOutput, doc, signals=("
 
             signal = {}
             for name in signals:
+                if name not in tts_out.variance_predictions:
+                    continue
+
                 signal[name] = tts_out.variance_predictions[name][0]
 
                 name = f"aggregate_{name}"
@@ -53,7 +59,7 @@ def plotting(tts_in: TTSForwardInput, tts_out: TTSForwardOutput, doc, signals=("
 
 def synthesize(
     tts_interface: TTSEvaluationInterface,
-    voc_interface: VocoderEvaluationInterface,
+    voc_interface: tp.Optional[VocoderEvaluationInterface],
     text: tp.Union[str, Path],
     lang: str,
     speaker_name: tp.Optional[tp.Union[str, tp.Dict[str, str]]] = None,
@@ -63,41 +69,54 @@ def synthesize(
     style_reference: tp.Optional[
         tp.Union[REFERENECE_TYPE, tp.Dict[str, REFERENECE_TYPE]]
     ] = None,
-    use_profiler: bool = False,
+    tts_opt: TTSOptions = TTSOptions(),
+    voc_opt: VocoderOptions = VocoderOptions(),
     seed: int = 0,
+    use_profiler: bool = False,
 ):
     tts_ctx = TTSContext.create(
         lang, speaker_name, speaker_reference, style_reference, seed
     )
-    tts_ctx = tts_interface.prepare_embeddings(tts_ctx)
+    tts_ctx = tts_interface.prepare_embeddings(tts_ctx, opt=tts_opt)
 
-    doc = tts_interface.prepare_text(text, lang)
-    doc = tts_interface.predict_prosody_by_text(doc, tts_ctx)
+    doc = tts_interface.prepare_text(text, lang, opt=tts_opt)
+    doc = tts_interface.predict_prosody_by_text(doc, tts_ctx, opt=tts_opt)
+
+    # for sent in doc.sents:
+    #     for t in sent.tokens:
+    #         print(f"{t.text}: {t.prosody}")
 
     tts_in = tts_interface.prepare_batch(
         tts_interface.split_sentences(doc)[0],
         tts_ctx,
+        opt=tts_opt,
     )
 
     with Profiler(enable=use_profiler):
-        tts_out = tts_interface.evaluate(tts_in, tts_ctx)
-        voc_out = voc_interface.synthesize(
-            tts_in,
-            tts_out,
-            lang=tts_ctx.prosody_reference.default.lang,
-            speaker_name=tts_ctx.prosody_reference.default.speaker_name,
-        )
+        tts_out = tts_interface.evaluate(tts_in, tts_ctx, opt=tts_opt)
 
-    plotting(tts_in, tts_out, doc)
+        if voc_interface is not None:
+            voc_out = voc_interface.synthesize(
+                tts_in,
+                tts_out,
+                lang=tts_ctx.prosody_reference.default.lang,
+                speaker_name=tts_ctx.prosody_reference.default.speaker_name,
+                opt=voc_opt,
+            )
+        else:
+            voc_out = None
+
+    # plotting(tts_in, tts_out, doc)
     return voc_out.audio_chunk
 
 
 if __name__ == "__main__":
+    tts_model_path = "/path/to/checkpoint"
+    voc_model_path = "/path/to/checkpoint"  # for E2E TTS the same as tts_model_path
+    prosody_model_path = (
+        "/path/to/checkpoint"  # text-based prosody prediction model [optional]
+    )
     device = "cpu"
-
-    tts_model_path = "epoch=24-step=104175.ckpt"
-    voc_model_path = "vocos_checkpoint_epoch=59_step=1500000_val_loss=7.5391.ckpt"
-    prosody_model_path = None
 
     tts = TTSEvaluationInterface(
         tts_ckpt_path=tts_model_path,
@@ -112,36 +131,38 @@ if __name__ == "__main__":
     print(tts.get_languages())
     print(tts.get_speakers())
 
+    opt = TTSOptions()
+    # if prosody_model_path is not None:
+    #     opt.down_contur_ids = ["2", "3", "5", "7"]
+    #     opt.up_contur_ids = ["4"]
+
     tests = [
         {
             "lang": "RU",
             "speaker_name": "Natasha",
-            "style_reference": Path("374.wav"),
+            "style_reference": "/path/to/reference_audio",
             "utterances": """
-
-        Директор департамента финансовой стабильности ЦБ - Елизавета Данилова заявила, что в ноябре выдача льготной ипотеки, к примеру, сопоставима по объемам с октябрем, несмотря на действующие ограничения.
-        В таких условиях ЦБ ничего не оставалось как ввести дестимулирующие меры. В документе регулятор пишет, что прибегнул к фактически запретительным мерам.
-        Помимо роста доли закредитованных заемщиков рынок столкнулся с ценовым расслоением — разрыв цен на первичном и вторичном рынках недвижимости достиг 42%.
-        Однако на фоне повышения ключевой ставки, ипотечное кредитование на вторичном рынке замедляется, что будет приводить к сокращению спроса и на первичном рынке.
-        ЦБ не раз указывал на риски, связанные с перегревом рынка ипотечного кредитования, а также выступал с критикой льготных ипотечных программ, которые, по его мнению, «уместны только как антикризисная мера».
-        Также именно с ипотекой регулятор связывал один из дисбалансов в экономике, так как «она накачана льготными и псевдольготными программами».
-        В 2023 году Банк России всерьез взялся за охлаждение рынка ипотеки: регулятор повысил макронадбавки по ипотеке с низким первоначальным взносом и высокой долговой нагрузкой заемщиков.
-
+                В городе было пасмурно и серо. Снег начался после полудня и шел в течение нескольких часов.
+                На дорогах и тротуарах образовался плотный снежный покров.
+                Некоторые горожане напоследок решили не лишать себя зимних забав и слепили снеговика.
             """,
         },
     ]
 
-    for idx, test in enumerate(tests):
-        audio_chunk = synthesize(
-            tts,
-            voc,
-            test["utterances"],
-            test["lang"],
-            speaker_name=test["speaker_name"],
-            style_reference=test["style_reference"],
-            seed=get_seed(),
-        )
-        audio_chunk.save(
-            f"tts_result_{test['speaker_name']}_{idx}.wav",
-            overwrite=True,
-        )
+    for i in tqdm(range(10), desc="Generating TTS samples"):
+        for idx, test in enumerate(tests):
+            audio_chunk = synthesize(
+                tts,
+                voc,
+                test["utterances"],
+                test["lang"],
+                speaker_name=test["speaker_name"],
+                speaker_reference=test["style_reference"],
+                style_reference=test["style_reference"],
+                tts_opt=opt,
+                seed=get_seed(),
+            )
+            audio_chunk.save(
+                f"tts_result_{test['speaker_name']}_test{idx}_v{i}.wav",
+                overwrite=True,
+            )

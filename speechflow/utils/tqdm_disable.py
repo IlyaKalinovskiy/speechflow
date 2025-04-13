@@ -19,5 +19,7 @@ def tqdm_disable():
 
     try:
         yield
+    except Exception as e:
+        raise e
     finally:
         tqdm.tqdm = tqdm_backup

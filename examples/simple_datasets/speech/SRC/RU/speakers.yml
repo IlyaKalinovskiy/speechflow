@@ -6,4 +6,4 @@ Ruslan:
   file_list: meta.txt
 Synthetic:
   root: 003_Synthetic
-  many: True
+  multispeaker: true

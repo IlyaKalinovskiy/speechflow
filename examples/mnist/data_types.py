@@ -13,12 +13,12 @@ __all__ = [
 
 @dataclass
 class MNISTTarget(TrainData):
-    labels: Tensor = None
+    label: Tensor = None
 
 
 @dataclass
 class MNISTForwardInput(TrainData):
-    images: Tensor = None
+    image: Tensor = None
 
 
 @dataclass

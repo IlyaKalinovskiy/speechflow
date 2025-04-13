@@ -99,7 +99,7 @@ class LoggingServer(ProcessWorker):
     def error(self):
         return self.logger.error
 
-    def start(self, timeout: float = 5.0, tick: float = 0.25):
+    def start(self):
         from speechflow.logging.logger import create_logger
 
         try:
@@ -107,11 +107,9 @@ class LoggingServer(ProcessWorker):
                 LOGGER.warning(trace(self, message="LoggingServer already started"))
                 return
 
-            super().start(timeout, tick)
+            super().start()
 
-            time.sleep(timeout)
             self._named_logger = create_logger(self._log_name)
-
             self._write_message_to_file(
                 trace(self, message=f"LoggingServer has been started at {self._addr}")
             )
@@ -119,8 +117,8 @@ class LoggingServer(ProcessWorker):
             self.finish()
             raise e
 
-    def finish(self, timeout: float = 5.0, tick: float = 0.25):
-        super().finish(timeout, tick)
+    def finish(self, timeout: float = 3.0):
+        super().finish(timeout)
         if self._named_logger:
             self._named_logger.handlers = []
 
@@ -247,7 +245,7 @@ class LoggingServer(ProcessWorker):
 
     def do_work_once(self):
         try:
-            self._zmq_server.pool(timeout=10)
+            self._zmq_server.pool(timeout=1000)
 
             if self._zmq_server.is_frontend_ready():
                 raw_message = self._zmq_server.frontend.recv_multipart()
@@ -264,9 +262,10 @@ class LoggingServer(ProcessWorker):
                 self._profile_info()
                 self._process_info()
                 self._timer.reset()
-        except KeyboardInterrupt:
+
+        except KeyboardInterrupt as e:
             self._write_message_to_file(trace(self, "Interrupt received, stopping ..."))
-            self.finish()
+            raise e
         except Exception as e:
             self._write_message_to_file(trace(self, e))
 

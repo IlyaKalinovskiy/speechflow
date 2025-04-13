@@ -3,13 +3,14 @@ import socket
 import typing as tp
 import logging
 
-from multiprocessing import Lock, current_process
+from multiprocessing import current_process
 from os import environ as env
 from pathlib import Path
 
 import numpy as np
 
 from speechflow.data_server.patterns import ZMQPatterns
+from speechflow.logging import is_verbose_logging, set_verbose_logging
 from speechflow.logging.filters import set_logging_filters
 from speechflow.logging.server import ProcessData, ProfilerData
 
@@ -56,7 +57,6 @@ class ZeroMQFileHandler(logging.StreamHandler):
     def __init__(self, addr: str):
         super().__init__()
         self._zmq_client = ZMQPatterns.async_client(addr)
-        self._lock = Lock()
 
     def __enter__(self):
         return self
@@ -72,12 +72,7 @@ class ZeroMQFileHandler(logging.StreamHandler):
         else:
             message = self.format(record)
 
-        with self._lock:
-            try:
-                self._zmq_client.send(message)
-            except Exception as e:
-                if "unavailable" not in str(e):
-                    print(e)
+        self._zmq_client.send(message)
 
     def close(self):
         self._zmq_client.close()
@@ -86,12 +81,7 @@ class ZeroMQFileHandler(logging.StreamHandler):
         if not isinstance(message, (str, ProfilerData, ProcessData)):
             message = json.dumps(message, indent=4)
 
-        with self._lock:
-            try:
-                self._zmq_client.send(message)
-            except Exception as e:
-                if "unavailable" not in str(e):
-                    print(e)
+        self._zmq_client.send(message)
 
 
 def create_logger(
@@ -102,8 +92,12 @@ def create_logger(
     use_server_logging: bool = True,
     use_file_logging: bool = True,
     use_console_logging: bool = True,
+    use_verbose_logging: bool = False,
 ):
-    if bool(env.get("VERBOSE", False)):
+    if use_verbose_logging:
+        set_verbose_logging()
+
+    if is_verbose_logging():
         console_level = logging.DEBUG
         file_level = logging.DEBUG
 
@@ -143,7 +137,7 @@ def create_logger(
             console_handler.setLevel(console_level)
             root_logger.addHandler(console_handler)
 
-    if not bool(env.get("VERBOSE", False)):
+    if not is_verbose_logging():
         set_logging_filters(root_logger)
     else:
         LOGGER.debug("SET VERBOSE LOGGING")

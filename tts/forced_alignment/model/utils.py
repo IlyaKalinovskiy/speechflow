@@ -137,7 +137,7 @@ def maximum_path(
     except Exception as e:
         print(e)
 
-    path = path * mask.astype(np.float32)
+    path = path * mask
     path = torch.from_numpy(path).to(device=device, dtype=dtype)
     return path
 

@@ -13,7 +13,7 @@ class MNISTBatchProcessor(BaseBatchProcessor):
     ) -> tp.Tuple[MNISTForwardInput, MNISTTarget, tp.Optional[tp.List[DataSample]]]:
         collated: ImageCollateOutput = batch.collated_samples  # type: ignore
 
-        _input: MNISTForwardInput = MNISTForwardInput(images=collated.images)
-        _target: MNISTTarget = MNISTTarget(labels=collated.labels)
+        _input: MNISTForwardInput = MNISTForwardInput(image=collated.image)
+        _target: MNISTTarget = MNISTTarget(label=collated.label)
 
         return _input.to(self.device), _target.to(self.device), batch.data_samples

@@ -5,8 +5,9 @@ import torch
 
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import apply_mask, get_mask_from_lengths
-from tts.acoustic_models.modules.component import MODEL_INPUT_TYPE, Component
+from speechflow.utils.tensor_utils import apply_mask, get_mask_from_lengths
+from tts.acoustic_models.modules.component import Component
+from tts.acoustic_models.modules.data_types import MODEL_INPUT_TYPE
 from tts.acoustic_models.modules.params import VariancePredictorParams
 from tts.forced_alignment.model.utils import maximum_path
 

@@ -15,7 +15,7 @@ class Timestamps:
     intervals: npt.NDArray
 
     def __post_init__(self):
-        self.intervals = np.asarray(self.intervals, dtype=np.float32)
+        self.intervals = np.asarray(self.intervals, dtype=np.float64)
 
         if self.intervals.ndim != 2:
             raise ValueError(
@@ -23,12 +23,12 @@ class Timestamps:
             )
 
         min_diff = (self.intervals[:, 1] - self.intervals[:, 0]).min()
-        if min_diff <= 0:
+        if min_diff < 0:
             raise ValueError(f"timestamp interval with {min_diff} duration is found.")
 
         if len(self) > 1:
             diff = self.intervals[1:, 0] - self.intervals[:-1, 1]
-            if np.round(diff.min(), 5) < 0:
+            if np.round(diff.min(), 4) < 0:
                 raise ValueError("Back to the future issue is found!")
 
     def __len__(self):
@@ -52,9 +52,14 @@ class Timestamps:
 
     @staticmethod
     def from_list(
-        array_list: tp.Union[tp.List[npt.NDArray], tp.List["Timestamps"]]
+        array_list: tp.Union[
+            tp.List[tp.Tuple[float, float]], tp.List[npt.NDArray], tp.List["Timestamps"]
+        ]
     ) -> "Timestamps":
-        return Timestamps(np.concatenate(array_list))
+        if isinstance(array_list[0], tuple):
+            return Timestamps(np.asarray(array_list, dtype=np.float64))
+        else:
+            return Timestamps(np.concatenate(array_list))
 
     @property
     def begin(self) -> float:
@@ -124,8 +129,9 @@ class Timestamps:
                     closest_value = abs(x - b)
                 else:
                     break
+
             if closest == previous:
-                closest += 1
+                closest = min(closest + 1, len(frame_stamps) - 1)
                 expand_count += 1
                 succeeding_count += 1
                 assert (
@@ -134,7 +140,10 @@ class Timestamps:
                 ), f"More than {max_expand_count} short phonemes are not allowed, got {succeeding_count} in a row and total {expand_count}! "
             else:
                 succeeding_count = 0
-            assert closest is not None, "error fix timestamp!"
+
+            if closest is None:
+                raise RuntimeError("error fix timestamp!")
+
             previous = closest
             ts_frame.append(closest + 1)
 
@@ -156,7 +165,7 @@ class Timestamps:
         ts_frame = list(zip(ts_frame[:-1], ts_frame[1:]))
         assert len(ts_frame) == len(self)
 
-        return Timestamps(np.asarray(ts_frame, dtype=np.float32))
+        return Timestamps(ts_frame)
 
     def shift(self, index: int, duration: float) -> None:
         if duration == 0.0:

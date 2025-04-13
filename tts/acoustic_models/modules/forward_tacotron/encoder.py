@@ -14,19 +14,19 @@ __all__ = [
 
 
 class ForwardEncoderParams(EncoderParams):
-    base_encoder_type: str = "RNNEncoder"
-    base_encoder_params: dict = None  # type: ignore
-    base_adaptor_encoder_type: str = None  # type: ignore
-    base_adaptor_encoder_params: dict = None  # type: ignore
+    encoder_type: str = "RNNEncoder"
+    encoder_params: dict = None  # type: ignore
+    adaptor_encoder_type: str = None  # type: ignore
+    adaptor_encoder_params: dict = None  # type: ignore
     cat_ling_feat_after_encode: bool = False
 
     def model_post_init(self, __context: tp.Any):
-        if self.base_encoder_params is None:
-            self.base_encoder_params = {}
-        if self.base_adaptor_encoder_type is None:
-            self.base_adaptor_encoder_type = self.base_encoder_type
-        if self.base_adaptor_encoder_params is None:
-            self.base_adaptor_encoder_params = self.base_encoder_params
+        if self.encoder_params is None:
+            self.encoder_params = {}
+        if self.adaptor_encoder_type is None:
+            self.adaptor_encoder_type = self.encoder_type
+        if self.adaptor_encoder_params is None:
+            self.adaptor_encoder_params = self.encoder_params
 
 
 class ForwardEncoder(Component):
@@ -35,23 +35,24 @@ class ForwardEncoder(Component):
     def __init__(self, params: ForwardEncoderParams, input_dim: int):
         super().__init__(params, input_dim)
 
-        enc_cls = getattr(encoders, params.base_encoder_type)
-        enc_params_cls = getattr(encoders, f"{params.base_encoder_type}Params")
-        enc_params = enc_params_cls.init_from_parent_params(
-            params, params.base_encoder_params
-        )
+        enc_cls = getattr(encoders, params.encoder_type)
+        enc_params_cls = getattr(encoders, f"{params.encoder_type}Params")
+        enc_params = enc_params_cls.init_from_parent_params(params, params.encoder_params)
         self.encoder = enc_cls(enc_params, input_dim)
 
-        enc_cls = getattr(encoders, params.base_adaptor_encoder_type)
-        enc_params_cls = getattr(encoders, f"{params.base_adaptor_encoder_type}Params")
+        enc_cls = getattr(encoders, params.adaptor_encoder_type)
+        enc_params_cls = getattr(encoders, f"{params.adaptor_encoder_type}Params")
         enc_params = enc_params_cls.init_from_parent_params(
-            params, params.base_adaptor_encoder_params
+            params, params.adaptor_encoder_params
         )
         self.adaptor_encoder = enc_cls(enc_params, input_dim)
 
     @property
     def output_dim(self):
-        return self.encoder.output_dim
+        output_dim = self.encoder.output_dim
+        if self.params.cat_ling_feat_after_encode:
+            output_dim += self.params.token_emb_dim
+        return [output_dim, output_dim]
 
     def encode(self, x: ComponentOutput):
         return self.encoder(x), self.adaptor_encoder(x)
@@ -61,12 +62,19 @@ class ForwardEncoder(Component):
 
         if self.params.cat_ling_feat_after_encode:
             ling_feat = x.embeddings["ling_feat"]
-            encoder_content = torch.cat([encoder_output.content, ling_feat], dim=2)
+            encoder_content = torch.cat([encoder_output.get_content(0), ling_feat], dim=2)
             adaptor_encoder_content = torch.cat(
-                [adaptor_encoder_output.content, ling_feat], dim=2
+                [adaptor_encoder_output.get_content(0), ling_feat], dim=2
             )
             content = [encoder_content, adaptor_encoder_content]
         else:
-            content = [encoder_output.content, adaptor_encoder_output.content]
+            content = [
+                encoder_output.get_content(0),
+                adaptor_encoder_output.get_content(0),
+            ]
 
-        return EncoderOutput.copy_from(x).set_content(content)
+        content_lens = [
+            encoder_output.get_content_lengths(0),
+            adaptor_encoder_output.get_content_lengths(0),
+        ]
+        return EncoderOutput.copy_from(x).set_content(content, content_lens)

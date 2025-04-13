@@ -1,12 +1,13 @@
 import os
 import enum
 import typing as tp
+import inspect
 
 from copy import deepcopy as copy
 
 from speechflow.data_pipeline.core.datasample import DataSample
 from speechflow.io import Config
-from speechflow.utils.init import get_default_args, init_method_from_config
+from speechflow.utils.init import init_method_from_config
 
 __all__ = ["BaseDSProcessor", "ComputeBackend"]
 
@@ -18,6 +19,7 @@ class ComputeBackend(enum.Enum):
     librosa = 3
     torchaudio = 4
     nvidia = 5
+    nemo = 6
 
 
 class BaseDSProcessor:
@@ -36,34 +38,43 @@ class BaseDSProcessor:
         self.components = {}
         self.transform_params = {}
         for step_name in self.pipe:
-            if step_name != self.__class__.__name__:
-                method = getattr(self, step_name)
-                method_params = self.pipe_cfg.get(step_name, {})
-            else:
-                method = getattr(self, "__call__")
-                method_params = {}
+            method = getattr(self, step_name)
+            method_params = self.pipe_cfg.get(step_name, {})
 
             handler = init_method_from_config(method, method_params)
             self.components[step_name] = handler
 
-            if method.__name__ != "__call__":
-                params = copy(handler.keywords)
-            else:
-                params = {}
+            params = copy(handler.keywords)
 
             params.update(method_params)
             self.transform_params[step_name] = copy(params)  # type: ignore
 
     @staticmethod
-    def get_config_from_locals(local: dict) -> Config:
-        child_class = local.pop("self")
-        if not hasattr(child_class, "__call__"):
-            raise RuntimeError("Processor must have method __call__.")
-        if get_default_args(child_class.__call__):
-            raise RuntimeError("Method __call__ should not default arguments.")
+    def get_config_from_locals(ignore: tp.Optional[tp.List[str]] = None) -> Config:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            frame = current_frame.f_back
+            local = frame.f_locals
+        else:
+            local = {}
 
-        args = {k: v for k, v in local.items() if not k.startswith("_")}
-        return Config({child_class.__class__.__name__: args})
+        ignore = ([] if ignore is None else list(ignore)) + ["self"]
+        args = {
+            k: v
+            for k, v in local.items()
+            if k not in ignore and not k.startswith("__") and not isinstance(v, type)
+        }
+
+        if "kwargs" in args and isinstance(args["kwargs"], tp.Dict):
+            args.update(args.pop("kwargs"))
+
+        return Config(args)
+
+    def logging_params(self, params: tp.Union[Config, tp.Dict[str, tp.Any]]):
+        if isinstance(params, Config):
+            params = params.to_dict()
+
+        self.transform_params.update({self.__class__.__name__: params})
 
     def init(self):
         if "DEVICE" in os.environ:

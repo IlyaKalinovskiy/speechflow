@@ -19,7 +19,8 @@ from speechflow.data_pipeline.core.parser_types import (
     MultiMetadataTransform,
 )
 from speechflow.data_pipeline.core.registry import PipeRegistry
-from speechflow.logging import trace
+from speechflow.io import tp_PATH
+from speechflow.logging import is_verbose_logging, trace
 from speechflow.logging.logger import create_logger
 
 __all__ = ["BaseDSParser", "multi_transform"]
@@ -59,8 +60,9 @@ class BaseDSParser:
         memory_bound: bool = False,
         chunk_size: tp.Optional[int] = None,
         raise_on_converter_exc: bool = False,
-        dump: tp.Optional[tp.Union[str, Path]] = None,
+        dump_path: tp.Optional[tp_PATH] = None,
         release_func: tp.Optional[tp.Callable] = None,
+        progress_bar: bool = True,
     ):
         """
         :param preproc_fn: sequence of transforms for metadata
@@ -68,7 +70,8 @@ class BaseDSParser:
         :param memory_bound: memory used will be limited by the dataset size
         :param chunk_size: chunk size for single worker
         :param raise_on_converter_exc: Raise exception if convert sample with error
-        :param dump: folder for storage cache file
+        :param dump_path: folder for storage cache file
+        :param progress_bar: whether to display a progress bar showing the progress
         """
         if preproc_fn and input_fields:
             PipeRegistry.check(preproc_fn, input_fields=input_fields)
@@ -79,9 +82,10 @@ class BaseDSParser:
 
         self.raise_on_converter_exc = raise_on_converter_exc
         self.release_func = release_func
+        self.progress_bar = progress_bar
 
-        if dump:
-            self.cache_folder = Path(dump) / "cache"
+        if dump_path:
+            self.cache_folder = Path(dump_path) / "cache"
             self.cache_folder.mkdir(parents=True, exist_ok=True)
         else:
             self.cache_folder = None  # type: ignore
@@ -153,6 +157,7 @@ class BaseDSParser:
         memory_bound: bool = False,
         chunk_size: tp.Optional[int] = None,
         release_func: tp.Optional[tp.Callable] = None,
+        progress_bar: bool = True,
     ) -> Dataset:
         """Apply preprocessing functions.
 
@@ -162,6 +167,7 @@ class BaseDSParser:
         :param memory_bound: reduce memory usage
         :param chunk_size: chunk size for single worker
         :param release_func: function for delete temporary object
+        :param progress_bar: whether to display a progress bar showing the progress
         :return: list of metadata
 
         """
@@ -177,7 +183,7 @@ class BaseDSParser:
                     fns,
                     total=len(fns),
                     desc="Multitransform preprocessing",
-                    disable=len(fns) == 1,
+                    disable=len(fns) == 1 or not progress_bar,
                 ):
                     try:
                         all_metadata = transform(all_metadata)
@@ -200,6 +206,7 @@ class BaseDSParser:
                     memory_bound=memory_bound,
                     chunk_size=chunk_size,
                     release_func=release_func,
+                    progress_bar=progress_bar,
                 )
 
         return all_metadata
@@ -246,9 +253,14 @@ class BaseDSParser:
         memory_bound: bool = False,
         chunk_size: tp.Optional[int] = None,
         release_func: tp.Optional[tp.Callable] = None,
+        progress_bar: bool = True,
     ) -> Dataset:
         memory_bound = memory_bound and n_processes > 1
-        tqdm_disable = len(inputs) == 1 or n_processes == 1
+        tqdm_disable = (
+            len(inputs) == 1
+            or (n_processes == 1 and not is_verbose_logging())
+            or not progress_bar
+        )
         if chunk_size is None:
             chunk_size = 1 if len(inputs) < 100 else int(math.sqrt(len(inputs)))
 
@@ -293,7 +305,6 @@ class BaseDSParser:
         """Reads a single sample from disk and preprocesses it.
 
         :param file_path: path to file and label (optional) separated by "|"
-        :param output: list of metadata
         :param data_root: path to data folder
         :return: list of correctly processed files
 
@@ -302,7 +313,7 @@ class BaseDSParser:
             try:
                 return Dataset(self.reader(file_path))
             except Exception as e:
-                LOGGER.error(trace(self, e, message=file_path.as_posix()))
+                LOGGER.error(trace(self, e))
 
         label = None
         if isinstance(file_path, str) and "|" in file_path:
@@ -354,8 +365,9 @@ class BaseDSParser:
             memory_bound=self.memory_bound,
             chunk_size=self.chunk_size,
             release_func=self.release_func,
+            progress_bar=self.progress_bar,
         )
-        if n_processes > 1:
+        if self.progress_bar:
             LOGGER.info(
                 trace(self, message=f"Prepared {len(all_datasample)} datasamples")
             )
@@ -365,7 +377,7 @@ class BaseDSParser:
         self,
         file_list: tp.Union[tp.List[str], tp.List[Path], tp.List[tp.Any]],
         data_root: tp.Optional[tp.Union[str, Path]] = None,
-        n_processes: tp.Optional[int] = None,
+        n_processes: tp.Optional[int] = 1,
         post_read_hooks: tp.Optional[tp.Sequence[tp.Callable]] = None,
     ) -> Dataset:
         """Reads list of samples from disk and preprocesses its.
@@ -381,7 +393,7 @@ class BaseDSParser:
         cache_fpath = self._get_cache_fpath(len(file_list))
 
         if cache_fpath and cache_fpath.exists():
-            LOGGER.info(f"Load DSParser cache from {cache_fpath.name}")
+            LOGGER.info(f"Load DSParser cache from {cache_fpath.as_posix()}")
             dataset = pickle.loads(cache_fpath.read_bytes())
         else:
             # read
@@ -393,6 +405,7 @@ class BaseDSParser:
                 memory_bound=self.memory_bound,
                 chunk_size=self.chunk_size,
                 release_func=self.release_func,
+                progress_bar=self.progress_bar,
             )
             assert all_metadata, "metadata not read!"
 

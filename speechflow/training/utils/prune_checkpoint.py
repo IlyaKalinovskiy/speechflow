@@ -18,7 +18,6 @@ def prune(checkpoint: tp.Dict[str, tp.Any]) -> tp.Dict[str, tp.Any]:
         "lr_schedulers",
         "scripts",
         "dataset",
-        "files",
     ]
     checkpoint = {k: v for k, v in checkpoint.items() if k not in remove_keys}
 
@@ -34,6 +33,10 @@ def prune(checkpoint: tp.Dict[str, tp.Any]) -> tp.Dict[str, tp.Any]:
 
     if "speaker_id_map" in checkpoint:
         print("speakers:", list(checkpoint["speaker_id_map"].keys()))
+
+    # checkpoint["speaker_id_map"] = {
+    #     f"speaker_{i}": v for i, (k, v) in enumerate(checkpoint["speaker_id_map"].items())
+    # }
 
     return checkpoint
 

@@ -16,7 +16,6 @@ from speechflow.data_pipeline.core import BaseDSProcessor
 from speechflow.data_pipeline.core.registry import PipeRegistry
 from speechflow.data_pipeline.datasample_processors.data_types import AudioDataSample
 from speechflow.io import AudioChunk
-from speechflow.thirdparty.nisqa.NISQA_model import nisqaModel
 from speechflow.utils.init import lazy_initialization
 
 __all__ = ["SpeechQualityAssessment"]
@@ -56,7 +55,11 @@ class SpeechQualityAssessment(BaseDSProcessor):
                 f"but got model_type={model_type}!"
             )
 
+        self.logging_params(self.get_config_from_locals())
+
     def init(self):
+        from speechflow.thirdparty.nisqa.NISQA_model import nisqaModel
+
         super().init()
         if self._model_type.startswith("cdpam"):
             self._cdpam = cdpam.CDPAM(dev=self.device)
@@ -75,6 +78,8 @@ class SpeechQualityAssessment(BaseDSProcessor):
     @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"speech_quality_emb"})
     @lazy_initialization
     def process(self, ds: AudioDataSample) -> AudioDataSample:
+        ds = super().process(ds)
+
         assert np.issubdtype(
             ds.audio_chunk.dtype, np.floating
         ), "Audio data must be floating-point!"

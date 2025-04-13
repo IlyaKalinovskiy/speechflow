@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import numpy.typing as npt
 
 from torch import Tensor
 
@@ -25,16 +26,19 @@ __all__ = [
     "Detachable",
     "DataSample",
     "TrainData",
+    "tp_DATA",
 ]
+
+tp_DATA = tp.Union[int, float, str, npt.NDArray, Tensor]
 
 
 @dataclass
 class ToDict:
     def keys(self) -> tp.List[str]:
-        return list(self.to_dict().keys())
+        return [k for k in self.to_dict().keys() if not k.startswith("_")]
 
     def to_dict(self) -> tp.Dict:
-        return self.__dict__
+        return {k: v for k, v in self.__dict__.items() if not k.startswith("_")}
 
 
 @dataclass
@@ -42,6 +46,8 @@ class ToTensor:
     @staticmethod
     def _from_numpy(data):
         tensor = torch.as_tensor(data)
+        if isinstance(tensor, torch.DoubleTensor):
+            tensor = tensor.float()
         if not tensor.is_contiguous():
             tensor = tensor.contiguous()
 
@@ -54,6 +60,8 @@ class ToTensor:
                 temp[name] = self._from_numpy(field)
             elif isinstance(field, ToTensor):
                 temp[name] = field.to_tensor()
+            elif isinstance(field, (float, np.double)):
+                temp[name] = np.float32(field)
 
         self.__dict__ = struct_dict(temp)
         return self
@@ -108,7 +116,10 @@ class MovableToDevice:
         return self.to(torch.device("cpu"))
 
     def cuda(self):
-        return self.to(torch.device(f"cuda:{torch.cuda.current_device()}"))
+        if torch.cuda.is_available():
+            return self.to(torch.device(f"cuda:{torch.cuda.current_device()}"))
+        else:
+            return self.cpu()
 
 
 @dataclass
@@ -231,15 +242,15 @@ class Serialize:
 class DataSample(ToDict, ToTensor, ToNumpy, Serialize):
     file_path: tp_PATH = None
     label: tp.Union[str, int] = ""
+    tag: tp.Optional[str] = None
     index: tp.Optional[tp.Tuple[tp.Any, ...]] = None
     transform_params: tp.Optional[tp.Dict[str, tp.Any]] = None
     additional_fields: tp.Optional[tp.Dict[str, tp.Any]] = None
 
-    __uid = str
+    __uid = str = uuid.uuid4().hex
     __all_keys = set()  # type: ignore
 
     def __post_init__(self):
-        self.__uid = uuid.uuid4().hex
         if self.file_path is None:
             self.file_path = Path()
         elif isinstance(self.file_path, str):
@@ -258,7 +269,7 @@ class DataSample(ToDict, ToTensor, ToNumpy, Serialize):
         return sys.getsizeof(self)
 
     def __str__(self) -> str:
-        return self.file_path.as_posix() if self.file_path else ""
+        return self.file_path.as_posix() if self.file_path else self.label
 
     def __hash__(self) -> int:
         return hash(self.__uid)
@@ -281,7 +292,7 @@ class DataSample(ToDict, ToTensor, ToNumpy, Serialize):
             value = getattr(self, name)
         return value
 
-    def update(self, data: dict):
+    def update(self, data: tp.Union[tp.Dict, "DataSample"]):
         if isinstance(data, DataSample):
             data = data.to_dict()
 
@@ -296,11 +307,16 @@ class DataSample(ToDict, ToTensor, ToNumpy, Serialize):
         flatten_params = flatten_dict(self.transform_params)
         found = []
         for key, field in flatten_params.items():
-            if key.endswith(name):
+            if key.split(".", 1)[-1].startswith(name):
                 found.append(field)
-        if len(found):
-            return found[0]
-        return def_val
+        if not found:
+            for key, field in flatten_params.items():
+                if key.endswith(name):
+                    found.append(field)
+        if found:
+            return found[-1]
+        else:
+            return def_val
 
     def copy(self):
         new = copy(self)

@@ -23,7 +23,13 @@ class BaseTorchModelParams(pydantic.BaseModel):
     def __getitem__(self, key: str):
         return self.__dict__[key]
 
-    def model_post_init(self, __context: Any) -> None:
+    def __setitem__(self, key, value):
+        self.__dict__[key] = value
+
+    def __contains__(self, key):
+        return key in self.__dict__
+
+    def model_post_init(self, __context: Any):
         pass
 
     @classmethod
@@ -41,10 +47,10 @@ class BaseTorchModelParams(pydantic.BaseModel):
     def init_from_config(
         cls, cfg: tp.Union[tp.MutableMapping, Config], strict_init: bool = True
     ):
+        cfg = cls.check_deprecated_params_recursive(cfg)
+
         if isinstance(cfg, Config):
             cfg = cfg.to_dict()
-
-        cfg = cls.check_deprecated_params_recursive(cfg)
 
         params = cls()
         for key in list(cfg.keys()):
@@ -84,12 +90,19 @@ class BaseTorchModelParams(pydantic.BaseModel):
     def copy(self, *args, **kwargs):
         return super().copy(*args, **kwargs, deep=True)
 
+    def pop(self, key):
+        value = self[key]
+        del self.__dict__[key]
+        return value
+
     @staticmethod
     def check_deprecated_params(cfg: dict) -> dict:
         return cfg
 
     @classmethod
-    def check_deprecated_params_recursive(cls, cfg: dict) -> dict:
+    def check_deprecated_params_recursive(
+        cls, cfg: tp.MutableMapping
+    ) -> tp.MutableMapping:
         base = cls.__bases__
         for b in base:
             if hasattr(b, "check_deprecated_params_recursive"):
@@ -109,6 +122,10 @@ class BaseTorchModel(torch.nn.Module):
         self.params = params
         self.initial_params = copy.deepcopy(params)
         self._register_load_state_dict_pre_hook(self.load_params)
+
+    @property
+    def name(self) -> str:
+        return self.__class__.__name__
 
     def get_params(
         self, as_dict: bool = True, after_init: bool = False
@@ -138,7 +155,7 @@ class BaseTorchModel(torch.nn.Module):
 
         return state_dict
 
-    def generate(self, *args, **kwargs):
+    def inference(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
 
 

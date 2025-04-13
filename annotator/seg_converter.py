@@ -18,7 +18,7 @@ class SegConverter(BaseDSParser):
 
     def converter(self, metadata: dict):
         file_path = metadata["file_path"]
-        sega = AudioSeg.load(file_path, with_audio=True)
+        sega = AudioSeg.load(file_path, load_audio=True)
         if sega.audio_chunk.sr != self._new_sample_rate:
             sega.audio_chunk.resample(self._new_sample_rate, inplace=True)
             sega.audio_chunk.save(overwrite=True)
@@ -35,6 +35,6 @@ if __name__ == "__main__":
     args = arguments_parser.parse_args()
 
     flist = construct_file_list(
-        args.data_root, ext=".TextGridStage2", with_subfolders=True
+        args.data_root, ext=".TextGridStage3", with_subfolders=True
     )
     SegConverter().read_datasamples(flist, n_processes=0)

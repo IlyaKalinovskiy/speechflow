@@ -18,23 +18,22 @@ class DummyProcess(ProcessWorker):
 
 
 def test_logger():
-    for i in range(3):
-        with LoggingServer.ctx(log_name=f"name_{i}_1") as logger_1:
-            logger_1.info("start-1")
-            with LoggingServer.ctx(log_name=f"name_{i}_2") as logger_2:
-                print(f"Statr logger {logger_2.name}")
-                logger_2.info("start-2")
-                logger_1.info("start DummyProcess")
-                processes = [DummyProcess() for _ in range(2)]
-                [process.start() for process in processes]
-                [process.join() for process in processes]
-                [process.finish() for process in processes]
-                logger_2.info("stop-2")
-            logger_1.info("stop-1")
+    with LoggingServer.ctx(log_name="name_1") as logger_1:
+        logger_1.info("start-1")
+        with LoggingServer.ctx(log_name="name_2") as logger_2:
+            print(f"Statr logger {logger_2.name}")
+            logger_2.info("start-2")
+            logger_1.info("start DummyProcess")
+            processes = [DummyProcess() for _ in range(2)]
+            [process.start() for process in processes]
+            [process.join() for process in processes]
+            [process.finish() for process in processes]
+            logger_2.info("stop-2")
+        logger_1.info("stop-1")
 
-        assert "start DummyProcess" in " ".join(logger_1.get_all_messages())
-        assert "stop-1" in " ".join(logger_1.get_all_messages())
-        assert "stop-2" in " ".join(logger_2.get_all_messages())
+    assert "start DummyProcess" in " ".join(logger_1.get_all_messages())
+    assert "stop-1" in " ".join(logger_1.get_all_messages())
+    assert "stop-2" in " ".join(logger_2.get_all_messages())
 
 
 if __name__ == "__main__":

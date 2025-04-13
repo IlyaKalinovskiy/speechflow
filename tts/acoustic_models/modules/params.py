@@ -13,26 +13,25 @@ __all__ = [
     "VariancePredictorParams",
     "VarianceAdaptorParams",
     "DecoderParams",
-    "ModifierParams",
+    "GeneralConditionParams",
     "EmbeddingParams",
     "PostnetParams",
 ]
 
-tp_TEXT_FEATURES = tp.Literal["transcription", "lm_feat"]
-tp_AUDIO_FEATURES = tp.Literal[
-    "waveform", "linear_spectrogram", "mel_spectrogram", "ssl_feat", "ac_feat"
-]
+tp_TEXT_FEATURES = tp.Literal["transcription", "xpbert_feat", "lm_feat"]
+tp_AUDIO_FEATURES = tp.Literal["waveform", "spectrogram", "ssl_feat", "ac_feat"]
 tp_BIOMETRIC_MODELS = tp.Literal["resemblyzer", "speechbrain", "wespeaker"]
+tp_INPUT_FEATURES = tp.Union[tp_TEXT_FEATURES, tp_AUDIO_FEATURES]
 
 
 class EmbeddingParams(BaseTorchModelParams):
     """Embedding component parameters."""
 
-    input: tp.Union[tp_TEXT_FEATURES, tp_AUDIO_FEATURES] = "transcription"
-    target: tp_AUDIO_FEATURES = "mel_spectrogram"
+    input: tp.Union[tp_INPUT_FEATURES, tp.List[tp_INPUT_FEATURES]] = "transcription"
+    target: tp_AUDIO_FEATURES = "spectrogram"
 
     # Transcription embeddings parameters
-    n_symbols: int = Field(ge=1, default=1)
+    alphabet_size: int = Field(ge=1, default=1)
     n_symbols_per_token: int = Field(ge=1, default=1)
     token_emb_dim: int = 256
 
@@ -49,6 +48,10 @@ class EmbeddingParams(BaseTorchModelParams):
     # Linguistic sequences
     num_additional_integer_seqs: int = -1
     num_additional_float_seqs: int = -1
+
+    # XPBert parameters
+    xpbert_feat_dim: int = 768
+    xpbert_feat_proj_dim: int = 768
 
     # LM features parameters
     lm_feat_dim: int = 1024
@@ -76,14 +79,14 @@ class EmbeddingParams(BaseTorchModelParams):
     # Speech quality embeddings parameters
     speech_quality_emb_dim: int = 4
 
-    max_input_length: int = 0
-    max_output_length: int = 0
+    max_input_length: tp.Union[int, tp.List[int]] = 512
+    max_output_length: int = 4096
 
     def model_post_init(self, __context: tp.Any):
         super().model_post_init(__context)
 
-        if self.input != "transcription":
-            self.max_input_length = self.max_output_length
+        if not isinstance(self.input, list):
+            self.input = [self.input]
 
         if (
             self.use_onehot_speaker_emb
@@ -112,12 +115,32 @@ class EmbeddingParams(BaseTorchModelParams):
                     dim += params["emb_dim"]
                 self.average_emb_dim = dim
 
+    def get_feat_dim(self, feat_name: str) -> int:
+        if feat_name == "spectrogram":
+            feat_name = "mel_spectrogram"
+        if hasattr(self, f"{feat_name}_dim"):
+            return getattr(self, f"{feat_name}_dim")
+        else:
+            raise RuntimeError(f"Dim for {feat_name} not found")
+
+    @staticmethod
+    def check_deprecated_params(cfg: dict) -> dict:
+        if "n_symbols" in cfg:
+            cfg["alphabet_size"] = cfg.pop("n_symbols")
+        if "input" in cfg:
+            if cfg["input"] == "mel_spectrogram":
+                cfg["input"] = "spectrogram"
+        if "target" in cfg:
+            if cfg["target"] == "mel_spectrogram":
+                cfg["target"] = "spectrogram"
+
+        return cfg
+
 
 class EncoderParams(EmbeddingParams):
     """Encoder component parameters."""
 
     encoder_type: str = "ForwardEncoder"
-    encoder_num_blocks: int = 1
     encoder_num_layers: int = 2
     encoder_inner_dim: int = 512
     encoder_output_dim: int = 512
@@ -127,8 +150,7 @@ class EncoderParams(EmbeddingParams):
 class DecoderParams(EmbeddingParams):
     """Decoder component parameters."""
 
-    decoder_type: str = "ForwardDecoder"
-    decoder_num_blocks: int = 1
+    decoder_type: tp.Optional[str] = "ForwardDecoder"
     decoder_num_layers: int = 2
     decoder_inner_dim: int = 512
     decoder_output_dim: int = 80
@@ -138,42 +160,40 @@ class DecoderParams(EmbeddingParams):
 class PostnetParams(EmbeddingParams):
     """Postnet component parameters."""
 
-    postnet_type: str = "ForwardPostnet"
-    postnet_num_blocks: int = 1
+    postnet_type: tp.Optional[str] = "ForwardPostnet"
     postnet_num_layers: int = 1
     postnet_inner_dim: int = 512
     postnet_output_dim: int = 80
     postnet_params: tp.Dict[str, tp.Any] = Field(default_factory=lambda: {})
 
 
-class ModifierParams(EmbeddingParams):
-    """Modifier parameters."""
+class GeneralConditionParams(EmbeddingParams):
+    """Level condition parameters."""
 
-    mode_add: tp.Dict[int, tp.List[str]] = Field(default_factory=lambda: {})
-    mode_cat: tp.Dict[int, tp.List[str]] = Field(default_factory=lambda: {})
+    general_condition: tp.Dict[str, tp.List[tp.Dict[str, tp.Any]]] = Field(
+        default_factory=lambda: {}
+    )
 
     def model_post_init(self, __context: tp.Any):
         super().model_post_init(__context)
 
-        from tts.acoustic_models.modules.modifier import ModeStage
+        from tts.acoustic_models.modules.general_condition import ModelLevel
 
-        for att_name in ["mode_add", "mode_cat"]:
-            attr = getattr(self, att_name)
-            if attr is not None:
-                if not isinstance(attr, tp.MutableMapping):
-                    raise ValueError(
-                        f"Invalid modifier parameter. It should be either dict but got {attr} instead."
-                    )
-                mode_stages = {item.value for item in ModeStage}
-                if not mode_stages > set(attr.keys()):
-                    raise ValueError(
-                        f"Invalid stage number in ModifierParams {set(attr.keys())}. "
-                        f"Only integer values from {min(mode_stages)} to {max(mode_stages)} are allowed."
-                    )
+        model_level = [key.name for key in ModelLevel]
+        for level, cond_params in self.general_condition.items():
+
+            if level not in model_level:
+                raise ValueError(
+                    f"Invalid stage number in GeneralConditionParams: {level}. "
+                    f"Only values from {', '.join(model_level)} are allowed."
+                )
+
+            for params in cond_params:
+                if isinstance(params["condition"], str):
+                    params["condition"] = [params["condition"]]
 
 
 class VariancePredictorParams(EmbeddingParams):
-    vp_num_blocks: int = 1
     vp_num_layers: int = 1
     vp_inner_dim: int = 256
     vp_output_dim: int = 1
@@ -181,19 +201,19 @@ class VariancePredictorParams(EmbeddingParams):
 
 
 class VarianceParams(BaseTorchModelParams):
-    predictor_type: str = "VariancePredictor"
+    predictor_type: str = "TokenLevelPredictor"
     predictor_params: VariancePredictorParams = None  # type: ignore
     dim: int = 1
     target: str = None
     input_content: tp.Tuple[int, ...] = (0,)
     input_content_dim: tp.Tuple[int, ...] = None
-    detach_input: bool = False
+    detach_input: tp.Union[bool, tp.Tuple[bool, ...]] = False
     detach_output: bool = True
     use_target: bool = True
     denormalize: bool = False
     upsample: bool = False
-    cat_to_content: tp.Tuple[int, ...] = (0, 1)
-    overwrite_content: tp.Tuple[int, ...] = ()
+    cat_to_content: tp.Optional[tp.Tuple[int, ...]] = ()
+    overwrite_content: tp.Optional[tp.Tuple[int, ...]] = None
     as_encoder: bool = False
     as_embedding: bool = False
     interval: tp.Tuple[float, float] = (0.0, 1.0)
@@ -201,9 +221,10 @@ class VarianceParams(BaseTorchModelParams):
     n_bins: int = 256
     emb_dim: int = 128
     begin_iter: int = 0
-    end_iter: int = 1_000_000
+    end_iter: int = 1_000_000_000
+    every_iter: int = 1
     skip: bool = False
-    with_loss: bool = False
+    use_loss: bool = False
     loss_type: str = "l1_loss"
 
     def model_post_init(self, __context: tp.Any):
@@ -212,21 +233,22 @@ class VarianceParams(BaseTorchModelParams):
         if self.predictor_params is None:
             self.predictor_params = VariancePredictorParams()
 
-        self.input_content = tuple(self.input_content)
-        self.cat_to_content = tuple(self.cat_to_content)
-        self.overwrite_content = tuple(self.overwrite_content)
+        if isinstance(self.detach_input, bool):
+            self.detach_input = tuple([self.detach_input] * len(self.input_content))
+        else:
+            self.detach_input = tuple(self.detach_input)
 
-        if self.overwrite_content and len(self.cat_to_content) == 2:
-            self.cat_to_content = ()
+        assert len(self.input_content) == len(self.detach_input)
 
         if self.as_encoder:
             self.dim = self.predictor_params.vp_output_dim
             self.use_target = False
             self.detach_output = False
             self.as_embedding = False
-            self.with_loss = False
+            self.use_loss = False
         else:
-            self.predictor_params.vp_output_dim = self.dim
+            if self.dim > self.predictor_params.vp_output_dim:
+                self.predictor_params.vp_output_dim = self.dim
 
 
 class VarianceAdaptorParams(VariancePredictorParams):

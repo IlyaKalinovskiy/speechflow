@@ -1,3 +1,5 @@
+"""Periodicity metrics adapted from https://github.com/descriptinc/cargan."""
+
 import numpy as np
 import torch
 import librosa
@@ -8,10 +10,6 @@ from torchcrepe.loudness import REF_DB
 
 SILENCE_THRESHOLD = -60
 UNVOICED_THRESHOLD = 0.21
-
-"""
-Periodicity metrics adapted from https://github.com/descriptinc/cargan
-"""
 
 
 def predict_pitch(

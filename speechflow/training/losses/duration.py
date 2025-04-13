@@ -1,4 +1,4 @@
-from typing import Optional
+import typing as tp
 
 import torch
 
@@ -23,7 +23,7 @@ class BaseDuration(BaseLoss):
 
     @staticmethod
     def _set_mask(
-        tensor_to_mask: torch.Tensor, mask: Optional[torch.Tensor] = None
+        tensor_to_mask: torch.Tensor, mask: tp.Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         if mask is not None:
             tensor_to_mask = tensor_to_mask.masked_select(mask)
@@ -37,7 +37,7 @@ class DurationLoss(BaseDuration):
         global_step: int,
         predicted_durations: torch.Tensor,
         gt_durations: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: tp.Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         gt_durations = self._set_mask(gt_durations, mask)
         predicted_durations = self._set_mask(predicted_durations, mask)

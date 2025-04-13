@@ -3,14 +3,17 @@ import random
 import torch
 import pytest
 
-from multilingual_text_parser import Doc, EmptyTextError, TextParser
+from multilingual_text_parser.data_types import Doc
+from multilingual_text_parser.parser import EmptyTextError, TextParser
 
 from speechflow.data_pipeline.datasample_processors.data_types import TextDataSample
-from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
+    TTSTextProcessor,
+)
 from speechflow.logging import trace
 from speechflow.logging.server import LoggingServer
 from speechflow.utils.fs import get_root_dir
-from speechflow.utils.gpu import get_freer_gpu
+from speechflow.utils.gpu_info import get_freer_gpu
 from speechflow.utils.profiler import Profiler
 
 BOOK_NAME = {
@@ -46,7 +49,7 @@ def test_parse_book(
             device = "cpu"
 
         text_parser = TextParser(lang=lang, device=device, with_profiler=with_profiler)
-        text_proc = TextProcessor(lang=lang)
+        text_proc = TTSTextProcessor(lang=lang)
 
         for book in BOOK_NAME[lang]:
             book_path = get_root_dir() / "tests/data/texts" / book
@@ -56,7 +59,7 @@ def test_parse_book(
             chunk_size = chunk_size_min
             timer = Profiler()
             while len(all_text) > chunk_size:
-                if max_test_time > 0 and timer.get_time() > float(max_test_time):
+                if max_test_time > 0 and timer.get_time() > max_test_time:
                     break
 
                 try:

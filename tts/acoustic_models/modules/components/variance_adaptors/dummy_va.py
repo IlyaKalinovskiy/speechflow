@@ -28,6 +28,6 @@ class DummyVarianceAdaptor(Component):
     def output_dim(self):
         return self.input_dim
 
-    def forward_step(self, inputs: EncoderOutput) -> VarianceAdaptorOutput:  # type: ignore
+    def forward_step(self, inputs: EncoderOutput, **kwargs) -> VarianceAdaptorOutput:  # type: ignore
         outputs = VarianceAdaptorOutput.copy_from(inputs)
         return outputs

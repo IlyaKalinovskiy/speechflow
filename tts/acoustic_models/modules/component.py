@@ -12,16 +12,15 @@ from torch import nn
 from torch.nn import functional as F
 
 from speechflow.training.base_model import BaseTorchModelParams
-from speechflow.training.utils.profiler import gpu_profiler
-from speechflow.training.utils.tensor_utils import (
-    get_lengths_from_mask,
-    get_mask_from_lengths,
-)
+from speechflow.utils.gpu_profiler import gpu_profiler
+from speechflow.utils.tensor_utils import get_lengths_from_mask, get_mask_from_lengths
 from tts.acoustic_models.modules.data_types import (
     MODEL_INPUT_TYPE,
     ComponentInput,
     ComponentOutput,
 )
+
+__all__ = ["Component"]
 
 _INPUT_DIM = tp.Optional[tp.Union[int, tp.Tuple[int, ...]]]
 
@@ -128,8 +127,18 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
         outputs = self.forward_step(inputs)
         return outputs.content, getattr(outputs, "hidden_state")
 
+    def hook_update_content(
+        self, x: torch.Tensor, x_lengths: torch.Tensor, inputs: ComponentInput
+    ) -> torch.Tensor:
+        return x
+
+    def hook_update_condition(
+        self, c: torch.Tensor, inputs: ComponentInput
+    ) -> torch.Tensor:
+        return c
+
     def inference_step(self, inputs: ComponentInput, **kwargs) -> ComponentOutput:
-        return self.forward_step(inputs)
+        return self.forward_step(inputs, **kwargs)
 
     @gpu_profiler
     def inference(self, *args, **kwargs) -> ComponentOutput:
@@ -137,45 +146,17 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
         outputs.additional_content[self.name] = outputs.content
         return outputs
 
-    @staticmethod
-    def get_content(
-        inputs: tp.Union[tp.List[torch.Tensor], torch.Tensor, ComponentInput]
-    ) -> tp.List:
-        if isinstance(inputs, ComponentInput):
-            content = inputs.content
-        else:
-            content = inputs
-
-        return [content] if not isinstance(content, list) else content
-
-    @staticmethod
-    def get_content_lengths(
-        inputs: tp.Union[tp.List[torch.Tensor], torch.Tensor, ComponentInput]
-    ):
-        return (
-            inputs.content_lengths
-            if isinstance(inputs.content_lengths, list)
-            else [inputs.content_lengths]
-        )
-
-    @staticmethod
-    def get_content_and_mask(inputs, idx: int = 0):
-        x = Component.get_content(inputs)[idx]
-        x_lens = Component.get_content_lengths(inputs)[idx]
-        x_mask = get_mask_from_lengths(x_lens)
-        return x, x_lens, x_mask
-
     def get_condition(
         self,
-        inputs: ComponentInput,
-        condition: tp.Union[str, tp.Tuple[str, ...]],
-        average_by_time: bool = True,
+        inputs: tp.Union[ComponentInput, MODEL_INPUT_TYPE],
+        feat_name: tp.Optional[tp.Union[str, tp.Tuple[str, ...]]] = None,
+        average_by_time: bool = False,
     ):
-        if not condition:
+        if not feat_name:
             return
 
-        if isinstance(condition, str):
-            condition = (condition,)
+        if isinstance(feat_name, str):
+            feat_name = (feat_name,)
 
         if hasattr(inputs, "model_inputs"):
             model_inputs = inputs.model_inputs
@@ -188,15 +169,15 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
             ref = None
 
         g = []
-        for name in condition:
+        for name in feat_name:
             if name.startswith("prompt."):
                 inputs = inputs.prompt
                 name = name.replace("prompt.", "")
 
-            detach = True
+            detach = False
             name, *modifiers = name.split("<", 1)
-            if modifiers and "no_detach" in modifiers[0]:
-                detach = False
+            if modifiers and "detach" in modifiers[0]:
+                detach = True
 
             if ref is not None and name in ref.model_feats:
                 feat = ref.get_model_feat(name, device=inputs.device)
@@ -227,8 +208,8 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
             if feat.shape[1] > 1 and average_by_time:
                 feat = torch.mean(feat, dim=1, keepdim=True)
 
-            if name == "speaker_emb":
-                feat = F.normalize(feat, dim=-1)
+            if feat.shape[1] == 1:
+                average_by_time = True
 
             g.append(feat.detach() if detach else feat)
 
@@ -240,7 +221,8 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
             g = [t.expand([b] + list(t.shape)[1:]) for t in g]
 
         g = torch.cat(g, dim=-1).squeeze(2)
-        return g
+
+        return self.hook_update_condition(g, inputs)
 
     @staticmethod
     def get_chunk(
@@ -250,7 +232,7 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
         max_len: int = None,
         pad_val: float = -4.0,
     ):
-        x_mask = get_mask_from_lengths(x_lengths)
+        x_mask = get_mask_from_lengths(x_lengths, max_length=x.shape[1])
 
         if min_len is None:
             min_len = x_lengths.min()
@@ -282,7 +264,7 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
         max_len: int = None,
         pad_val: float = -4.0,
     ):
-        x_mask = get_mask_from_lengths(x_lengths)
+        x_mask = get_mask_from_lengths(x_lengths, max_length=x.shape[1])
 
         if min_len is None:
             min_len = x_lengths.min() // 2
@@ -292,8 +274,8 @@ class Component(nn.Module, metaclass=InstanceCounterMeta):
 
         if x.shape[1] < min_len:
             gt = F.pad(
-                x.transpose(2, 1), (0, min_len - x.shape[1]), value=pad_val
-            ).transpose(2, 1)
+                x.transpose(1, -1), (0, min_len - x.shape[1]), value=pad_val
+            ).transpose(1, -1)
             gt_mask = F.pad(x_mask, (0, min_len - x.shape[1]))
         else:
             if self.training:

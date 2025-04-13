@@ -1,23 +1,46 @@
-import sys
+import time
 import pickle
 import typing as tp
-import asyncio
 
 from dataclasses import dataclass
+from functools import wraps
 
 import zmq
-import zmq.asyncio
 
 from speechflow.logging import log_to_file, trace
+from speechflow.utils.serialize import Serialize
 
 __all__ = [
     "ZMQPatterns",
     "ZMQServer",
     "ZMQClient",
-    "ZMQAsyncClient",
     "ZMQWorker",
     "ZMQProxy",
 ]
+
+
+def retry(
+    func: tp.Callable,
+) -> tp.Callable:
+    num_retry: int = 5
+
+    @wraps(func)
+    def retry_loop(*args, **kwargs) -> bool:
+
+        for i in range(num_retry):
+            try:
+                func(*args, **kwargs)
+                return True
+            except zmq.error.Again as e:
+                if i + 1 == num_retry:
+                    log_to_file(trace("retry_loop", e))
+                    return False
+                else:
+                    time.sleep(2)
+
+        return func(*args, **kwargs)
+
+    return retry_loop
 
 
 @dataclass
@@ -27,6 +50,7 @@ class ZMQServer:
     backend: zmq.Socket
     poller: zmq.Poller
     socks: tp.Dict[zmq.Socket, tp.Any] = None  # type: ignore
+    flags: int = zmq.NOBLOCK
 
     def pool(self, timeout: tp.Optional[int] = None):  # in milliseconds
         self.socks = dict(self.poller.poll(timeout))
@@ -49,106 +73,194 @@ class ZMQServer:
         if self.backend:
             self.backend.close()
 
+    @retry
+    def frontend_send_multipart(self, data: tp.List[tp.Any]):
+        if not isinstance(data, list):
+            data = [data]
+        self.frontend.send_multipart(data, flags=self.flags)
+
+    def frontend_recv_multipart(self) -> tp.List[tp.Any]:
+        return self.frontend.recv_multipart()
+
+    @retry
+    def backend_send_multipart(self, data: tp.List[tp.Any]):
+        if not isinstance(data, list):
+            data = [data]
+        self.backend.send_multipart(data, flags=self.flags)
+
+    def backend_recv_multipart(self) -> tp.List[tp.Any]:
+        return self.backend.recv_multipart()
+
 
 @dataclass
 class ZMQClient:
     context: zmq.Context
     socket: zmq.Socket
+    flags: int = 0
 
     def close(self):
         self.socket.close()
 
-    def send(self, message, serialize: bool = True):
-        try:
-            self.socket.send_pyobj(
-                message, flags=zmq.NOBLOCK
-            ) if serialize else self.socket.send(message, flags=zmq.NOBLOCK)
-        except Exception as e:
-            raise e
+    @retry
+    def send(self, data: tp.Any, serialize: bool = True):
+        if serialize:
+            data = Serialize.dump(data)
+        self.socket.send(data, flags=self.flags)
 
     def recv(
         self,
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
-    ):
+    ) -> tp.Optional[tp.Any]:
+        msg = None
+
+        if timeout and self.socket.poll(timeout=timeout) == 0:
+            return msg
+
         try:
-            if timeout is not None and self.socket.poll(timeout=timeout) == 0:
-                return None
-            else:
-                list_bytes = self.socket.recv_multipart()
-                if deserialize:
-                    list_obj = [pickle.loads(item) for item in list_bytes if item != b""]
-                    if len(list_obj) == 0:
-                        return None
-                    elif len(list_obj) == 1:
-                        return list_obj[0]
+            msg = self.socket.recv(flags=self.flags)
+        except zmq.ZMQError as e:
+            if not self.flags:
+                raise e
+
+        if msg is not None and deserialize:
+            msg = Serialize.load(msg)
+
+        return msg
+
+    @retry
+    def send_multipart(self, data: tp.List[tp.Any], serialize: bool = True):
+        if serialize:
+            data = Serialize.dumps(data)
+        self.socket.send_multipart(data, flags=self.flags)
+
+    def recv_multipart(
+        self,
+        deserialize: bool = True,
+        timeout: tp.Optional[int] = None,  # in milliseconds
+        max_num_message: tp.Optional[int] = None,
+    ) -> tp.List[tp.Any]:
+        if timeout and self.socket.poll(timeout=timeout) == 0:
+            return []
+        else:
+            list_bytes = []
+            while True or (max_num_message and len(list_bytes) < max(max_num_message, 1)):
+                try:
+                    flags = self.flags if timeout else 0
+                    msg = self.socket.recv_multipart(flags=flags)
+                    if msg is not None:
+                        list_bytes += msg
                     else:
-                        return list_obj
-                else:
-                    return list_bytes
-        except Exception as e:
-            raise e
+                        break
+                    if not timeout:
+                        break
+                except zmq.ZMQError:
+                    break
+
+            list_bytes = [item for item in list_bytes if item != b""]
+
+            if deserialize:
+                return [pickle.loads(item) for item in list_bytes]
+            else:
+                return list_bytes
 
     def request(
         self,
-        message,
+        data: tp.Any,
         serialize: bool = True,
         deserialize: bool = True,
         timeout: tp.Optional[int] = None,  # in milliseconds
-    ):
-        self.send(message, serialize)
-        return self.recv(deserialize, timeout)
+        multipart: bool = False,
+    ) -> tp.Optional[tp.Any]:
+        if multipart:
+            self.send_multipart(data, serialize)
+        else:
+            self.send(data, serialize)
 
-    def send_string(self, message: str):
-        self.socket.send_string(message, flags=zmq.NOBLOCK)
+        if timeout is None or timeout == -1:
+            msg = None
+            while msg is None:
+                if multipart:
+                    msg = self.recv_multipart(deserialize, 1000)
+                else:
+                    msg = self.recv(deserialize, 1000)
 
-    def recv_string(self, timeout: tp.Optional[int] = None):  # in milliseconds
-        try:
-            if timeout is not None and self.socket.poll(timeout=timeout) == 0:  # wait
-                return None  # timeout reached before any events were queued
-            else:
-                return self.socket.recv_string()  # events queued within our time limit
-        except Exception as e:
-            raise e
+            return msg
+        else:
+            return self.recv(deserialize, timeout)
+
+    @retry
+    def send_string(self, data: str):
+        self.socket.send_string(data, flags=self.flags)
+
+    def recv_string(
+        self, timeout: tp.Optional[int] = None
+    ) -> tp.Optional[str]:  # in milliseconds
+        if timeout is not None and self.socket.poll(timeout=timeout) == 0:  # wait
+            return None  # timeout reached before any events were queued
+        else:
+            return self.socket.recv_string(
+                flags=self.flags
+            )  # events queued within our time limit
 
     def request_as_string(
-        self, message: str, timeout: tp.Optional[int] = None  # in milliseconds
-    ):
-        self.send_string(message)
+        self, data: str, timeout: tp.Optional[int] = None  # in milliseconds
+    ) -> tp.Optional[str]:
+        self.send_string(data)
         return self.recv_string(timeout)
-
-
-@dataclass
-class ZMQAsyncClient(ZMQClient):
-    poller: zmq.Poller
-    socks: tp.Dict[zmq.Socket, tp.Any] = None  # type: ignore
-
-    def close(self):
-        self.socket.close()
-
-    def pool(self, timeout: tp.Optional[int] = None):  # in milliseconds
-        self.socks = dict(self.poller.poll(timeout=timeout))
-
-    def is_ready(self) -> bool:
-        return self.socks.get(self.socket) == zmq.POLLIN
 
 
 @dataclass
 class ZMQWorker:
     context: zmq.Context
     socket: zmq.Socket
+    flags: int = 0
 
     def close(self):
         self.socket.close()
+
+    @retry
+    def send(self, data: tp.Any, serialize: bool = True):
+        if serialize:
+            data = Serialize.dump(data)
+        self.socket.send(data, flags=self.flags)
+
+    @retry
+    def send_multipart(self, data: tp.List[tp.Any], serialize: bool = True):
+        if serialize:
+            data = Serialize.dumps(data)
+        self.socket.send_multipart(data, flags=self.flags)
+
+    def recv_multipart(
+        self,
+        deserialize: bool = True,
+        timeout: tp.Optional[int] = None,  # in milliseconds
+    ) -> tp.List:
+        if timeout and self.socket.poll(timeout=timeout) == 0:
+            return []
+        else:
+            data = self.socket.recv_multipart(flags=self.flags)
+            if data:
+                if deserialize:
+                    data = Serialize.loads(data)
+
+                return data
+            else:
+                return []
 
 
 @dataclass
 class ZMQProxy:
     context: zmq.Context
     frontend: zmq.Socket
-    backend: tp.List[zmq.Socket]
+    backends: tp.List[ZMQClient]
     poller: zmq.Poller
     socks: tp.Dict[zmq.Socket, tp.Any] = None  # type: ignore
+    flags: int = zmq.NOBLOCK
+
+    def close(self):
+        self.frontend.close()
+        [backend.close() for backend in self.backends]
 
     def pool(self, timeout: tp.Optional[int] = None):  # in milliseconds
         self.socks = dict(self.poller.poll(timeout))
@@ -156,28 +268,32 @@ class ZMQProxy:
     def is_frontend_ready(self) -> bool:
         return self.socks.get(self.frontend) == zmq.POLLIN
 
-    async def _send(self, sock, message):
-        return await sock.send_pyobj(message, flags=zmq.NOBLOCK)
+    def request(self, data: tp.Any) -> tp.List:
+        results = []
+        for backend in self.backends:
+            results.append(backend.request(data))
 
-    async def _send_from_all(self, message):
-        tasks = [self._send(sock, message) for sock in self.backend]
-        return await asyncio.gather(*tasks)
+        return results
 
-    async def _request(self, sock, message):
-        await sock.send_pyobj(message, flags=zmq.NOBLOCK)
-        return await sock.recv_multipart()
+    @retry
+    def frontend_send_multipart(self, data: tp.List[tp.Any]):
+        if not isinstance(data, list):
+            data = [data]
+        self.frontend.send_multipart(data, flags=self.flags)
 
-    async def _request_from_all(self, message):
-        tasks = [self._request(sock, message) for sock in self.backend]
-        return await asyncio.gather(*tasks)
+    def frontend_recv_multipart(self) -> tp.List[tp.Any]:
+        try:
+            return self.frontend.recv_multipart(flags=self.flags)
+        except zmq.ZMQError:
+            return []
 
-    def request(self, message):
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(self._request_from_all(message))
+    def backend_send_multipart(self, data: tp.List[tp.Any]):
+        @retry
+        def send(backend):
+            backend.socket.send_multipart(data, flags=self.flags)
 
-    def close(self):
-        self.frontend.close()
-        [client.close() for client in self.backend]
+        for b in self.backends:
+            send(b)
 
 
 class ZMQPatterns:
@@ -275,14 +391,13 @@ class ZMQPatterns:
         return ZMQClient(context=context, socket=socket)
 
     @classmethod
-    def async_client(cls, server_addr: str) -> ZMQAsyncClient:
+    def async_client(cls, server_addr: str) -> ZMQClient:
         log_to_file(trace(cls, f"connection to {server_addr}"))
 
         context = zmq.Context()
         socket = cls.__get_dealer(context, server_addr, bind=False)
-        poller = cls.__get_poller([socket])
 
-        return ZMQAsyncClient(context=context, socket=socket, poller=poller)
+        return ZMQClient(context=context, socket=socket, flags=zmq.NOBLOCK)
 
     @classmethod
     def worker(cls, server_addr: str) -> ZMQWorker:
@@ -295,9 +410,6 @@ class ZMQPatterns:
 
     @classmethod
     def proxy(cls, proxy_addr: str, server_addrs: tp.List[str]) -> ZMQProxy:
-        if sys.platform == "win32":
-            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
         try:
             log_to_file(trace(cls, f"bind socket {proxy_addr}"))
 
@@ -305,11 +417,10 @@ class ZMQPatterns:
             frontend = cls.__get_router(context, proxy_addr)
             poller = cls.__get_poller([frontend])
 
-            async_context = zmq.asyncio.Context()
-            backend = []
+            backends = []
             for addr in server_addrs:
                 log_to_file(trace(cls, f"connection to {addr}"))
-                backend.append(cls.__get_req(async_context, addr))
+                backends.append(cls.async_client(addr))
 
         except zmq.error.ZMQError as e:
             raise e
@@ -317,6 +428,6 @@ class ZMQPatterns:
         return ZMQProxy(
             context=context,
             frontend=frontend,
-            backend=backend,
+            backends=backends,
             poller=poller,
         )

@@ -1,14 +1,21 @@
 from nlp.prosody_prediction.eval_interface import ProsodyPredictionInterface
 
 if __name__ == "__main__":
-    ckpt_path = "/src/experiments/09_Oct_2023_16_47_roberta_multiclass_both/_checkpoints/epoch=14-step=7034.ckpt"
+    ckpt_path = "M:\\Ilya\\JustAI\\07_Apr_2025_16_43_34_prosody_predictor_epoch=20_step=131250_category_EER=0.3664.ckpt"
     device = "cpu"
-    text = "Jane, I don’t like cavillers or questioners; besides, there is something truly forbidding in a child taking up her elders in that manner."
 
-    interface = ProsodyPredictionInterface(ckpt_path=ckpt_path, device=device, lang="EN")
+    text = """
+    Главная особенность этой технологии — создание замкнутого цикла обучения, где ИИ сам выступает и учеником, и учителем.
+    Система работает по принципу внутренней обратной связи: одна часть модели генерирует ответы, а другая выступает «судьей»,
+    оценивая их качество и соответствие заданным критериям.
+    Если ответ удовлетворяет требованиям, модель получает «вознаграждение» и запоминает успешную стратегию.
+    """
+
+    interface = ProsodyPredictionInterface(ckpt_path=ckpt_path, lang="RU", device=device)
     text_with_prosody = interface.predict(text)
+
     for sent_id, sent in enumerate(text_with_prosody.sents):
         print(f"Sentence {sent_id}:")
         for token in sent.tokens:
-            print(f"{token.text} -- {token.prosody}")
+            print(f"\t{token.text} -- {token.prosody}")
         print("***************************\n")

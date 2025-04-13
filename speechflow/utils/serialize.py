@@ -69,6 +69,7 @@ class Serialize:
         if inplace:
             for index in range(len(list_dump)):
                 list_dump[index] = Serialize.load(list_dump[index])
+            return list_dump
         else:
             return [Serialize.load(dump) for dump in list_dump]
 
@@ -81,7 +82,13 @@ class Serialize:
 
 class JsonEncoder(json.JSONEncoder):
     def default(self, obj):
-        from multilingual_text_parser import Doc, Position, Sentence, Syntagma, Token
+        from multilingual_text_parser.data_types import (
+            Doc,
+            Position,
+            Sentence,
+            Syntagma,
+            Token,
+        )
 
         if isinstance(obj, np.ndarray):
             return codecs.encode(pickle.dumps(obj), "base64").decode()

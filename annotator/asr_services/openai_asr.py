@@ -12,7 +12,7 @@ from whisper.tokenizer import get_tokenizer
 from annotator.asr_services.cloud_asr import CloudASR
 from speechflow.data_pipeline.core.parser_types import Metadata
 from speechflow.utils.checks import check_install
-from speechflow.utils.gpu import get_freer_gpu, get_total_gpu_memory
+from speechflow.utils.gpu_info import get_freer_gpu, get_total_gpu_memory
 from speechflow.utils.tqdm_disable import tqdm_disable
 
 __all__ = ["OpenAIASR"]
@@ -53,7 +53,7 @@ class OpenAIASR(CloudASR):
             self._lang = "kk"
 
         if self._lang not in OpenAIASR_LANGUAGES:
-            raise ValueError(f"Language {lang} not support in Whisper model!")
+            raise ValueError(f"Language {lang} is not support in Whisper model!")
 
     @staticmethod
     def release(_):
@@ -69,12 +69,12 @@ class OpenAIASR(CloudASR):
                     f"There is not enough GPU memory available for Whisper {self._model_name} model"
                 )
                 return "cpu"
-            elif "medium" in self._model_name and total_gpu_memory < 6:
+            elif "medium" in self._model_name and total_gpu_memory < 3.9:
                 LOGGER.info(
                     f"There is not enough GPU memory available for Whisper {self._model_name} model"
                 )
                 return "cpu"
-            elif "small" in self._model_name and total_gpu_memory < 4:
+            elif "small" in self._model_name and total_gpu_memory < 1.9:
                 LOGGER.info(
                     f"There is not enough GPU memory available for Whisper {self._model_name} model"
                 )
@@ -103,12 +103,12 @@ class OpenAIASR(CloudASR):
             model = getattr(OpenAIASR, "model")
             number_tokens = getattr(OpenAIASR, "number_tokens")
 
-        md = {"wav_path": metadata["wav_path"]}
+        md = {"audio_path": metadata["audio_path"]}
 
         if "waveform" in metadata:
             audio = metadata["waveform"] / np.float32(np.iinfo(np.int16).max)
         else:
-            audio = Path(metadata["wav_path"]).as_posix()
+            audio = Path(metadata["audio_path"]).as_posix()
 
         with tqdm_disable():
             if model.device.type != "cpu":
@@ -141,6 +141,9 @@ class OpenAIASR(CloudASR):
                 end = item["end"]
                 if not word.strip():
                     continue
+
+                if not timestamps:
+                    word = word.strip().title()
 
                 timestamps.append((word.strip(), start, end))
 

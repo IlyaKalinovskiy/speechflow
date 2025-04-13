@@ -12,7 +12,7 @@ TEST_DATA_DIR = get_root_dir() / "tests/data/audiobook_spliter"
 def test_audiobook_spliter():
     audio_spliter = AudiobookSpliter(lang="RU")
     data = audio_spliter.read_datasamples(
-        file_list=sorted(list((TEST_DATA_DIR / "src").glob("*.wav"))), n_processes=1
+        file_list=sorted(list((TEST_DATA_DIR / "src").glob("*.wav")))
     )
 
     assert len(data) == 2
@@ -22,7 +22,7 @@ def test_audiobook_spliter():
     for i, item in enumerate(data):
         for j, sega in enumerate(item["segmentation"]):
             gt_sega_path = TEST_DATA_DIR / "segs" / f"{i}_{j}.TextGrid"
-            gt_sega = AudioSeg.load(gt_sega_path, item["wav_path"])
+            gt_sega = AudioSeg.load(gt_sega_path, audio_path=item["audio_path"])
 
             version_check(multilingual_text_parser, gt_sega.meta["text_parser_version"])
             assert sega.audio_chunk.duration == gt_sega.audio_chunk.duration

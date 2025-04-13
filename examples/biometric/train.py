@@ -2,16 +2,17 @@ import typing as tp
 import logging
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import torch
 import pydantic
-import numpy.typing as npt
 import pytorch_lightning as pl
 
 from torch import nn
 from tqdm import tqdm
 
+from speechflow.data_pipeline.collate_functions.utils import collate_sequence
 from speechflow.data_pipeline.core import (
     BaseBatchProcessor,
     BaseCollate,
@@ -25,9 +26,10 @@ from speechflow.data_pipeline.core import (
     PipeRegistry,
     Singleton,
     TrainData,
+    tp_DATA,
 )
 from speechflow.data_pipeline.datasample_processors.algorithms.audio_processing.ssl_models import (
-    Wav2Vec,
+    Whisper,
 )
 from speechflow.data_pipeline.samplers import RandomSampler
 from speechflow.data_server.helpers import LoaderParams, init_data_loader
@@ -39,6 +41,7 @@ from speechflow.io import (
     construct_file_list,
     split_file_list,
 )
+from speechflow.logging import set_verbose_logging
 from speechflow.logging.server import LoggingServer
 from speechflow.training import (
     BaseCriterion,
@@ -48,10 +51,9 @@ from speechflow.training import (
     LightningEngine,
     Optimizer,
 )
-from speechflow.training.utils.pad_utils import sequence_collate
-from speechflow.training.utils.tensor_utils import run_rnn_on_padded_sequence
 from speechflow.utils.init import lazy_initialization
 from speechflow.utils.profiler import Profiler
+from speechflow.utils.tensor_utils import run_rnn_on_padded_sequence
 
 LOGGER = logging.getLogger("root")
 
@@ -64,16 +66,14 @@ LOGGER = logging.getLogger("root")
 @dataclass
 class SSLDataSample(DataSample):
     audio_chunk: AudioChunk = None
-    speaker_name: str = None
-    speaker_id: int = None
-    ssl_feat: npt.NDArray = None
+    speaker_name: tp_DATA = None
+    speaker_id: tp_DATA = None
+    ssl_feat: tp_DATA = None
 
 
 @dataclass
-class SSLCollateOutput(BaseCollateOutput):
-    speaker_id: torch.Tensor = None
-    ssl_feat: torch.Tensor = None
-    ssl_feat_length: torch.Tensor = None
+class SSLCollateOutput(SSLDataSample, BaseCollateOutput):
+    ssl_feat_lengths: torch.Tensor = None
 
 
 @dataclass
@@ -84,7 +84,7 @@ class SSLTarget(TrainData):
 @dataclass
 class SSLForwardInput(TrainData):
     ssl_feat: torch.Tensor = None
-    ssl_feat_length: torch.Tensor = None
+    ssl_feat_lengths: torch.Tensor = None
 
 
 @dataclass
@@ -98,7 +98,7 @@ class SSLForwardOutput(TrainData):
 
 
 class DSParser(BaseDSParser):
-    def reader(self, file_path, label=None) -> tp.List[tp.Dict[str, tp.Any]]:
+    def reader(self, file_path: Path, label=None) -> tp.List[tp.Dict[str, tp.Any]]:
         sega = AudioSeg.load(file_path)
         metadata = {
             "file_path": file_path,
@@ -128,28 +128,32 @@ class SignalProcessor(BaseDSProcessor):
 
 
 class SSLProcessor(BaseDSProcessor):
-    def __init__(self, device: str = "cpu"):
+    def __init__(
+        self,
+        model_name: tp.Literal["tiny", "base", "small", "medium", "large-v2"] = "tiny",
+        device: str = "cpu",
+    ):
         super().__init__(device=device)
-        self.ssl_model = None
+        self.model_name = model_name
+        self.ssl_model: tp.Optional[Whisper] = None
 
     def init(self):
         super().init()
-        self.ssl_model = Wav2Vec(feature_type="encode_level", device=self.device)
+        self.ssl_model = Whisper(model_name=self.model_name, device=self.device)
 
     @PipeRegistry.registry(inputs={"audio_chunk"}, outputs={"ssl_feat"})
     @lazy_initialization
     def process(self, ds: SSLDataSample) -> SSLDataSample:
-        ssl_feat = self.ssl_model(ds.audio_chunk)
-        ds.ssl_feat = ssl_feat.encode
+        ds.ssl_feat = self.ssl_model(ds.audio_chunk).encoder_feat
         return ds.to_numpy()
 
 
 class SSLCollate(BaseCollate):
-    def __call__(self, batch: tp.List[SSLDataSample]) -> SSLCollateOutput:  # type: ignore
-        collated = super().__call__(batch)
+    def collate(self, batch: tp.List[SSLDataSample]) -> SSLCollateOutput:  # type: ignore
+        collated = super().collate(batch)
         collated = SSLCollateOutput(**collated.to_dict())  # type: ignore
 
-        ssl_feat, length = sequence_collate(batch, "ssl_feat", pad_id=0)
+        ssl_feat, length = collate_sequence(batch, "ssl_feat", pad_values=0)
 
         if batch[0].speaker_id is not None:
             speaker_id = [x.speaker_id for x in batch]
@@ -159,7 +163,7 @@ class SSLCollate(BaseCollate):
 
         collated.speaker_id = speaker_id
         collated.ssl_feat = ssl_feat
-        collated.ssl_feat_length = length
+        collated.ssl_feat_lengths = length
         return collated
 
 
@@ -203,7 +207,7 @@ class SpeakerID(metaclass=Singleton):
 
 class SSLBiometricModelParams(BaseTorchModelParams):
     n_speakers: int = pydantic.Field(0, ge=0)
-    ssl_dim: tp.Literal[768, 1024] = 1024
+    ssl_dim: tp.Literal[384, 1280] = 384
     proj_dim: int = pydantic.Field(256, ge=128, le=1024)
     rnn_dim: int = pydantic.Field(128, ge=64, le=256)
 
@@ -229,7 +233,7 @@ class SSLBiometricModel(BaseTorchModel):
 
     def forward(self, inputs: SSLForwardInput) -> SSLForwardOutput:
         x = self.ssl_proj(inputs.ssl_feat)
-        after_rnn = run_rnn_on_padded_sequence(self.rnn, x, inputs.ssl_feat_length)
+        after_rnn = run_rnn_on_padded_sequence(self.rnn, x, inputs.ssl_feat_lengths)
         y = self.bio_cls(torch.mean(after_rnn, dim=1))
         return SSLForwardOutput(logits=y)
 
@@ -240,7 +244,7 @@ class BatchProcessor(BaseBatchProcessor):
     ) -> (SSLForwardInput, SSLTarget, tp.List[SSLDataSample]):
         _collated: SSLCollateOutput = batch.collated_samples  # type: ignore
         _input = SSLForwardInput(
-            ssl_feat=_collated.ssl_feat, ssl_feat_length=_collated.ssl_feat_length
+            ssl_feat=_collated.ssl_feat, ssl_feat_lengths=_collated.ssl_feat_lengths
         )
         _target = SSLTarget(speaker_id=_collated.speaker_id)
         return _input.to(self.device), _target.to(self.device), batch.data_samples
@@ -271,6 +275,8 @@ class Criterion(BaseCriterion):
 
 
 def create_data_pipline(subsets):
+    set_verbose_logging()
+
     parser = DSParser()
     preprocessing = [SignalProcessor().process, SSLProcessor().process]
     collate = SSLCollate()
@@ -353,6 +359,31 @@ def train(experiment_path: str, loaders: tp.Dict[str, DataLoader]) -> str:
     return experiment_path
 
 
+def test(expr_path: str | Path, file_path: str | Path):
+    ckpt_path = ExperimentSaver.get_last_checkpoint(expr_path)
+    if ckpt_path is None:
+        raise FileNotFoundError("checkpoint not found")
+
+    checkpoint = ExperimentSaver.load_checkpoint(ckpt_path)
+
+    model = SSLBiometricModel(checkpoint["params"])
+    model.eval()
+    model.load_state_dict(checkpoint["state_dict"])
+
+    metadata = _data_pipeline["valid"].dataset_parser.reader(file_path)
+    batch = _data_pipeline["valid"].metadata_to_batch(metadata)
+
+    with torch.inference_mode():
+        model_input, _, _ = BatchProcessor()(batch)
+        predict: SSLForwardOutput = model(model_input)
+
+    speaker_id_map = checkpoint["speaker_id_map"]
+    speaker_id = speaker_id_map[batch.data_samples[0].speaker_name]
+
+    print("speaker_id target:", speaker_id)
+    print("speaker_id predict:", torch.argmax(predict.logits).item())
+
+
 if __name__ == "__main__":
     from speechflow.utils.fs import get_root_dir
 
@@ -376,25 +407,4 @@ if __name__ == "__main__":
             ) as _loaders:
                 train(_expr_path, _loaders)
     else:  # EVALUATION
-        _ckpt_path = ExperimentSaver.get_last_checkpoint(_expr_path)
-        if _ckpt_path is None:
-            raise FileNotFoundError("checkpoint not found")
-
-        _checkpoint = ExperimentSaver.load_checkpoint(_ckpt_path)
-
-        _model = SSLBiometricModel(_checkpoint["params"])
-        _model.eval()
-        _model.load_state_dict(_checkpoint["state_dict"])
-
-        _metadata = _data_pipeline["valid"].dataset_parser.reader(_flist[0])
-        _batch = _data_pipeline["valid"].metadata_to_batch(_metadata)
-
-        with torch.inference_mode():
-            _model_input, _, _ = BatchProcessor()(_batch)
-            _predict: SSLForwardOutput = _model(_model_input)
-
-        _speaker_id_map = _checkpoint["speaker_id_map"]
-        _speaker_id = _speaker_id_map[_batch.data_samples[0].speaker_name]
-
-        print("speaker_id target:", _speaker_id)
-        print("speaker_id predict:", torch.argmax(_predict.logits).item())
+        test(_expr_path, _flist[-1])

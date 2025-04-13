@@ -45,6 +45,8 @@ class GoogleASR(CloudASR):
             storage_client.create_bucket(self._bucket_name)
 
     def _clear_bucket(self, storage_client=None):
+        from google.cloud import storage
+
         if storage_client is None:
             storage_client = storage.Client()
 
@@ -55,11 +57,12 @@ class GoogleASR(CloudASR):
 
     def _transcription(self, metadata: Metadata) -> Metadata:
         from google.cloud import speech as google_speech
+        from google.cloud import storage
 
         storage_client = storage.Client()
         speech_client = google_speech.SpeechClient()
 
-        md = {"wav_path": metadata["wav_path"]}
+        md = {"audio_path": metadata["audio_path"]}
 
         config = google_speech.RecognitionConfig(
             encoding=google_speech.RecognitionConfig.AudioEncoding.LINEAR16,
@@ -68,10 +71,10 @@ class GoogleASR(CloudASR):
             enable_word_time_offsets=True,
         )
 
-        if AudioChunk(md["wav_path"]).duration < 60:
+        if AudioChunk(md["audio_path"]).duration < 60:
             try:
                 audio = google_speech.RecognitionAudio(
-                    content=metadata["waveform"].tobytes()
+                    content=metadata["waveform"].to_bytes()
                 )
                 operation = speech_client.long_running_recognize(
                     config=config, audio=audio
@@ -83,7 +86,7 @@ class GoogleASR(CloudASR):
             bucket = storage_client.get_bucket(self._bucket_name)
             blob = bucket.blob(str(uuid.uuid4()))
             blob.upload_from_string(
-                metadata["waveform"].tobytes(), content_type="audio/wav"
+                metadata["waveform"].to_bytes(), content_type="audio/wav"
             )
 
             try:

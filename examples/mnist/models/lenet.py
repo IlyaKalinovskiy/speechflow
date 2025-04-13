@@ -51,5 +51,5 @@ class LeNet(BaseTorchModel):
         self._model = LeNet5(self.params.num_classes, self.params.input_channels)
 
     def forward(self, input: MNISTForwardInput) -> MNISTForwardOutput:
-        logits = self._model(input.images)
+        logits = self._model(input.image)
         return MNISTForwardOutput(logits=logits)

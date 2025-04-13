@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from speechflow.training.utils.tensor_utils import get_mask_from_lengths
+from speechflow.utils.tensor_utils import get_mask_from_lengths
 from tts.acoustic_models.modules.component import Component
 from tts.acoustic_models.modules.data_types import DecoderOutput, VarianceAdaptorOutput
 from tts.acoustic_models.modules.params import DecoderParams
@@ -273,8 +273,8 @@ class Tacotron2Decoder(Component):
             return inputs.additional_content.get(self.params.target)
 
     def forward_step(self, inputs: VarianceAdaptorOutput) -> DecoderOutput:  # type: ignore
-        content = self.get_content(inputs)[0]
-        content_lengths = self.get_content_lengths(inputs)[0]
+        content = inputs.get_content()[0]
+        content_lengths = inputs.get_content_lengths()[0]
 
         memory = content
         memory_lengths = content_lengths
@@ -345,8 +345,8 @@ class Tacotron2Decoder(Component):
         )
 
     def inference_step(self, inputs: VarianceAdaptorOutput, **kwargs) -> DecoderOutput:  # type: ignore
-        content = self.get_content(inputs)[0]
-        content_lengths = self.get_content_lengths(inputs)[0]
+        content = inputs.get_content()[0]
+        content_lengths = inputs.get_content_lengths()[0]
 
         memory = content
         memory_lengths = content_lengths

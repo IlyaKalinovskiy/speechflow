@@ -4,7 +4,6 @@ import pickle
 import typing as tp
 import hashlib
 import logging
-import itertools
 
 from collections import Counter, defaultdict
 from copy import deepcopy
@@ -13,7 +12,6 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 
-from annoy import AnnoyIndex
 from tqdm import tqdm
 
 from speechflow.data_pipeline.core import Dataset, Singleton
@@ -22,6 +20,11 @@ from speechflow.io import AudioSeg
 from speechflow.logging import trace
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.dictutils import find_field
+
+try:
+    from annoy import AnnoyIndex
+except ImportError as e:
+    print(f"Annoy import failed: {e}")
 
 __all__ = [
     "SpeakerIDSetter",
@@ -374,7 +377,9 @@ class StatisticsRange(metaclass=Singleton):
         if self.statistics_file.is_file():
             self.statistics: tp.Dict[str, tp.Any] = json.loads(self.statistics_file.read_text(encoding="utf-8"))  # type: ignore
         else:
-            raise ValueError("ranges.json not found! First do execute dump.py")
+            raise ValueError(
+                f"{self.statistics_file.as_posix()} not found! First do execute dump.py"
+            )
 
     def __call__(self, data: Dataset) -> Dataset:
         return data
@@ -419,7 +424,7 @@ class MeanBioEmbeddings(metaclass=Singleton):
                 )  # type: ignore
             else:
                 raise ValueError(
-                    "mean_bio_embeddings.json not found! First do execute dump.py"
+                    f"{self.mean_embeddings_file.as_posix()} not found! First do execute dump.py"
                 )
 
         self.data = {
@@ -446,33 +451,28 @@ class DatasetStatistics(metaclass=Singleton):
     def __init__(
         self,
         data_subset_name: str,
-        dump: tp.Optional[tp_PATH] = None,
+        dump_path: tp.Optional[tp_PATH] = None,
         add_dataset_statistics: bool = True,
-        add_phonemes_statistics: bool = True,
         add_segmentations: bool = True,
         add_speaker_emb: bool = True,
         **kwargs,
     ):
         self.data_subset_name = data_subset_name
-        self.dump = Path(dump) if dump else None
+        self.dump_path = Path(dump_path) if dump_path else None
         self.add_dataset_statistics = add_dataset_statistics
-        self.add_phonemes_statistics = add_phonemes_statistics
         self.add_segmentations = add_segmentations
         self.add_speaker_emb = add_speaker_emb
-        self.data_cfg = kwargs.get("data_cfg", {})
-        self.pause_step = find_field(self.data_cfg, "step")
-        self.hop_len = find_field(self.data_cfg, "hop_len")
+        self.cfg_data = kwargs.get("cfg_data", {})
+        self.pause_step = find_field(self.cfg_data, "step")
+        self.hop_len = find_field(self.cfg_data, "hop_len")
         self.hash = None
-        self.phonemes_statistics: tp.Dict[
-            str, tp.Dict[str, tp.List[float]]
-        ] = defaultdict(dict)
         self.transcription_length: tp.Dict[str, tp.List[int]] = defaultdict(list)
         self.wave_duration: tp.Dict[str, tp.List[float]] = defaultdict(list)
         self.max_transcription_length: int = 0
         self.max_audio_duration: float = 0.0
         self.segmentations: tp.List[tp.Tuple[str, bytes]] = []
         self.speaker_emb: tp.Dict[str, tp.List[tp.Any]] = defaultdict(list)
-        self.cache_folder = self._get_cache_folder(self.dump)
+        self.cache_folder = self._get_cache_folder(self.dump_path)
 
     @staticmethod
     def _get_cache_folder(dump: Path) -> tp.Optional[Path]:
@@ -491,7 +491,6 @@ class DatasetStatistics(metaclass=Singleton):
 
         d = (
             f"{int(self.add_dataset_statistics)}"
-            f"{int(self.add_phonemes_statistics)}"
             f"{int(self.add_segmentations)}"
             f"{int(self.add_speaker_emb)}"
         )
@@ -505,12 +504,10 @@ class DatasetStatistics(metaclass=Singleton):
         for ds in tqdm(data, "Counting statistics over dataset"):
             try:
                 ds = add_pauses_from_timestamps(ds.copy(), step=self.pause_step)
-                ph_by_word = ds.sent.get_phonemes()
-                transcription = tuple(itertools.chain.from_iterable(ph_by_word))
+                transcription = ds.sent["phonemes"]
 
                 self.transcription_length[ds.speaker_name].append(len(transcription))  # type: ignore
                 self.wave_duration[ds.speaker_name].append(ds.audio_chunk.duration)  # type: ignore
-
             except Exception as e:
                 LOGGER.error(trace(self, e, message=ds.file_path.as_posix()))
 
@@ -531,34 +528,6 @@ class DatasetStatistics(metaclass=Singleton):
             )
             self.max_audio_duration = max(max(v) for v in self.wave_duration.values())
 
-    def _add_phonemes_stat(self, data: Dataset):
-        for ds in tqdm(data, "Counting phonemes statistics over dataset"):
-            try:
-                ph_by_word = ds.sent.get_phonemes()
-                transcription = tuple(itertools.chain.from_iterable(ph_by_word))
-
-                ph_timestamps = [
-                    end - start
-                    for start, end in tuple(
-                        itertools.chain.from_iterable(ds.phoneme_timestamps)
-                    )
-                ]
-                for ph, ph_len in zip(transcription, ph_timestamps):
-                    ph_lens = self.phonemes_statistics[ds.speaker_name].setdefault(ph, [])
-                    ph_lens.append(ph_len)
-
-            except Exception as e:
-                LOGGER.error(trace(self, e, message=ds.file_path.as_posix()))
-
-        if self.phonemes_statistics:
-            var = self.phonemes_statistics
-            for name, field in var.items():  # type: ignore
-                if isinstance(field, tp.Mapping):
-                    for ph, ph_lens in field.items():
-                        var[name][ph] = np.asarray(ph_lens, dtype=np.float32)  # type: ignore
-                else:
-                    var[name] = np.asarray(field, dtype=np.float32)  # type: ignore
-
     def _add_segmentations(self, data: Dataset):
         for ds in tqdm(data, "Loading segmentations"):
             path = Path(ds.file_path)
@@ -567,7 +536,7 @@ class DatasetStatistics(metaclass=Singleton):
             self.segmentations.append((path.as_posix(), sega))
 
     def _add_speaker_emb(self):
-        dump_files = self.dump.rglob("*.pkl")
+        dump_files = self.dump_path.rglob("*.pkl")
 
         for file_path in tqdm(dump_files, "Loading speaker embeddings"):
             if "cache" in file_path.as_posix():
@@ -587,7 +556,7 @@ class DatasetStatistics(metaclass=Singleton):
                 else:
                     continue
                 seg_meta = AudioSeg.load_meta(file_path)
-                item.append(seg_meta.get("orig_wav_path"))
+                item.append(seg_meta.get("orig_audio_path"))
                 item.append(np.asarray(seg_meta.get("orig_audio_chunk")))
                 self.speaker_emb[speaker_name].append(item)
             except Exception as e:
@@ -612,13 +581,10 @@ class DatasetStatistics(metaclass=Singleton):
             if self.add_dataset_statistics:
                 self._add_dataset_stat(data)
 
-            if self.add_phonemes_statistics:
-                self._add_phonemes_stat(data)
-
             if self.add_segmentations:
                 self._add_segmentations(data)
 
-            if self.add_speaker_emb and self.dump:
+            if self.add_speaker_emb and self.dump_path:
                 self._add_speaker_emb()
 
         self.pickle()
@@ -639,7 +605,7 @@ class DatasetStatistics(metaclass=Singleton):
             if isinstance(value, bytes):
                 try:
                     setattr(self, key, pickle.loads(value))
-                except:
+                except Exception:
                     pass
 
     @staticmethod

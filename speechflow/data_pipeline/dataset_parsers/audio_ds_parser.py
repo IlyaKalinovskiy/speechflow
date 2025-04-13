@@ -59,7 +59,7 @@ class AudioDSParser(BaseDSParser):
 
     @staticmethod
     @PipeRegistry.registry(inputs={"waveform"}, outputs={"audio_data"})
-    def wave_converter(
+    def audio_converter(
         metadata: Metadata, audio_format: str = "ogg"
     ) -> tp.List[Metadata]:
         """Convert audio fragment to compatible format for sending to ASR engines.
@@ -102,5 +102,5 @@ if __name__ == "__main__":
     _preproc_fn = init_metadata_preprocessing_from_config(AudioDSParser, _cfg)
     _parser = AudioDSParser(_preproc_fn, file_ext=".wav")
 
-    data = _parser.read_datasamples(file_list=_flist, data_root=_root, n_processes=1)
+    data = _parser.read_datasamples(file_list=_flist, data_root=_root)
     print("sr:", data.item(0).audio_chunk.sr)

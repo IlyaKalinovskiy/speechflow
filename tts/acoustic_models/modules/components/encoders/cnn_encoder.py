@@ -1,3 +1,5 @@
+import typing as tp
+
 from torch import nn
 
 from tts.acoustic_models.modules.common.layers import Conv
@@ -11,9 +13,12 @@ __all__ = ["CNNEncoder", "CNNEncoderParams"]
 
 
 class CNNEncoderParams(LinguisticConditionParams):
-    cnn_n_layers: int = 3
-    cnn_n_channels: int = 256
-    cnn_kernel_size: int = 3
+    cnn_n_layers: int = 0
+    cnn_kernel_sizes: tp.Union[int, tp.List[int]] = [7, 5, 3]
+
+    def model_post_init(self, __context: tp.Any):
+        if isinstance(self.cnn_kernel_sizes, int):
+            self.cnn_kernel_sizes = [self.cnn_kernel_sizes] * self.cnn_n_layers
 
 
 class CNNEncoder(LinguisticCondition):
@@ -24,22 +29,19 @@ class CNNEncoder(LinguisticCondition):
 
         self.convolutions = nn.ModuleList()
         for idx in range(params.cnn_n_layers):
-            in_dim = input_dim if idx == 0 else params.cnn_n_channels
-            out_dim = (
-                params.cnn_n_channels if idx + 1 != params.cnn_n_layers else input_dim
-            )
+            kernel_size = params.cnn_kernel_sizes[idx]
             conv_layer = nn.Sequential(
                 Conv(
-                    in_dim,
-                    out_dim,
-                    kernel_size=params.cnn_kernel_size,
+                    input_dim,
+                    input_dim,
+                    kernel_size=kernel_size,
                     stride=1,
-                    padding=int((params.cnn_kernel_size - 1) / 2),
+                    padding=(kernel_size - 1) // 2,
                     dilation=1,
                     w_init_gain="relu",
                 ),
-                nn.BatchNorm1d(out_dim),
-                nn.LeakyReLU(0.2),
+                nn.BatchNorm1d(input_dim),
+                nn.SiLU(),
             )
             self.convolutions.append(conv_layer)
 
@@ -48,7 +50,7 @@ class CNNEncoder(LinguisticCondition):
         return super().output_dim
 
     def forward_step(self, inputs: ComponentInput) -> EncoderOutput:  # type: ignore
-        x, x_lens, x_mask = self.get_content_and_mask(inputs)
+        x, x_lens, x_mask = inputs.get_content_and_mask()
 
         if self.params.cnn_n_layers:
             x = x.transpose(1, -1)
@@ -57,6 +59,5 @@ class CNNEncoder(LinguisticCondition):
 
             x = x.transpose(1, -1)
 
-        y = super().add_ling_features(x, inputs)
-
-        return EncoderOutput.copy_from(inputs).set_content(y)
+        outputs = super().forward_step(inputs.set_content(x))
+        return EncoderOutput.copy_from(outputs)

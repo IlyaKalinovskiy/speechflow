@@ -9,7 +9,7 @@ from speechflow.training.losses.attention import *
 from speechflow.training.losses.loss1d import *
 from speechflow.training.losses.spectral import *
 from speechflow.training.losses.vae_loss import *
-from speechflow.training.utils.tensor_utils import get_mask_from_lengths
+from speechflow.utils.tensor_utils import get_mask_from_lengths
 from tts.acoustic_models.data_types import TTSForwardOutput, TTSTarget
 
 __all__ = ["TTSLoss", "MultipleLoss"]
@@ -62,8 +62,15 @@ class TTSLoss(BaseCriterion):
         output_spec = output.spectrogram
         target_spec = target.spectrogram
 
-        input_mask = get_mask_from_lengths(target.input_lengths)
-        output_mask = get_mask_from_lengths(output.spectrogram_lengths)
+        if target.input_lengths is not None:
+            input_mask = get_mask_from_lengths(target.input_lengths)
+        else:
+            input_mask = None
+
+        if output.spectrogram_lengths is not None:
+            output_mask = get_mask_from_lengths(output.spectrogram_lengths)
+        else:
+            output_mask = None
 
         total_loss = {}
         for sp_loss in self.spectral_loss:

@@ -1,1 +1,1 @@
-from .cfm_postnet import CFMPostnet, CFMPostnetParams
+from .wrapper_postnet import *

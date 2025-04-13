@@ -18,14 +18,23 @@ import numpy.typing as npt
 from tqdm import tqdm
 
 from speechflow.data_pipeline.core import DataPipeline
-from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
+    TTSTextProcessor,
+)
 from speechflow.data_pipeline.dataset_parsers import EasyDSParser
 from speechflow.data_server.helpers import LoaderParams, init_data_loader
-from speechflow.io import AudioSeg, Timestamps, check_path, construct_file_list, tp_PATH
+from speechflow.io import (
+    AudioSeg,
+    AudioSegPreview,
+    Timestamps,
+    check_path,
+    construct_file_list,
+    tp_PATH,
+)
 from speechflow.logging.server import LoggingServer
 from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.dictutils import find_field
-from speechflow.utils.gpu import get_freer_gpu
+from speechflow.utils.gpu_info import get_freer_gpu
 from speechflow.utils.init import init_class_from_config
 from tts import forced_alignment
 
@@ -51,14 +60,14 @@ def parse_args():
         "-ckpt",
         "--ckpt_path",
         help="path to model checkpoint",
-        type=str,
+        type=Path,
         required=True,
     )
     arguments_parser.add_argument(
         "-st", "--stage", help="alignment stage", type=int, required=True
     )
     arguments_parser.add_argument(
-        "-bs", "--batch_size", help="num samples in batch", type=int, default=1
+        "-bs", "--batch_size", help="num samples in batch", type=int, default=16
     )
     arguments_parser.add_argument(
         "-ns",
@@ -104,10 +113,12 @@ class Aligner:
         n_processes: int = 1,
         device: str = "cpu",
         reverse_mode: bool = False,
-        min_pause_len: float = 0.08,
+        min_pause_len: float = 0.08,  # in seconds
         sega_suffix: str = "",
+        max_duration: tp.Optional[float] = 15,  # in seconds
         preload: tp.Optional[tp.Union[tp.Dict, tp.Tuple]] = None,
     ):
+        self._ckpt_path = ckpt_path
         self._stage = stage
         self._batch_size = batch_size
         self._n_processes = n_processes
@@ -123,12 +134,13 @@ class Aligner:
 
         (
             self._cfg_data,
-            self._sample_rate,
             self._hop_len,
             self._speaker_id_map,
             self._lang_id_map,
             self._lang,
-        ) = self._prepare_aligning(ckpt_path, reverse_mode, ckpt_preload)
+        ) = self._prepare_aligning(
+            ckpt_path, reverse_mode, max_duration, ckpt_preload=ckpt_preload
+        )
 
         env["DEVICE"] = device
 
@@ -166,6 +178,7 @@ class Aligner:
     def _prepare_aligning(
         ckpt_path: tp_PATH,
         reverse_mode: bool = False,
+        max_duration: tp.Optional[float] = None,
         ckpt_preload: tp.Optional[tp.Dict[str, tp.Any]] = None,
     ):
         if ckpt_preload is None:
@@ -176,24 +189,43 @@ class Aligner:
         cfg_data, _ = ExperimentSaver.load_configs_from_checkpoint(checkpoint)
 
         cfg_data["dataset"]["subsets"].remove("train")
+        cfg_data["parser"]["progress_bar"] = False
         if "split_by_phrases" in cfg_data["parser"]["pipe"]:
-            cfg_data["parser"]["pipe"].remove("split_by_phrases")
+            if max_duration:
+                cfg_data["parser"]["pipe_cfg"]["split_by_phrases"][
+                    "max_duration"
+                ] = max_duration
+            else:
+                cfg_data["parser"]["pipe"].remove("split_by_phrases")
+
         if "check_phoneme_length" in cfg_data["parser"]["pipe"]:
             cfg_data["parser"]["pipe"].remove("check_phoneme_length")
+
         cfg_data["processor"]["output_collated_only"] = False
         cfg_data["processor"].pop("dump", None)
 
         if "augment_wave" in cfg_data["preproc"]["pipe"]:
             cfg_data["preproc"]["pipe"].remove("augment_wave")
 
+        if "ssl" in cfg_data["preproc"]["pipe"]:
+            cfg_data["preproc"]["pipe"].remove("ssl")
+
+        # TODO: support legacy models
+        if "text" in cfg_data["preproc"]["pipe_cfg"]:
+            cfg_data["preproc"]["pipe_cfg"]["text"].type = "TTSTextProcessor"
+
         if "reverse" in cfg_data["preproc"]["pipe"]:
             if reverse_mode:
-                cfg_data["preproc"].setdefault("reverse", {})["p"] = 1.0
+                cfg_data["preproc"]["pipe_cfg"].setdefault("reverse", {})
+                cfg_data["preproc"]["pipe_cfg"]["reverse"]["p"] = 1.0
             else:
                 LOGGER.info("remove reverse function")
                 cfg_data["preproc"]["pipe"].remove("reverse")
 
-        sample_rate = find_field(cfg_data, "sample_rate")
+                # TODO: support legacy models
+                if "reverse" in cfg_data["preproc"]["pipe"]:
+                    cfg_data["preproc"]["pipe"].remove("reverse")
+
         hop_len = find_field(cfg_data, "hop_len")
 
         speaker_id_setter = find_field(cfg_data, "SpeakerIDSetter")
@@ -216,9 +248,16 @@ class Aligner:
 
         lang = find_field(cfg_data["preproc"], "lang")
 
+        cfg_data["sampler"] = {"type": "SimpleSampler", "comb_by_len": True}
+
+        # TODO: support legacy models
+        if "load_audio_segmentation" not in cfg_data["preproc"]["pipe"]:
+            cfg_data["preproc"]["pipe"].insert(1, "load_audio_segmentation")
+        if "symbols" in cfg_data.collate.additional_fields:
+            cfg_data.collate.additional_fields.remove("symbols")
+
         return (
             cfg_data,
-            sample_rate,
             hop_len,
             speaker_id_map,
             lang_id_map,
@@ -240,18 +279,28 @@ class Aligner:
 
         device = torch.device(device)
 
+        # TODO: support legacy models
+        if "plbert_feat_dim" in checkpoint["params"]:
+            checkpoint["params"]["xpbert_feat_dim"] = checkpoint["params"].pop(
+                "plbert_feat_dim"
+            )
+            checkpoint["params"]["xpbert_feat_proj_dim"] = checkpoint["params"].pop(
+                "plbert_feat_proj_dim"
+            )
+
         model_cls = getattr(forced_alignment, cfg_model["model"]["type"])
         model = model_cls(checkpoint["params"])
         model.eval()
 
-        model.load_state_dict(checkpoint["state_dict"], strict=True)
+        # TODO: strict=False - support legacy models
+        model.load_state_dict(checkpoint["state_dict"], strict=False)
         model.to(device)
 
         batch_processor_cls = getattr(forced_alignment, cfg_model["batch"]["type"])
         batch_processor = init_class_from_config(
             batch_processor_cls, cfg_model["batch"]
         )()
-        batch_processor.device = device
+        batch_processor.set_device(device)
 
         return model, batch_processor
 
@@ -296,7 +345,7 @@ class Aligner:
             b = max(0.0, min((cummulative_lengths[i] * scale), wave_duration))
             intervals.append((a, b))
 
-        return intervals
+        return intervals  # in seconds
 
     @staticmethod
     def _remove_small_pauses(timestamps, min_pause_len):
@@ -315,14 +364,14 @@ class Aligner:
 
         raw_intervals = self._get_intervals(
             cummulative_lens,
-            self._sample_rate,
+            audio_chunk.sr,
             self._hop_len,
             audio_chunk.duration,
         )
         intervals = [
             interval
             for i, interval in enumerate(raw_intervals)
-            if not TextProcessor.is_service_symbol(symbols[i])
+            if not TTSTextProcessor.is_service_symbol(symbols[i])
         ]
         aligned_timestamps = Timestamps(np.asarray(intervals))
 
@@ -356,13 +405,14 @@ class Aligner:
         if self._reverse_mode:
             sega_name += "_reverse"
 
+        sega.meta["aligner_model"] = self._ckpt_path.name
         sega.save(file_path.with_suffix(sega_name))
 
     def _batch_processing(self, batch):
         forward_input, _, samples = self._batch_processor(batch)
 
         with torch.no_grad():
-            output = self._aligner_model(forward_input, mas_correction=True)
+            output = self._aligner_model(forward_input, adjust_attention=True)
 
         x_lens = forward_input.input_lengths.cpu().numpy()
         y_lens = forward_input.output_lengths.cpu().numpy()
@@ -374,21 +424,23 @@ class Aligner:
                 if self._reverse_mode:
                     aligning_path = np.fliplr(aligning_path).copy()
                 lens = self._get_phonemes_lengths(aligning_path)
-                self._update_sega(s.file_path, s.audio_chunk, s.symbols, lens)
+                self._update_sega(s.file_path, s.audio_chunk, s.transcription_text, lens)
             except Exception as e:
                 LOGGER.error(f"error processing for {s.file_path}: {e}")
 
     @staticmethod
     def _read_metadata(file_path: str):
-        return {"file_path": Path(file_path), "sega": AudioSeg.load(file_path)}
+        return {"file_path": Path(file_path), "sega": AudioSegPreview.load(file_path)}
 
     def process(self, file_list: tp.List[str]):
-        parser = EasyDSParser(self._read_metadata)
+        parser = EasyDSParser(self._read_metadata, progress_bar=len(file_list) > 1)
         dataset = parser.run_from_path_list(
             path_list=file_list, n_processes=self._n_processes
         )
         name = self._data_pipeline.subsets[0]
-        dataset = self._data_pipeline[name].metadata_to_datasample(dataset)
+        dataset = self._data_pipeline[name].metadata_to_datasample(
+            dataset, as_dataset=True
+        )
         self._data_pipeline[name].set_dataset(dataset)
 
         with init_data_loader(
@@ -407,8 +459,8 @@ class Aligner:
 
     def align_sega(self, file_path: tp.Union[str, Path]):
         pipe = self._data_pipeline[self._data_pipeline.subsets[0]]
-        md = {"file_path": Path(file_path), "sega": AudioSeg.load(file_path)}
-        ds = pipe.metadata_to_datasample([md]).to_list()[0]
+        md = {"file_path": Path(file_path), "sega": AudioSegPreview.load(file_path)}
+        ds = pipe.metadata_to_datasample([md])[0]
         ds.speaker_id = self._speaker_id_map.get(ds.speaker_name, 0)
         ds.lang_id = self._lang_id_map[ds.lang]
         batch = pipe.datasample_to_batch([ds])
@@ -429,19 +481,23 @@ def _get_file_list(
     )
 
     if flist_path is None:
-        file_list = construct_file_list(
+        all_files = construct_file_list(
             data_root=data_root, with_subfolders=True, ext=ext
         )
     else:
-        file_list = []
+        all_files = []
         for path in flist_path:
-            file_list += Path(path).read_text(encoding="utf-8").split("\n")
+            lines = Path(path).read_text(encoding="utf-8").split("\n")
+            lines = [item.split("|")[0] for item in lines]
+            lines = [Path(item).with_suffix(ext) for item in lines]
 
-        file_list = [item.split("|")[0] for item in file_list]
-        file_list = [Path(item).with_suffix(ext) for item in file_list]
-        file_list = [item.as_posix() for item in file_list if item.exists()]
+            for item in lines:
+                if not item.is_absolute():
+                    item = Path(path).parent / item
+                if item.exists():
+                    all_files.append(item.as_posix())
 
-    return file_list
+    return all_files
 
 
 def main(
@@ -502,7 +558,7 @@ if __name__ == "__main__":
         processes = []
         args = args.__dict__
         args["n_gpus"] = 1
-        for i in range(n_proc):
+        for i in range(min(n_proc, len(flist_by_chunk))):
             tmp_file = Path(args["data_root"]) / f"{uuid.uuid4()}.txt"
             tmp_file.write_text("\n".join(flist_by_chunk[i]), encoding="utf-8")
             args["flist_path"] = tmp_file.as_posix()

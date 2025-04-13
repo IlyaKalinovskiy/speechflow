@@ -1,11 +1,10 @@
 import typing as tp
 
-from pathlib import Path
-
 import numpy as np
 import torch
 
-from multilingual_text_parser import Doc, TextParser
+from multilingual_text_parser.data_types import Doc
+from multilingual_text_parser.parser import TextParser
 from transformers import AutoTokenizer
 
 from nlp import prosody_prediction
@@ -14,24 +13,28 @@ from speechflow.data_pipeline.core import Batch, PipelineComponents
 from speechflow.data_pipeline.datasample_processors.data_types import (
     ProsodyPredictionDataSample,
 )
-from speechflow.data_pipeline.datasample_processors.text_processors import TextProcessor
+from speechflow.data_pipeline.datasample_processors.tts_text_processors import (
+    TTSTextProcessor,
+)
+from speechflow.io import check_path, tp_PATH
 from speechflow.training.saver import ExperimentSaver
-from speechflow.utils.fs import get_module_dir
 from speechflow.utils.init import init_class_from_config
 from speechflow.utils.seed import set_numpy_seed
 
 __all__ = ["ProsodyPredictionInterface"]
 
-PITCH_DOWN_CONTURS = ("1", "2", "4", "7", "8")
 PITCH_DOWN_PUNCTUATIONS = (",", ".", ";", ":", "-")
+PITCH_UP_PUNCTUATIONS = ("?",)
 
 
 class ProsodyPredictionInterface:
+    @check_path(assert_file_exists=True)
     def __init__(
         self,
-        ckpt_path: tp.Union[str, Path],
+        ckpt_path: tp.Union[tp_PATH],
+        lang: str = "RU",
         device: str = "cpu",
-        lang: str = "EN",
+        num_prosodic_classes: tp.Optional[int] = None,
         text_parser: tp.Optional[tp.Dict[str, TextParser]] = None,
         ckpt_preload: tp.Optional[dict] = None,
     ):
@@ -41,17 +44,13 @@ class ProsodyPredictionInterface:
             checkpoint = ckpt_preload
 
         cfg_data, cfg_model = ExperimentSaver.load_configs_from_checkpoint(checkpoint)
-        self.device = torch.device(device)
 
-        bert_path = checkpoint["params"]["model_name"]
-        bert_path = bert_path.replace("/src/libs/text_parser/text_parser/", "")
-        bert_path = get_module_dir("text_parser") / bert_path
-        checkpoint["params"]["model_name"] = bert_path.as_posix()
-
-        tokenizer_path = cfg_data["parser"]["tokenizer_name"]
-        tokenizer_path = tokenizer_path.replace("/src/libs/text_parser/text_parser/", "")
-        tokenizer_path = get_module_dir("text_parser") / tokenizer_path
-        cfg_data["parser"]["tokenizer_name"] = tokenizer_path.as_posix()
+        if num_prosodic_classes is not None:
+            if num_prosodic_classes != cfg_model.model.params.n_classes:
+                raise ValueError(
+                    f"Different number of prosodic classes for "
+                    f"TTS({num_prosodic_classes}) and Prosody({cfg_model.model.params.n_classes}) models!"
+                )
 
         model_cls = getattr(prosody_prediction, cfg_model["model"]["type"])
         self.model = model_cls(checkpoint["params"])
@@ -62,14 +61,14 @@ class ProsodyPredictionInterface:
 
         self.pipeline = PipelineComponents(cfg_data, "test")
 
-        BatchProcessor = getattr(prosody_prediction, cfg_model["batch"]["type"])
+        batch_processor_cls = getattr(prosody_prediction, cfg_model["batch"]["type"])
         self.batch_processor = init_class_from_config(
-            BatchProcessor, cfg_model["batch"]
+            batch_processor_cls, cfg_model["batch"]
         )()
-        self.batch_processor.device = self.device
+        self.batch_processor.set_device(device)
 
         if text_parser is None:
-            self.text_parser = {lang: TextParser(lang=lang)}
+            self.text_parser = {lang: TextParser(lang=lang, device=str(device))}
         else:
             self.text_parser = text_parser
 
@@ -79,13 +78,14 @@ class ProsodyPredictionInterface:
         self._pad_id = self._tokenizer.pad_token_id
         self._softmax = torch.nn.Softmax(dim=2)
         self._lang = lang
+        self._num_prosodic_classes = num_prosodic_classes
 
         self.service_tokens = (
-            TextProcessor.pad,
-            TextProcessor.bos,
-            TextProcessor.eos,
-            TextProcessor.sil,
-            TextProcessor.unk,
+            TTSTextProcessor.pad,
+            TTSTextProcessor.bos,
+            TTSTextProcessor.eos,
+            TTSTextProcessor.sil,
+            TTSTextProcessor.unk,
         )
 
     @torch.inference_mode()
@@ -147,13 +147,12 @@ class ProsodyPredictionInterface:
         doc: Doc,
         output: ProsodyPredictionOutput,
         datasamples: tp.List[ProsodyPredictionDataSample],
-        tres_bin: tp.Optional[float] = None,
+        tres_bin: float = 0,
         predict_proba: bool = True,
+        down_contur_ids: tp.Optional[tp.Sequence[int]] = None,
+        up_contur_ids: tp.Optional[tp.Sequence[int]] = None,
     ) -> Doc:
         predicted_tags = []
-        if tres_bin is None:
-            tres_bin = 0.5
-
         for datasample in datasamples:
             word_ids = datasample.word_ids
             pred_binary = self._softmax(output.binary)[0, :, 1]
@@ -184,12 +183,15 @@ class ProsodyPredictionInterface:
             for token_id, token in enumerate(sent.tokens):
                 if (
                     token.prosody is None
+                    and not token.is_punctuation
                     and token.text not in self.service_tokens
                     and token.emphasis != "accent"
                 ):
                     prosody_tag = predicted_tags[idx]
                     if (
-                        prosody_tag != -1
+                        down_contur_ids
+                        or up_contur_ids
+                        and prosody_tag != -1
                         and doc.sents[sent_id].tokens[token_id]
                         != doc.sents[sent_id].tokens[-1]
                     ):
@@ -197,10 +199,19 @@ class ProsodyPredictionInterface:
                             doc.sents[sent_id].tokens[token_id + 1].text
                             in PITCH_DOWN_PUNCTUATIONS
                         ):
-                            if prosody_tag not in PITCH_DOWN_CONTURS:
-                                prosody_tag = str(np.random.choice(PITCH_DOWN_CONTURS))
+                            if prosody_tag not in down_contur_ids:
+                                prosody_tag = str(np.random.choice(down_contur_ids))
+                                # print(f"{doc.sents[sent_id].tokens[token_id].text}: {prosody_tag}")
+                        if (
+                            doc.sents[sent_id].tokens[token_id + 1].text
+                            in PITCH_UP_PUNCTUATIONS
+                        ):
+                            if prosody_tag not in up_contur_ids:
+                                prosody_tag = str(np.random.choice(up_contur_ids))
 
                     doc.sents[sent_id].tokens[token_id].prosody = prosody_tag
+                else:
+                    doc.sents[sent_id].tokens[token_id].prosody = "-1"
 
                 idx += 1
 
@@ -208,10 +219,12 @@ class ProsodyPredictionInterface:
 
     def predict(
         self,
-        text: tp.Union[Doc, str],
-        tres_bin: tp.Optional[float] = None,
+        text: tp.Union[str, Doc],
+        tres_bin: float = 0,
         predict_proba: bool = True,
         seed: int = 0,
+        down_contur_ids: tp.Optional[tp.Sequence[int]] = None,
+        up_contur_ids: tp.Optional[tp.Sequence[int]] = None,
     ) -> Doc:
         if isinstance(text, str):
             doc = self.text_parser[self._lang].process(Doc(text))
@@ -222,5 +235,7 @@ class ProsodyPredictionInterface:
         batch = self.pipeline.datasample_to_batch(samples)
         outputs = self.evaluate(batch)
 
-        doc = self._assign_prosody_tags(doc, outputs, samples, tres_bin, predict_proba)
+        doc = self._assign_prosody_tags(
+            doc, outputs, samples, tres_bin, predict_proba, down_contur_ids, up_contur_ids
+        )
         return doc

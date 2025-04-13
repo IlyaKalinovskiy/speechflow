@@ -2,6 +2,8 @@ import random
 import typing as tp
 import logging
 
+from copy import deepcopy
+
 import torch
 
 from tqdm import tqdm
@@ -27,11 +29,15 @@ class SimpleSampler(AbstractDataSampler):
     def __init__(
         self,
         comb_by_len: bool = False,
-        is_use_neighbors: bool = False,
+        use_neighbors: bool = False,
+        use_dynamic_batch: bool = False,
+        max_batch_length: int = 1000,  # in milliseconds for AudioDataSample
     ):
         super().__init__()
         self._comb_by_len = comb_by_len
-        self._is_use_neighbors = is_use_neighbors
+        self._use_neighbors = use_neighbors
+        self._use_dynamic_batch = use_dynamic_batch
+        self._max_batch_length = max_batch_length
 
         self._data: Dataset = None  # type: ignore
         self._dataset_size = None
@@ -41,6 +47,10 @@ class SimpleSampler(AbstractDataSampler):
 
         self._current_data = None  # type: ignore
         self._epoch_size = None
+
+    @property
+    def is_empty(self) -> bool:
+        return self._data is None
 
     def set_dataset(self, data: Dataset):
         self._dataset_size = len(data)
@@ -54,7 +64,7 @@ class SimpleSampler(AbstractDataSampler):
         self._data = data
         self._current_data = data
 
-        if self._is_use_neighbors:
+        if self._use_neighbors:
             self.parse_neghbors()
 
         LOGGER.info(trace(self, message=f"Dataset size: {self._dataset_size}"))
@@ -89,7 +99,7 @@ class SimpleSampler(AbstractDataSampler):
         neighbor: DataSample = random.sample(neighbors.difference({ds}), 1)[0]
         return neighbor
 
-    def sample_neighbor(self, ds: DataSample):
+    def sample_neighbor(self, ds: DataSample) -> DataSample:
         neighbor_ds = None
 
         for i in range(len(self._data.item(0).index)):
@@ -97,7 +107,10 @@ class SimpleSampler(AbstractDataSampler):
             if neighbor_ds is not None:
                 break
 
-        assert neighbor_ds is not None, "neighbors weren't been found"
+        if neighbor_ds is None:
+            LOGGER.warning(trace(self, message="neighbors weren't been found"))
+            neighbor_ds = ds.copy()
+
         return neighbor_ds
 
     @staticmethod
@@ -106,7 +119,7 @@ class SimpleSampler(AbstractDataSampler):
         return ds
 
     def add_neighbors(self, chunk: tp.List[DataSample]) -> tp.List[DataSample]:
-        if not self._is_use_neighbors:
+        if not self._use_neighbors:
             return chunk
 
         chunk_new = []
@@ -143,23 +156,55 @@ class SimpleSampler(AbstractDataSampler):
 
     def reset(self):
         self._current_idx = 0
+        self._is_last_batch = False
 
     def fill_epoch(self):
         pass
 
-    def sampling(self, batch_size: int) -> tp.List[DataSample]:
-        self._is_last_batch = False
-
+    def _get_samples(self, batch_size: int) -> tp.List[DataSample]:
         if self._current_idx + batch_size >= self._epoch_size:
             # "None" is signals about the last batch
             chunk = self._current_data[self._current_idx :] + [None]  # type: ignore
             self._is_last_batch = True
-            self._current_idx = 0
-            self.fill_epoch()
         else:
             chunk = self._current_data[self._current_idx : self._current_idx + batch_size]
             self._current_idx += batch_size
+        return chunk
+
+    def sampling(self, batch_size: int) -> tp.List[DataSample]:
+        self._is_last_batch = False
+
+        if self._use_dynamic_batch:
+            chunk = []
+            chunk_len = 0
+            for _ in range(batch_size):
+                for item in self._get_samples(1):
+                    chunk.append(item)
+                    if item is not None:
+                        chunk_len += len(item)
+                if self._is_last_batch or chunk_len > self._max_batch_length:
+                    break
+        else:
+            chunk = self._get_samples(batch_size)
+
+        if self._is_last_batch:
+            self._current_idx = 0
+            self.fill_epoch()
 
         chunk = self.add_neighbors(chunk)
-
         return chunk
+
+    def copy(self):
+        data = self._data
+        current_data = self._current_data
+        self._data = None
+        self._current_data = None
+
+        sampler = deepcopy(self)
+
+        self._data = data
+        self._current_data = current_data
+        sampler._data = data
+        sampler._current_data = current_data
+
+        return sampler

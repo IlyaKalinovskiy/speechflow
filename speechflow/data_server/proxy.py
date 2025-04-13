@@ -1,10 +1,10 @@
 import typing as tp
 import logging
-import itertools
 
 from speechflow.concurrency import ProcessWorker
 from speechflow.data_pipeline.core import Batch, DataPipeline
 from speechflow.data_server.patterns import ZMQPatterns, ZMQProxy
+from speechflow.data_server.system_messages import DataClientMessages as DCM
 from speechflow.io import Config, tp_PATH
 from speechflow.logging import trace
 from speechflow.utils.init import init_class_from_config
@@ -21,11 +21,10 @@ class Proxy(ProcessWorker):
         self,
         server_addrs: tp.List[str],
     ):
-        ProcessWorker.__init__(self)
+        ProcessWorker.__init__(self, daemon=True)
         self._server_addrs = server_addrs
         self._proxy_addr = f"127.0.0.1:{find_free_port()}"
         self._zmq_proxy: ZMQProxy = None  # type: ignore
-        self._async_supported = False
 
     @property
     def address(self):
@@ -67,79 +66,66 @@ class Proxy(ProcessWorker):
             )
         )
 
-    def do_preprocessing(self, request: tp.Dict) -> tp.List[tp.Any]:
-        batches = self.get_batches(request, decode_batch=False)
-        return batches
+    def batch_preprocessing(self, batch: Batch) -> tp.List[Batch]:
+        return [batch]
 
-    def get_batches(
-        self,
-        request: dict,
-        batch_size: tp.Optional[int] = None,
-        batch_num: tp.Optional[int] = None,
-        decode_batch: bool = True,
-    ) -> tp.List[Batch]:
-        if batch_size:
-            request["batch_size"] = max(1, batch_size)
-
-        if batch_num:
-            request["batch_num"] = max(1, batch_num)
-        else:
-            request["batch_num"] = max(1, request["batch_num"] // len(self._server_addrs))
-
-        request["async_mode"] = False
-
-        response = self._zmq_proxy.request(request)
-        response = list(itertools.chain(*response))
-
-        batches = []
-        for resp in response:
-            if resp.startswith(b"info: epoch complete"):
-                self._zmq_proxy.request({"message": "receiving_completed"})
-                continue
-            elif resp == b"" or resp.startswith(b"info:"):
-                continue
-
-            if decode_batch:
-                batch: Batch = Serialize.load(resp)
-                if not isinstance(batch, Batch):
-                    continue
+    def do_preprocessing(self, response: tp.List[bytes]) -> tp.List[bytes]:
+        new_response = []
+        for _bytes in response:
+            if _bytes == b"" or _bytes[0] == 0 or b"info:" in _bytes[:100]:
+                new_response.append(_bytes)
             else:
-                batch = resp
+                batch = Serialize.load(_bytes)
+                if not isinstance(batch, Batch):
+                    new_response.append(_bytes)
+                    continue
+                else:
+                    try:
+                        batches = self.batch_preprocessing(batch)
+                        new_response += Serialize.dumps(batches)
+                    except Exception as e:
+                        LOGGER.error(trace(self, e))
 
-            batches.append(batch)
-
-        return batches
+        return new_response
 
     def do_work_once(self):
         try:
             self._zmq_proxy.pool(timeout=10)
 
             if self._zmq_proxy.is_frontend_ready():
-                message = self._zmq_proxy.frontend.recv_multipart()
-                request = Serialize.load(message[-1])
+                message = self._zmq_proxy.frontend_recv_multipart()
+                if message is not None:
+                    request = Serialize.load(message[-1])
 
-                if request["message"] == "info":
-                    all_response = self._zmq_proxy.request(request)
+                    if request["message"] == DCM.INFO:
+                        all_info = []
+                        for b in self._zmq_proxy.backends:
+                            info = b.request(
+                                message,
+                                serialize=False,
+                                deserialize=False,
+                                multipart=True,
+                            )
+                            all_info.append(Serialize.load(info[-1]))
 
-                    all_info = []
-                    for resp in all_response:
-                        info = Serialize.load(resp[0])
-                        info["async_supported"] = self._async_supported
-                        all_info.append(info)
+                        message[-1] = Serialize.dump(
+                            DataPipeline.aggregate_info(all_info)
+                        )
+                        self._zmq_proxy.frontend_send_multipart(message)
+                    else:
+                        self._zmq_proxy.backend_send_multipart(message)
 
-                    message[-1] = Serialize.dump(DataPipeline.aggregate_info(all_info))
-                    self._zmq_proxy.frontend.send_multipart(message)
-                elif request["message"] == "batch":
-                    try:
-                        message.pop(-1)
-                        message += Serialize.dumps(self.do_preprocessing(request))
-                    except Exception as e:
-                        LOGGER.error(trace(self, e))
+            for b in self._zmq_proxy.backends:
+                response = b.recv_multipart(
+                    deserialize=False,
+                    timeout=1,
+                    max_num_message=5,
+                )
+                if response:
+                    response = self.do_preprocessing(response)
+                    self._zmq_proxy.frontend_send_multipart(response)
 
-                    self._zmq_proxy.frontend.send_multipart(message)
-                else:
-                    message[-1] = self._zmq_proxy.request(request)[0][-1]
-                    self._zmq_proxy.frontend.send_multipart(message)
-
+        except KeyboardInterrupt as e:
+            raise e
         except Exception as e:
             LOGGER.error(trace(self, e))

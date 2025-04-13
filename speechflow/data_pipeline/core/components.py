@@ -16,6 +16,7 @@ from speechflow.data_pipeline import (
 )
 from speechflow.data_pipeline.core import (
     Batch,
+    DataSample,
     Dataset,
     PipeRegistry,
     Singleton,
@@ -60,19 +61,22 @@ def _find_handlers(method: tp.Callable, handlers: tp.Dict[str, tp.Any]):
 def init_singleton_handlers_from_config(
     cfg: Config,
     data_subset_name: tp.Optional[str],
-    preinit_handlers: tp.Optional[tp.Dict[str, tp.Callable]] = None,
+    preinit_singleton_handlers: tp.Optional[tp.Dict[str, tp.Callable]] = None,
 ) -> tp.Dict[str, tp.Callable]:
     cfg_handlers = cfg.section("singleton_handlers")
 
     handlers = {}
     for class_name in cfg_handlers.get("handlers", []):
-        if preinit_handlers is not None and class_name in preinit_handlers:
-            handlers[class_name] = preinit_handlers[class_name]
+        if (
+            preinit_singleton_handlers is not None
+            and class_name in preinit_singleton_handlers
+        ):
+            handlers[class_name] = preinit_singleton_handlers[class_name]
         else:
             config = cfg_handlers.section(class_name)
             config.setdefault("data_subset_name", data_subset_name)
             cls = getattr(datasample_processors, class_name)
-            handlers[class_name] = init_class_from_config(cls, config)(data_cfg=cfg)
+            handlers[class_name] = init_class_from_config(cls, config)(cfg_data=cfg)
 
     return handlers
 
@@ -88,12 +92,12 @@ def init_metadata_preprocessing_from_config(
     steps = []
     for step_name in pipe:
         method = getattr(cls, step_name)
-        step_arguments: Config = pipe_cfg.section(step_name)
+        step_config: Config = pipe_cfg.section(step_name)
 
         if singleton_handlers:
-            step_arguments.update(_find_handlers(method, singleton_handlers))
+            step_config.update(_find_handlers(method, singleton_handlers))
 
-        steps.append(functools.partial(method, **step_arguments))
+        steps.append(functools.partial(method, **step_config))
 
     return steps  # type: ignore
 
@@ -101,14 +105,22 @@ def init_metadata_preprocessing_from_config(
 def init_data_preprocessing_from_config(
     cfg: Config,
     singleton_handlers: tp.Optional[tp.Dict[str, tp.Callable]] = None,
+    cache: tp.Optional[tp.Dict] = None,
 ) -> tp.List[tp.Callable]:
     pipe = cfg.get("pipe", ())
     pipe_cfg = cfg.section("pipe_cfg")
 
+    if cache is None:
+        cache = {}
+
     steps = []
     for step_name in pipe:
         step_config = pipe_cfg.section(step_name)
-        step_arguments = {}
+        init_params = step_config.copy()
+
+        if step_name in cache and cache[step_name][1] == init_params:
+            steps.append(cache[step_name][0])
+            continue
 
         if step_config.get("disable", False):
             continue
@@ -141,10 +153,8 @@ def init_data_preprocessing_from_config(
             method = init_method_from_config(method, step_config)
 
         if singleton_handlers:
-            step_arguments.update(_find_handlers(method, singleton_handlers))
-            method = functools.partial(method, **step_arguments)
-
-        init_params = step_config.copy()
+            additional_arguments = _find_handlers(method, singleton_handlers)
+            method = functools.partial(method, **additional_arguments)
 
         try:
             setattr(method, "init_params", init_params)
@@ -152,6 +162,7 @@ def init_data_preprocessing_from_config(
             pass
 
         steps.append(method)
+        cache[step_name] = (method, init_params)
 
     return steps
 
@@ -190,7 +201,8 @@ class PipelineComponents:
         self,
         cfg: Config,
         data_subset_name: tp.Optional[str] = None,
-        preinit_handlers: tp.Optional[tp.Dict[str, tp.Callable]] = None,
+        preinit_singleton_handlers: tp.Optional[tp.Dict[str, tp.Callable]] = None,
+        cache: tp.Optional[tp.Dict] = None,
     ):
         if data_subset_name:
             cfg = cfg.trim(key=data_subset_name)
@@ -208,13 +220,15 @@ class PipelineComponents:
         sampler_cls = getattr(samplers, cfg["sampler"]["type"])
 
         self.singleton_handlers = init_singleton_handlers_from_config(
-            cfg, data_subset_name, preinit_handlers
+            cfg, data_subset_name, preinit_singleton_handlers
         )
         self.metadata_preprocessing = init_metadata_preprocessing_from_config(
             parser_cls, cfg.section("parser"), self.singleton_handlers
         )
         self.data_preprocessing = init_data_preprocessing_from_config(
-            cfg.section("preproc"), self.singleton_handlers
+            cfg.section("preproc"),
+            self.singleton_handlers,
+            cache,
         )
         self.collate = init_collate_from_config(
             cfg.section("collate"), self.singleton_handlers
@@ -249,6 +263,10 @@ class PipelineComponents:
     def subset_name(self):
         return self._subset_name
 
+    @property
+    def config(self):
+        return self._cfg.copy()
+
     def load_data(self, file_list, n_processes: int = 1):
         dataset = self.dataset_parser.read_datasamples(
             file_list=file_list,
@@ -264,24 +282,32 @@ class PipelineComponents:
     def get_file_list(self) -> tp.Tuple[str, ...]:
         return self.sampler.dataset.get_file_list()
 
+    @check_path(assert_file_exists=True)
+    def metadata_from_file(
+        self, file_path: tp_PATH, label: tp.Optional[str] = None
+    ) -> tp.List[Metadata]:
+        metadata = self.dataset_parser.reader(file_path, label)
+        return metadata
+
     def metadata_to_datasample(
-        self, metadata: tp.Union[tp.List[Metadata], Dataset]
-    ) -> Dataset:
+        self, metadata: tp.Union[tp.List[Metadata], Dataset], as_dataset: bool = False
+    ) -> tp.Union[tp.List[DataSample], Dataset]:
         metadata = self.dataset_parser.do_preprocessing(
             metadata, self.metadata_preprocessing
         )
-        return self.dataset_parser.to_datasample(metadata)
+        dataset = self.dataset_parser.to_datasample(metadata)
+        return dataset if as_dataset else dataset.to_list()
 
     def preprocessing_datasample(
-        self, samples: tp.List[tp.Any], skip_corrupted_samples: bool = True
-    ) -> tp.List[tp.Any]:
+        self, samples: tp.List[DataSample], skip_corrupted_samples: bool = True
+    ) -> tp.List[DataSample]:
         return self.data_processor.do_preprocessing(
             samples,
             self.data_preprocessing,
             skip_corrupted_samples=skip_corrupted_samples,
         )
 
-    def to_batch(self, samples: tp.List[tp.Any]) -> Batch:
+    def to_batch(self, samples: tp.List[DataSample]) -> Batch:
         collated_samples = self.collate(samples) if self.collate else None
         return Batch(
             size=len(samples),
@@ -290,7 +316,7 @@ class PipelineComponents:
         )
 
     def datasample_to_batch(
-        self, samples: tp.List[tp.Any], skip_corrupted_samples: bool = True
+        self, samples: tp.List[DataSample], skip_corrupted_samples: bool = True
     ) -> Batch:
         samples = self.preprocessing_datasample(samples, skip_corrupted_samples)
         collated_samples = self.collate(samples) if self.collate else None
@@ -305,7 +331,7 @@ class PipelineComponents:
     ) -> Batch:
         samples = self.metadata_to_datasample(metadatas)
         return self.datasample_to_batch(
-            samples.to_list(), skip_corrupted_samples=skip_corrupted_samples
+            samples, skip_corrupted_samples=skip_corrupted_samples
         )
 
     def with_ignored_fields(
@@ -371,6 +397,47 @@ class PipelineComponents:
             )
             new_pipeline_components.data_preprocessing = data_fns
 
+        return new_pipeline_components
+
+    @staticmethod
+    def _remove_handler(
+        handlers: tp.List,
+        name: str,
+        init_params: tp.Optional[tp.Dict[str, tp.Any]] = None,
+    ) -> tp.List:
+        new_handlers = []
+        for proc in handlers:
+            if name in str(proc):
+                if init_params and set(init_params.keys()).issubset(
+                    proc.init_params.keys()
+                ):
+                    if all(proc.init_params[k] == v for k, v in init_params.items()):
+                        continue
+                else:
+                    continue
+
+            new_handlers.append(proc)
+
+        return new_handlers
+
+    def remove_metadata_handler(
+        self, name: str, init_params: tp.Optional[tp.Dict[str, tp.Any]] = None
+    ) -> "PipelineComponents":
+        new_pipeline_components = copy(self)
+        handlers = new_pipeline_components.metadata_preprocessing
+        new_pipeline_components.metadata_preprocessing = self._remove_handler(
+            handlers, name, init_params
+        )
+        return new_pipeline_components
+
+    def remove_data_handler(
+        self, name: str, init_params: tp.Optional[tp.Dict[str, tp.Any]] = None
+    ) -> "PipelineComponents":
+        new_pipeline_components = copy(self)
+        handlers = new_pipeline_components.data_preprocessing
+        new_pipeline_components.data_preprocessing = self._remove_handler(
+            handlers, name, init_params
+        )
         return new_pipeline_components
 
     def filter(
@@ -446,8 +513,12 @@ class DataPipeline:
     def __init__(self, cfg: Config):
         self._cfg: Config = cfg
         self._tag: str = str(cfg.get("tag", ""))
-        self._flist_by_subsets: tp.Dict[str, tp.List[str]] = {}
+        self._flist_by_subsets: tp.Dict[str, tp.List[tp_PATH]] = {}
         self._pipelines: tp.Dict[str, PipelineComponents] = {}
+
+    def __getitem__(self, name: str) -> PipelineComponents:
+        assert self._pipelines, "Call first of init_components function!"
+        return self._pipelines[name]
 
     @staticmethod
     @check_path(assert_file_exists=True)
@@ -466,9 +537,11 @@ class DataPipeline:
         collate=None,
         sampler=None,
         singleton_handlers=None,
+        **kwargs,
     ):
         cfg = Config.empty({"dataset"})
         cfg["dataset"]["subsets"] = data_subsets
+        cfg.update(**kwargs)
 
         data_pipeline = DataPipeline(cfg)
         data_pipeline.init_components()
@@ -489,13 +562,31 @@ class DataPipeline:
             set_component(pipe, "collate", collate)
             set_component(pipe, "sampler", sampler)
 
-            pipe.singleton_handlers = singleton_handlers
+            pipe.singleton_handlers = (
+                singleton_handlers if singleton_handlers is not None else {}
+            )
 
             pipe.data_processor = init_class_from_config(
                 data_processor.DataProcessor, cfg.section("processor")
             )(pipe.data_preprocessing, pipe.collate)
 
         return data_pipeline
+
+    @property
+    def subsets(self) -> tp.List[str]:
+        return list(self._pipelines.keys())
+
+    @property
+    def tag(self):
+        return self._tag
+
+    @property
+    def config(self):
+        return self._cfg.copy()
+
+    @property
+    def config_raw(self):
+        return self._cfg.raw_file
 
     @property
     def is_init(self) -> bool:
@@ -513,20 +604,18 @@ class DataPipeline:
 
     def init_components(
         self,
-        preinit_handlers: tp.Optional[tp.Dict[str, tp.Dict[str, tp.Callable]]] = None,
+        preinit_singleton_handlers: tp.Optional[
+            tp.Dict[str, tp.Dict[str, tp.Callable]]
+        ] = None,
     ):
         if self.is_init or self._cfg.section("dataset").is_empty:
             return
 
+        cache = {}
         for name in self._cfg.section("dataset")["subsets"]:
             self._pipelines[name] = PipelineComponents(
-                self._cfg, name, (preinit_handlers or {}).get(name)
+                self._cfg, name, (preinit_singleton_handlers or {}).get(name), cache
             )
-
-    def set_file_list(self, files_by_subsets: tp.Optional[tp.Dict[str, tp.List[str]]]):
-        self._cfg.create_section({"dirs"})
-        self._cfg["dirs"]["file_list"] = files_by_subsets
-        assert set(self.subsets) == set(files_by_subsets.keys())
 
     def load_data(self, n_processes: int = 1):
         assert self._pipelines, "Call of init_components function before loading data!"
@@ -537,46 +626,40 @@ class DataPipeline:
         if isinstance(flist_path, tp.MutableMapping):
             self._flist_by_subsets = flist_path
         else:
-            if flist_path is None or not Path(flist_path).exists():
-                flist_path = generate_file_list(
-                    data_root=self._cfg.section("dirs")["data_root"],
-                    ext=self._cfg.section("file_search")["ext"],
-                    with_subfolders=self._cfg.section("file_search").get(
-                        "with_subfolders", True
-                    ),
-                )
-
-            _read_flist = init_method_from_config(
-                read_file_list, self._cfg.section("dataset")
-            )
-            self._flist_by_subsets = _read_flist(flist_path=flist_path)
+            self._flist_by_subsets = self.get_file_list(flist_path)
 
         for name, pipe in self._pipelines.items():
             pipe.load_data(self._flist_by_subsets[name], n_processes)
 
-    @property
-    def subsets(self) -> tp.List[str]:
-        return list(self._pipelines.keys())
+    def remove_pipeline(self, name: str):
+        self._pipelines.pop(name)
 
-    @property
-    def config(self):
-        return self._cfg.copy()
+    @check_path(assert_file_exists=True)
+    def get_file_list(
+        self, flist_path: tp.Optional[tp_PATH] = None
+    ) -> tp.Dict[str, tp.List[tp_PATH]]:
+        if flist_path is None or not Path(flist_path).exists():
+            flist_path = generate_file_list(
+                data_root=self._cfg.section("dirs")["data_root"],
+                ext=self._cfg.section("file_search")["ext"],
+                with_subfolders=self._cfg.section("file_search").get(
+                    "with_subfolders", True
+                ),
+            )
 
-    @property
-    def config_raw(self):
-        return self._cfg.raw_file
+        _read_flist = init_method_from_config(
+            read_file_list, self._cfg.section("dataset")
+        )
+        return _read_flist(flist_path=flist_path)
 
-    @property
-    def tag(self):
-        return self._tag
-
-    def __getitem__(self, name: str) -> PipelineComponents:
-        assert self._pipelines, "Call first of init_components function!"
-        return self._pipelines[name]
+    def set_file_list(self, files_by_subsets: tp.Dict[str, tp.List[tp_PATH]]):
+        self._cfg.create_section({"dirs"})
+        self._cfg["dirs"]["file_list"] = files_by_subsets
+        assert set(self.subsets) == set(files_by_subsets.keys())
 
     def get_info(
         self, object_size_limit: float = 10, size_format=Serialize.Format.MB
-    ) -> tp.Dict:
+    ) -> tp.Dict:  # type: ignore
         info = {
             "data_config_raw": self.config_raw,
             "data_config": self.config,
@@ -584,22 +667,23 @@ class DataPipeline:
             "epoch_size": {name: self[name].sampler.epoch_size for name in self.subsets},
         }
 
+        temp = {}
+        for name in self.subsets:
+            temp[name] = self[name].sampler
+            cfg = self[name].config.section("sampler")
+            sampler_cls = getattr(samplers, cfg["type"])
+            self[name].sampler = init_class_from_config(sampler_cls, cfg)()
+
         try:
             LOGGER.debug(trace(self, message="Pickling DataPipeline"))
-
-            temp = {}
-            for name in self.subsets:
-                temp[name] = self[name].sampler
-                self[name].sampler = None
-
             info["data_pipeline"] = Serialize.dump(self)
-
-            for name in self.subsets:
-                self[name].sampler = temp[name]
         except (TypeError, pickle.PickleError) as e:
             LOGGER.debug(
                 trace(self, e, "Current pipelines configuration not support pickle!")
             )
+        finally:
+            for name in self.subsets:
+                self[name].sampler = temp[name]
 
         if object_size_limit > 0:
             singleton_handlers = {}

@@ -22,9 +22,9 @@ from nlp.prosody_prediction.data_types import (
     ProsodyPredictionTarget,
 )
 from speechflow.data_server.loader import DataLoader
-from speechflow.training.utils.pad_utils import pad, pad_2d
+from speechflow.utils.pad_utils import pad_1d, pad_2d
 
-LOGGER = logging.getLogger()
+LOGGER = logging.getLogger("root")
 
 __all__ = ["ProsodyCallback"]
 
@@ -33,9 +33,9 @@ class ProsodyCallback(Callback):
     def __init__(
         self,
         data_loader: DataLoader,
-        names: tp.List[str] = ["binary", "category"],
-        tokenizer: str = None,
-        n_classes: int = 10,
+        names: tp.List[tp.Literal["binary", "category"]],
+        tokenizer_name: str,
+        n_classes: int,
     ):
         super().__init__()
         self.softmax = torch.nn.Softmax(dim=1)
@@ -43,31 +43,32 @@ class ProsodyCallback(Callback):
         self.names = names
         self._data_loader = data_loader
         self._tokenizer = AutoTokenizer.from_pretrained(
-            tokenizer, add_prefix_space=True, use_fast=True
+            tokenizer_name, add_prefix_space=True, use_fast=True
         )
         self.n_classes = n_classes
 
     def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
         self._data_loader.reset()
         outputs_all = ProsodyPredictionOutput(
-            binary=[],
-            category=[],
+            binary=[],  # type: ignore
+            category=[],  # type: ignore
         )
         targets_all = ProsodyPredictionTarget(
-            binary=[],
-            category=[],
+            binary=[],  # type: ignore
+            category=[],  # type: ignore
         )
 
         for batch_idx in range(len(self._data_loader)):
             batch = self._data_loader.next_batch()
-            outputs = pl_module.test_step(batch, batch_idx)
-            _, outputs, targets, _ = outputs
+            _, outputs, targets, _ = pl_module.test_step(batch, batch_idx)
+
             if outputs.binary is not None:
-                outputs_all.binary.extend(outputs.binary.to("cpu"))
-                targets_all.binary.extend(targets.binary.to("cpu"))
+                outputs_all.binary.extend(outputs.binary.cpu())  # type: ignore
+                targets_all.binary.extend(targets.binary.cpu())  # type: ignore
+
             if outputs.category is not None:
-                outputs_all.category.extend(outputs.category.to("cpu"))
-                targets_all.category.extend(targets.category.to("cpu"))
+                outputs_all.category.extend(outputs.category.cpu())  # type: ignore
+                targets_all.category.extend(targets.category.cpu())  # type: ignore
 
             # if batch_idx == 0:
             #     output_text = self._log_text(batch, outputs)
@@ -75,21 +76,24 @@ class ProsodyCallback(Callback):
 
         if outputs_all.binary:
             outputs_all.binary, _ = pad_2d(outputs_all.binary, pad_val=0, n_channel=2)
-            targets_all.binary, _ = pad(targets_all.binary, pad_val=-100)
+            targets_all.binary, _ = pad_1d(targets_all.binary, pad_val=-100)
+
         if outputs_all.category:
             outputs_all.category, _ = pad_2d(
                 outputs_all.category,
                 pad_val=0,
                 n_channel=outputs_all.category[0].shape[1],
             )
-            targets_all.category, _ = pad(targets_all.category, pad_val=-100)
+            targets_all.category, _ = pad_1d(targets_all.category, pad_val=-100)
 
         metrics, reports = self.compute_metrics(outputs_all, targets_all)
-        for name in self.names:
-            pl_module.logger.experiment.add_text(
-                f"report_{name}", reports[name], global_step=pl_module.global_step
-            )
         pl_module.log_dict(metrics, prog_bar=True, logger=True)
+
+        if pl_module.logger is not None:
+            for name in self.names:
+                pl_module.logger.experiment.add_text(
+                    f"report_{name}", reports[name], global_step=pl_module.global_step
+                )
 
     def compute_metrics(
         self,
@@ -124,6 +128,8 @@ class ProsodyCallback(Callback):
                     target, probabilities
                 )
                 predictions = predicted.argmax(-1)
+
+            metrics[f"{name}_EER"] = metrics[f"{name}/EER"]
 
             roc_auc = roc_auc_score(
                 target,
@@ -214,7 +220,7 @@ class ProsodyCallback(Callback):
                     result[
                         "tokens"
                     ] += f"| {self._tokenizer.decode(inputs[sample_idx][token_idx])} "
-                    result["sep"] += f"| ---- "
+                    result["sep"] += "| ---- "
                     for name in self.names:
                         label = predictions[name][sample_idx][token_idx]
                         if name == "binary":
@@ -222,11 +228,11 @@ class ProsodyCallback(Callback):
                         else:
                             label_idx = label.argmax(-1)
                             result[
-                                f"pred_category_prob"
+                                "pred_category_prob"
                             ] += f"| {round(label[label_idx].item(), 2)} "
-                            result[f"pred_category_label"] += f"| {label_idx} "
+                            result["pred_category_label"] += f"| {label_idx} "
                             result[
-                                f"targets_category"
+                                "targets_category"
                             ] += f"| {targets[name][sample_idx][token_idx]} "
 
             result["tokens"] += "|"

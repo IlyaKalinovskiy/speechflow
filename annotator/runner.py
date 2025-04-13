@@ -9,6 +9,7 @@ from collections import Counter
 from pathlib import Path
 
 import numpy as np
+import distutils
 
 from tqdm import tqdm
 
@@ -20,9 +21,9 @@ from speechflow.data_pipeline.dataset_parsers import EasyDSParser
 from speechflow.io import AudioSeg, Config
 from speechflow.logging.server import LoggingServer
 from speechflow.utils.fs import get_root_dir
-from speechflow.utils.gpu import get_freer_gpu, get_total_gpu_memory
+from speechflow.utils.gpu_info import get_freer_gpu, get_total_gpu_memory
 from speechflow.utils.init import init_method_from_config
-from tts.forced_alignment.scripts.train import main as run_fa
+from tts.forced_alignment.scripts.train import main as train_fa
 
 LOGGER = logging.getLogger("runner")
 ANNOTATOR_TOTAL_GPU_MEM: int = 8
@@ -39,7 +40,7 @@ def parse_args():
         "-o", "--output_dir", help="output directory", type=Path, required=True
     )
     arguments_parser.add_argument(
-        "-l", "--lang", help="target language", type=str, required=True
+        "-l", "--lang", help="target language", type=str, default="MULTILANG"
     )
     arguments_parser.add_argument(
         "-lf", "--langs_filter", help="language filter", nargs="+", type=str
@@ -49,10 +50,17 @@ def parse_args():
     )
     arguments_parser.add_argument(
         "-sr",
-        "--sample_rate",
+        "--audio_sample_rate",
         help="sample rate for output audio",
         type=int,
         default=24000,
+    )
+    arguments_parser.add_argument(
+        "-af",
+        "--audio_format",
+        help="format for output audio",
+        type=str,
+        default="wav",
     )
     arguments_parser.add_argument(
         "-nproc",
@@ -65,7 +73,7 @@ def parse_args():
         "-ngpu", "--n_gpus", help="number of GPU device", type=int, default=0
     )
     arguments_parser.add_argument(
-        "-nw",
+        "-ngw",
         "--n_workers_per_gpu",
         help="number of workers running on GPU",
         type=int,
@@ -79,7 +87,7 @@ def parse_args():
         "--batch_size",
         help="num samples in batch",
         type=int,
-        default=24,
+        default=16,
     )
     arguments_parser.add_argument(
         "-epochs",
@@ -87,20 +95,24 @@ def parse_args():
         help="num epochs for training",
         nargs="+",
         type=int,
-        default=[20, 10],
+        default=[30, 30],
     )
     arguments_parser.add_argument(
-        "-r",
-        "--use_reverse_mode",
-        help="inverting audios and transcriptions during training",
-        action="store_true",
+        "--use_asr_transcription",
+        help="using ASR transcription to split audio into single utterances",
+        type=lambda x: bool(distutils.util.strtobool(x)),
         default=True,
     )
     arguments_parser.add_argument(
-        "-t",
-        "--use_asr_transcription",
-        help="using ASR transcription to split audio into single utterances",
-        action="store_true",
+        "--use_resampling_audio",
+        help="using resampling audio to sample rate",
+        type=lambda x: bool(distutils.util.strtobool(x)),
+        default=True,
+    )
+    arguments_parser.add_argument(
+        "--use_loudnorm_audio",
+        help="using audio volume nomalization",
+        type=lambda x: bool(distutils.util.strtobool(x)),
         default=True,
     )
     arguments_parser.add_argument(
@@ -119,14 +131,14 @@ def parse_args():
         default="",
     )
     arguments_parser.add_argument(
-        "--finetune_model",
-        help="path to checkpoint for finetune",
-        type=Path,
-    )
-    arguments_parser.add_argument(
         "--pretrained_models",
         help="path to pretrained checkpoints",
         nargs="+",
+        type=Path,
+    )
+    arguments_parser.add_argument(
+        "--finetune_model",
+        help="path to checkpoint for finetune",
         type=Path,
     )
     arguments_parser.add_argument(
@@ -162,8 +174,8 @@ def _run_subprocess(
 
 
 def _update_fa_configs(
-    model_cfg_name: str,
-    data_cfg_name: str,
+    cfg_model_name: str,
+    cfg_data_name: str,
     lang: str,
     output_dir: Path,
     langs_filter: tp.Optional[tp.List[str]],
@@ -174,7 +186,6 @@ def _update_fa_configs(
     n_workers_per_gpu: int,
     batch_size: int,
     max_epochs: int,
-    use_reverse_mode: bool,
     experiment_path: tp.Optional[Path],
     finetune_model: tp.Optional[Path] = None,
     sega_suffix: str = "",
@@ -186,39 +197,39 @@ def _update_fa_configs(
 
     lang_dir = lang if langs_filter is None else "_".join(langs_filter)
 
-    model_config_path = root / configs_dir / model_cfg_name
-    data_config_path = root / configs_dir / data_cfg_name
-    if not model_config_path.exists() or not data_config_path.exists():
+    cfg_model_path = root / configs_dir / cfg_model_name
+    cfg_data_path = root / configs_dir / cfg_data_name
+    if not cfg_model_path.exists() or not cfg_data_path.exists():
         raise FileNotFoundError("Configs for forced alignment model not found!")
 
     # update model config
-    model_cfg = Config.create_from_file(model_config_path)
+    cfg_model = Config.create_from_file(cfg_model_path)
 
-    if not Path(model_cfg["dirs"].get("logging", "")).is_absolute():
-        model_cfg["dirs"]["logging"] = (
-            (output_dir / "forced_alignment" / lang_dir / model_cfg["dirs"]["logging"])
+    if not Path(cfg_model["dirs"].get("logging", "")).is_absolute():
+        cfg_model["dirs"]["logging"] = (
+            (output_dir / "forced_alignment" / lang_dir / cfg_model["dirs"]["logging"])
             .absolute()
             .as_posix()
         )
-    model_cfg["trainer"]["accelerator"] = "gpu"
-    model_cfg["trainer"]["devices"] = [get_freer_gpu()]
+    cfg_model["trainer"]["accelerator"] = "gpu"
+    cfg_model["trainer"]["devices"] = [get_freer_gpu()]
     if batch_size:
-        model_cfg["data_loaders"]["batch_size"] = batch_size
+        cfg_model["data_loaders"]["batch_size"] = batch_size
     if max_epochs:
-        model_cfg["trainer"]["max_epochs"] = max_epochs
+        cfg_model["trainer"]["max_epochs"] = max_epochs
     if experiment_path:
-        model_cfg["trainer"]["resume_from_checkpoint"] = experiment_path.as_posix()
+        cfg_model["trainer"]["resume_from_checkpoint"] = experiment_path.as_posix()
     if finetune_model:
         assert finetune_model.exists()
-        model_cfg["model"]["init_from"] = {"ckpt_path": finetune_model.as_posix()}
+        cfg_model["model"]["init_from"] = {"ckpt_path": finetune_model.as_posix()}
     if n_gpus == 0:
-        model_cfg["model"]["params"]["speaker_biometric_model"] = "resemblyzer"
+        cfg_model["model"]["params"]["speaker_biometric_model"] = "resemblyzer"
 
-    model_config_path = output_dir / "forced_alignment" / lang_dir / model_cfg_name
-    model_cfg.to_file(model_config_path)
+    cfg_model_path = output_dir / "forced_alignment" / lang_dir / cfg_model_name
+    cfg_model.to_file(cfg_model_path)
 
     # update data config
-    config_data = Config.create_from_file(data_config_path)
+    config_data = Config.create_from_file(cfg_data_path)
 
     config_data["dirs"]["data_root"] = output_dir.as_posix()
 
@@ -235,7 +246,8 @@ def _update_fa_configs(
     if langs_filter:
         config_data["dataset"]["directory_filter"] = {"include": langs_filter}
 
-    speaker_ids = config_data["singleton_handlers"].setdefault("SpeakerIDSetter", {})
+    config_data["singleton_handlers"].setdefault("SpeakerIDSetter", {})
+    speaker_ids = config_data["singleton_handlers"]["SpeakerIDSetter"]
     speaker_ids["remove_unknown_speakers"] = False
     if langs_filter:
         speaker_ids["langs_filter"] = langs_filter
@@ -249,20 +261,17 @@ def _update_fa_configs(
 
     config_data["preproc"]["pipe_cfg"]["text"]["lang"] = lang
 
-    if use_reverse_mode:
-        config_data["preproc"]["pipe"].append("reverse")
+    cfg_data_path = output_dir / "forced_alignment" / lang_dir / cfg_data_name
+    config_data.to_file(cfg_data_path)
 
-    data_config_path = output_dir / "forced_alignment" / lang_dir / data_cfg_name
-    config_data.to_file(data_config_path)
-
-    return model_config_path, data_config_path
+    return cfg_model_path, cfg_data_path
 
 
-def _run_fa(**kwargs) -> Path:
+def _train_fa(**kwargs) -> Path:
     LOGGER.info(f"Run GlowTTS with args {kwargs}")
 
     if sys.platform == "win32":
-        return run_fa(**kwargs)
+        return train_fa(**kwargs)
     else:
         cmd = ["python", "-m", "tts.forced_alignment.scripts.train"]
         for key, value in kwargs.items():
@@ -282,7 +291,7 @@ def _run_fa(**kwargs) -> Path:
 def _run_align(**kwargs):
     LOGGER.info(f"Run Aligner with args {kwargs}")
 
-    if sys.platform == "win32":
+    if sys.platform == "win32" or kwargs.get("n_processes") == 1:
         run_align(**kwargs)
     else:
         cmd = ["python", "-m", "annotator.align"]
@@ -314,6 +323,7 @@ def _seg_processing(
                 pretrained_models[1],
                 device=device,
                 last_word_correction=True,
+                audio_duration_limit=None,
             )
             setattr(_seg_processing, "annotator", annotator)
 
@@ -322,13 +332,13 @@ def _seg_processing(
             return
 
     new_sega_path = sega_path.with_suffix(".TextGridStage3" + sega_suffix)
-    if new_sega_path.exists():
-        return
+    # if new_sega_path.exists():
+    #    return
 
     annotator = getattr(_seg_processing, "annotator")
     sega = annotator.process(sega_path=sega_path)
     sega.save(new_sega_path)
-    LOGGER.info(f"Save sega {new_sega_path.as_posix()}")
+    # LOGGER.info(f"Save sega {new_sega_path.as_posix()}")
 
 
 def _run_segs_correction(
@@ -360,13 +370,18 @@ def _run_segs_correction(
             else n_gpus * int(get_total_gpu_memory(0) // ANNOTATOR_TOTAL_GPU_MEM),
         )
     else:
-        file_list = []
+        all_files = []
         for path in flist_path:
-            file_list += Path(path).read_text(encoding="utf-8").split("\n")
+            lines = Path(path).read_text(encoding="utf-8").split("\n")
+            for item in lines:
+                item = Path(item.split("|")[0])
+                if not item.is_absolute():
+                    item = Path(path).parent / item
+                if item.exists():
+                    all_files.append(item.as_posix())
 
-        file_list = [item.split("|")[0] for item in file_list]
         parser.run_from_path_list(
-            file_list,
+            all_files,
             n_processes=n_processes
             if n_gpus == 0
             else n_gpus * int(get_total_gpu_memory(0) // ANNOTATOR_TOTAL_GPU_MEM),
@@ -518,7 +533,7 @@ def _calc_statistics(
             duration = get_duration(segs_list)
             LOGGER.info(f"{name}: {len(segs_list)} samples, {duration} hours")
 
-            if meta.get("many", False):
+            if meta.get("multispeaker", False):
                 sub_dirs = [x for x in segs_root.iterdir() if x.is_dir()]
                 for item in tqdm(
                     sub_dirs, desc=f"Calculating statistics for '{name}' dataset"
@@ -566,21 +581,23 @@ def main(
     lang: str,
     langs_filter: tp.Optional[tp.List[str]] = None,
     speakers_filter: tp.Optional[tp.List[str]] = None,
-    sample_rate: tp.Optional[int] = None,
+    audio_sample_rate: tp.Optional[int] = None,
+    audio_format: tp.Literal["wav", "flac", "opus"] = "wav",
     n_processes: int = 1,
     n_gpus: int = 0,
     n_workers_per_gpu: int = 1,
     num_samples: int = 0,
-    batch_size: int = 0,
+    batch_size: int = 16,
     max_epochs: tp.Union[int, tp.List[int]] = 0,
     start_step: int = 0,
     start_stage: int = 1,
-    use_reverse_mode: bool = False,
     use_asr_transcription: bool = False,
+    use_resampling_audio: bool = False,
+    use_loudnorm_audio: bool = False,
     max_step: int = 4,
     sega_suffix: str = "",
-    finetune_model: tp.Optional[Path] = None,
     pretrained_models: tp.Optional[tp.List[Path]] = None,
+    finetune_model: tp.Optional[Path] = None,
     resume_from_path: tp.Optional[Path] = None,
     asr_credentials: tp.Optional[Path] = None,
 ):
@@ -645,14 +662,17 @@ def main(
                     num_samples=num_samples,
                     n_processes=n_processes,
                     n_gpus=n_gpus,
-                    output_sample_rate=sample_rate,
-                    multispeaker_mode=meta.get("many", False),
+                    audio_sample_rate=audio_sample_rate,
+                    audio_format=audio_format,
+                    multispeaker_mode=meta.get("multispeaker", False),
                     use_asr_transcription=meta.get(
                         "use_asr_transcription", use_asr_transcription
                     ),
+                    resampling_audio=use_resampling_audio,
+                    loudnorm_audio=meta.get("use_loudnorm_audio", use_loudnorm_audio),
                 )
                 seglist_paths.append(ret["flist_path"])
-                if speakers_filter is not None and meta.get("many", False):
+                if speakers_filter is not None and meta.get("multispeaker", False):
                     speakers_filter += list(ret.get("speakers", []))
 
                 LOGGER.info(f"Stop processing of '{name}' dataset")
@@ -674,7 +694,7 @@ def main(
                 if pretrained_models and stage <= len(pretrained_models):
                     experiment_path = pretrained_models[stage - 1]
                 else:
-                    model_config_path, data_config_path = _update_fa_configs(
+                    cfg_model_path, cfg_data_path = _update_fa_configs(
                         f"model_stage{stage}.yml",
                         f"data_stage{stage}.yml",
                         lang=lang,
@@ -687,14 +707,13 @@ def main(
                         n_workers_per_gpu=n_workers_per_gpu,
                         batch_size=batch_size,
                         max_epochs=sum(max_epochs[:stage]),
-                        use_reverse_mode=use_reverse_mode,
                         experiment_path=experiment_path,
                         sega_suffix=sega_suffix,
                         finetune_model=finetune_model,
                     )
-                    experiment_path = _run_fa(
-                        model_config_path=model_config_path,
-                        data_config_path=data_config_path,
+                    experiment_path = _train_fa(
+                        model_config_path=cfg_model_path,
+                        data_config_path=cfg_data_path,
                         expr_suffix="all_speakers",
                     )
 
@@ -711,7 +730,7 @@ def main(
                 )
 
         # step 3
-        if start_step <= 3 <= max_step and use_reverse_mode:
+        if start_step <= 3 <= max_step:
             if not pretrained_models or len(pretrained_models) < 2:
                 pretrained_models = _get_pretrained_models(output_dir, lang, langs_filter)
 
@@ -733,10 +752,21 @@ def main(
 
 
 if __name__ == "__main__":
-    # example:
-    #  runner.py -d ../examples/simple_datasets/speech/SRC
-    #            -o ../examples/simple_datasets/speech/SEGS
-    #            --pretrained_models ../speechflow/data/fa/glowtts/stage1_epoch=19-step=208340.pt
-    #                              ../speechflow/data/fa/glowtts/stage2_epoch=29-step=312510.pt
+    """Launch examples.
+
+    TTS datasets annotation:
+        runner.py -d ../examples/simple_datasets/speech/SRC
+                  -o ../examples/simple_datasets/speech/SEGS
+                  --pretrained_models mfa_stage1_epoch=29-step=468750.pt mfa_stage2_epoch=59-step=937500.pt
+
+    ASR datasets annotation:
+        runner.py -d ../examples/simple_datasets/speech/SRC
+                  -o ../examples/simple_datasets/speech/SEGS
+                  --finetune_model mfa_stage1_epoch=29-step=468750.pt
+                  --use_asr_transcription False
+                  --use_resampling_audio False
+                  --use_loudnorm_audio False
+
+    """
 
     main(**parse_args().__dict__)

@@ -1,4 +1,5 @@
 import logging
+import warnings
 
 __all__ = ["set_logging_filters"]
 
@@ -8,9 +9,24 @@ class AssertionErrorFilter(logging.Filter):
         return "AssertionError" not in record.getMessage()
 
 
+class ValueErrorFilter(logging.Filter):
+    def filter(self, record):
+        return "ValueError" not in record.getMessage()
+
+
+class IndexErrorFilter(logging.Filter):
+    def filter(self, record):
+        return "IndexError" not in record.getMessage()
+
+
 class TimestampErrorFilter(logging.Filter):
     def filter(self, record):
         return "timestamps.py" not in record.getMessage()
+
+
+class SamplerErrorFilter(logging.Filter):
+    def filter(self, record):
+        return "Sampler" not in record.getMessage()
 
 
 class TextProcessorErrorFilter(logging.Filter):
@@ -29,8 +45,13 @@ class CollatedErrorFilter(logging.Filter):
 
 
 def set_logging_filters(logger, **kwargs):
+    warnings.filterwarnings("ignore", category=UserWarning, module="russian_g2p")
+
     logger.addFilter(AssertionErrorFilter())
+    logger.addFilter(ValueErrorFilter())
+    logger.addFilter(IndexErrorFilter())
     logger.addFilter(TimestampErrorFilter())
+    logger.addFilter(SamplerErrorFilter())
     logger.addFilter(TextProcessorErrorFilter())
     logger.addFilter(LPCProcessorErrorFilter())
     logger.addFilter(CollatedErrorFilter())
