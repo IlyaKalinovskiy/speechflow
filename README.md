@@ -1,17 +1,23 @@
 # SpeechFlow
 
-A speech processing toolkit focused on easy configuration of complex speech data preparation pipelines and rapid prototyping of speech synthesis models (TTS).
+A speech processing toolkit designed for easy configuration of complex speech data preparation pipelines and rapid prototyping of text-to-speech (TTS) models.
 
-The goal of this project is to provide a comprehensive toolkit to solve the TTS problem, including a [multilingual frontend](https://github.com/just-ai/multilingual-text-parser) for text preparation, forced alignment models, and a framework for assembling various TTS systems from unified blocks.
+## Overview
 
-### News
+This project provides a comprehensive solution for TTS development, featuring:
+- [Multilingual text processing frontend](https://github.com/just-ai/multilingual-text-parser)
+- Forced alignment models
+- Modular framework for building TTS systems from reusable components
 
-- [14.04.2025] 🔥 SpeechFlow 1.0 is released!
+## News
 
-### Installation
+- **April 2024 (v1.0):**
+  - 🔥 Initial release of SpeechFlow 1.0!
 
-1. [Anaconda](https://www.anaconda.com/)
+## Installation
 
+### Prerequisites
+1. Install [Anaconda](https://www.anaconda.com/)
 2. Clone a repository and update submodules
 
 ```
@@ -20,91 +26,90 @@ cd speechflow
 git submodule update --init --recursive -f
 ```
 
-#### On Ubuntu:
+### On Ubuntu:
 
-3. Installation system packages
+3. Install system dependencies:
 
 ```bash
-apt-get update
-apt-get install -y libssl1.1
-apt-get install -y g++
-apt-get install -y wget sox ffmpeg
+sudo apt-get update
+sudo apt-get install -y libssl1.1 g++ wget sox ffmpeg
 ```
 
-4. Installation Python 3.10 with conda environment
+4. Configure Python environment:
 
 ```bash
 conda create -n py310 python=3.10
 conda activate py310
-```
-
-5. Installation python requirements
-
-```bash
 pip install -r requirements.txt
 ```
 
-6. Installation requirements for [multilingual frontend](https://github.com/just-ai/multilingual-text-parser)
+5. Install [multilingual frontend](https://github.com/just-ai/multilingual-text-parser) dependencies:
 
 ```bash
-# install dotnet
+# Install .NET SDK
 wget https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
-dpkg -i packages-microsoft-prod.deb
+sudo dpkg -i packages-microsoft-prod.deb
 rm packages-microsoft-prod.deb
 
-apt-get install -y apt-transport-https && apt-get update
-apt-get install -y dotnet-sdk-5.0
-apt-get install -y aspnetcore-runtime-5.0
-apt-get install -y dotnet-runtime-5.0
-apt-get install -y nuget
+sudo apt-get install -y apt-transport-https && apt-get update
+sudo apt-get install -y dotnet-sdk-5.0 aspnetcore-runtime-5.0 dotnet-runtime-5.0 nuget
 
 # install eSpeak
-apt-get install -y espeak-ng
+sudo apt-get install -y espeak-ng
 ```
 
-7. Installation submodules
+6. Complete installation:
 
 ```bash
 sh libs/install.sh
+pytest tests  # Run verification tests
 ```
 
-8. Run tests
-
-```bash
-pytest tests
-```
-
-#### On Windows:
+### On Windows:
 
 1. Install [Python 3.10](https://repo.anaconda.com/miniconda/Miniconda3-py310_24.5.0-0-Windows-x86_64.exe)
-2. Installations additional dependencies:
-[.NET 5.0](https://dotnet.microsoft.com/en-us/download/dotnet/5.0),
-[C++ Build Tools](https://visualstudio.microsoft.com/ru/visual-cpp-build-tools/) or
-[Visual Studio](https://visualstudio.microsoft.com/ru/downloads/),
-[eSpeak](https://github.com/espeak-ng/espeak-ng),
-[FFmpeg](https://github.com/icedterminal/ffmpeg-installer)
-3. Install additional packages `pip install -r requirements.txt`
-4. Install submodules  `libs/install.sh`
 
-#### Alternative installation with [Singularity](https://docs.sylabs.io/guides/main/user-guide/#)
+2. Install additional components:
+   - [.NET 5.0 Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/5.0),
+   - [Microsoft Visual C++ Build Tools](https://visualstudio.microsoft.com/ru/visual-cpp-build-tools/) or
+   - [Microsoft Visual Studio](https://visualstudio.microsoft.com/ru/downloads/),
+   - [eSpeak](https://github.com/espeak-ng/espeak-ng),
+   - [FFmpeg](https://github.com/icedterminal/ffmpeg-installer)
 
-1. Installation [Singularity](https://docs.sylabs.io/guides/3.11/admin-guide/installation.html) (or run `sh env/singularity.sh`)
-2. Run `sh install.sh`
-3. Run singularity container `singularity shell --nv --writable --no-home -B .:/src --pwd /src torch_*.img`
-4. Activate conda environment `source /ext3/miniconda3/etc/profile.d/conda.sh && conda activate py310`
+3. Install Python packages:
 
+```bash
+pip install -r requirements.txt
+sh libs/install.sh
+```
 
-### Data Annotation
+### [Singularity Installation](https://docs.sylabs.io/guides/3.11/admin-guide/installation.html)
 
-To work with TTS models, you need to convert your dataset to a special [TextGrid](https://www.fon.hum.uva.nl/praat/manual/TextGrid_file_formats.html) markup format.
-To automate this procedure, a data annotation module is provided.
-It is designed to transform a list of audio files or a whole audiobook into a dataset containing single utterances aligned with the corresponding audio chunks.
+For containerized deployment:
 
-#### Steps to obtain segmentations:
+```bash
+sh env/singularity.sh  # Installs Singularity
+sh install.sh
+singularity shell --nv --writable --no-home -B .:/src --pwd /src torch_*.img
+source /ext3/miniconda3/etc/profile.d/conda.sh && conda activate py310
+```
 
-**1) Data preparation**
+## Data Annotation
 
-   Structure your dataset to the following format
+Convert audio datasets to TextGrid format for TTS training.
+Our annotation pipeline automates:
+ - Audio segmentation into utterances
+ - Text normalization and phonetic transcription
+ - Forced alignment
+ - Audio postprocessing (sample rate conversion, volume normalization)
+
+### Supported Languages
+
+RU, EN, IT, ES, FR-FR, DE, PT, PT-BR, KK (additional languages via [eSpeak-NG](https://github.com/espeak-ng/espeak-ng))
+
+### Annotation Process
+
+**1) Prepare Dataset Structure**
 
         dataset_root:
         - languages.yml
@@ -131,69 +136,117 @@ It is designed to transform a list of audio files or a whole audiobook into a da
           - dataset_1
           ...
 
-Supported languages: RU, EN, IT, ES, FR-FR, DE, PT, PT-BR, KK.
+We recommend using normalized transcriptions that exclude numbers and abbreviations. For supported languages, [this package](https://github.com/just-ai/multilingual-text-parser) will automatically handle text normalization.
 
-The possibility of working with other languages can be found here (https://github.com/espeak-ng/espeak-ng/tree/master).
+Transcription files are optional. If only audio files are provided, transcriptions will be generated automatically using the [Whisper Large v2](https://huggingface.co/openai/whisper-large-v2) ASR model.
 
-We recommend using normalized transcription that does not contain numerals and abbreviations.
-However, for supported languages, this [package](https://github.com/just-ai/multilingual-text-parser) will be automatically applied for text normalization.
+For optimal processing, split large audio files into 20–30 minute segments.
 
-Having transcription files is not a requirement.
-If you only have audio files, the transcription will be built automatically by the [whisper-large-v2](https://huggingface.co/openai/whisper-large-v2) ASR model.
-
-It is recommended to split large audio files into 20-30 minute parts.
-
-Annotation of datasets containing both single and multiple speakers is supported.
-In this [example](examples/simple_datasets/speech/SRC), you can study in more detail the structure of the source data directories, as well as the format of the [languages.yml](examples/simple_datasets/speech/SRC/languages.yml) and [speakers.yml](examples/simple_datasets/speech/SRC/EN/speakers.yml) configuration files.
+The tool supports annotation of datasets with single or multiple speakers. To better understand the structure of source data directories and the formats of the [languages.yml](examples/simple_datasets/speech/SRC/languages.yml) and [speakers.yml](examples/simple_datasets/speech/SRC/EN/speakers.yml) configuration files, refer to the provided [example](examples/simple_datasets/speech/SRC).
 
 **2) Run annotation processing**
 
-The annotation process includes segmenting the audio file into single utterances, text normalization, generating a phonetic transcription, forced alignment of the phonetic transcription with the audio chunk, silence detection, audio sample rate conversion, and equalizing the volume.
+The annotation process includes segmenting the audio file into single utterances, normalizing the text, generating a phonetic transcription, performing forced alignment of the transcription with the audio chunk, detecting silence, converting the audio sample rate, and equalizing the volume.
 
-We provide pre-trained [multilingual forced alignment models](https://huggingface.co/IlyaKalinovskiy/multilingual-forced-alignment/tree/main/mfa_v1.0) at the phoneme level. These models were trained on 1500 hours of audio (more than 8K speakers in 9 languages), including LibriTTS, Hi-Fi TTS, VCTK, LJSpeech, and other datasets.
+We provide pre-trained [multilingual forced alignment models](https://huggingface.co/IlyaKalinovskiy/multilingual-forced-alignment/tree/main/mfa_v1.0) at the phoneme level. These models were trained on 1,500 hours of audio (from over 8,000 speakers across 9 languages), including datasets such as LibriTTS, Hi-Fi TTS, VCTK, LJSpeech, and others.
 
 Run this script to get segmentations:
 ```
 # single GPU (the minimum requirement is 64GB RAM and 24GB VRAM)
-python -m annotator.runner -d source_data_root -o segmentation_dataset_name -l=MULTILANG -ngpu=1 -nproc=16 -bs=16 --pretrained_models mfa_stage1_epoch=19-step=208340.pt mfa_stage2_epoch=29-step=312510.pt
+python -m annotator.runner -d source_data_root -o segmentation_dataset_name -l=MULTILANG -ngpu=1 -nproc=16 -bs=16 --pretrained_models mfa_stage1_epoch=29-step=468750.pt mfa_stage2_epoch=29-step=312510.pt
 
 # multi GPU (the minimum requirement is 256GB RAM and 24GB VRAM per GPU)
-python -m annotator.runner -d source_data_root -o segmentation_dataset_name -l=MULTILANG -ngpu=4 -nproc=32 -ngw=8 --pretrained_models mfa_stage1_epoch=19-step=208340.pt mfa_stage2_epoch=29-step=312510.pt
+python -m annotator.runner -d source_data_root -o segmentation_dataset_name -l=MULTILANG -ngpu=4 -nproc=32 -ngw=8 --pretrained_models mfa_stage1_epoch=29-step=468750.pt mfa_stage2_epoch=29-step=312510.pt
 ```
 
 To improve the alignment of your data, use the flag `--finetune_model`:
 ```
-python -m annotator.runner -d source_data_root -o segmentation_dataset_name -l=MULTILANG -ngpu=1 -nproc=16 -bs=16 --finetune_model mfa_stage1_epoch=19-step=208340.pt
+python -m annotator.runner -d source_data_root -o segmentation_dataset_name -l=MULTILANG -ngpu=1 -nproc=16 -bs=16 --finetune_model mfa_stage1_epoch=29-step=468750.pt
 ```
 
-To process single audio files, use [this](annotator/eval_interface.py) interface.
+To process individual audio files, use [this interface](annotator/eval_interface.py).
 
 The resulting segmentations can be opened in [Praat](https://www.fon.hum.uva.nl/praat/).
-See more examples [here](examples/simple_datasets/speech/SEGS).
+Additional examples are available [here](examples/simple_datasets/speech/SEGS).
 ![segmentation_example](docs/images/segmentation_example.jpg)
 
-The alignment model is based on the [Glow-TTS](https://github.com/jaywalnut310/glow-tts) code.
-Our implementation can be studied [here](tts/forced_alignment/model/glow_tts.py).
+The alignment model is based on the [Glow-TTS](https://github.com/jaywalnut310/glow-tts) codebase.
+Our implementation can be reviewed [here](tts/forced_alignment/model/glow_tts.py).
 
-### Training prosody model
+## Training TTS
 
-1. Build a dump of the required features
+### Training acoustic models
+
+1. Build a dump with precompute features for TTS task.
+
+Calculating certain features (e.g., biometric vectors or SSL features) can be computationally expensive.
+To optimize batch processing, we precompute these features using a GPU for each data sample and store them on disk.
+For details about which handlers are cached, refer to the [dump section](tts/acoustic_models/configs/tts/tts_data_24khz.yml#L160).
 
 ```
 # single GPU
 python -m tts.acoustic_models.scripts.dump
-            -cd tts/acoustic_models/configs/prosody/prosody_data_24khz.yml
+            -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml
             -nproc=5 -ngpu=1
             [-vs <languade>]
 
 # multi GPU
+python -m tts.acoustic_models.scripts.dump
+            -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml
+            -nproc=20 -ngpu=4
+            [-vs <languade>]
+```
+
+2. Training a Conditional Flow Matching (CFM) model
+
+After the dump is created run the model training.
+
+```
+python -m tts.acoustic_models.scripts.train
+           -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml
+           -c tts/acoustic_models/configs/tts/cfm_model.yml
+           [-vs <languade>]
+```
+
+### Training vocoders
+
+You can use [BigVGANv2](https://huggingface.co/nvidia/bigvgan_v2_24khz_100band_256x) for convert the output mel-spectrogram of acoustic model into an audio signal.
+However, we recommend fine-tuning this vocoder for your voices.
+
+```
+python -m tts.vocoders.scripts.train
+           -cd tts/vocoders/configs/vocos/mel_bigvgan_data_24khz.yml
+           -c tts/vocoders/configs/vocos/mel_bigvgan.yml
+```
+
+### Training end-to-end TTS
+
+You can also perform joint training of the acoustic model and the vocoder with GAN-like sheme.
+Please note that the current batch size is selected for single A100 80GB GPU.
+
+```
+python -m tts.vocoders.scripts.train
+           -cd tts/vocoders/configs/vocos/voc_data_24khz.yml
+           -c tts/vocoders/configs/vocos/styletts2_bigvgan.yml
+```
+
+* *prebuilt feature extraction dump for the voc_data_24khz.yml configuration file*
+
+### Training expressive TTS
+
+You can build a prosodic model to enhance the expressiveness of synthetic voices. For further details on this method, please refer to our [paper](https://www.isca-archive.org/interspeech_2024/korotkova24_interspeech.html#).
+
+1. Build a dump of the required features
+
+```
 python -m tts.acoustic_models.scripts.dump
             -cd tts/acoustic_models/configs/prosody/prosody_data_24khz.yml
             -nproc=20 -ngpu=4
             [-vs <languade>]
 ```
 
-2. Training model
+2. Training prosody model
+
 ```
 python -m tts.acoustic_models.scripts.train
             -cd tts/acoustic_models/configs/prosody/prosody_data_24khz.yml
@@ -201,25 +254,7 @@ python -m tts.acoustic_models.scripts.train
             [-vs <languade>]
 ```
 
-### Training TTS model
-
-1. Build a dump of the required features
-
-```
-# single GPU
-python -m tts.acoustic_models.scripts.dump
-            -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml
-            -nproc=5 -ngpu=1
-            [-vs <languade>]
-
-# multi GPU
-python -m tts.acoustic_models.scripts.dump
-            -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml
-            -nproc=20 -ngpu=4
-            [-vs <languade>]
-```
-
-2. Update datasets
+3. Update datasets
 
 ```
 python -m tts.acoustic_models.scripts.prosody_annotation
@@ -229,40 +264,33 @@ python -m tts.acoustic_models.scripts.prosody_annotation
             [-vs <languade>]
 ```
 
-3. Training model
+4. Training TTS models
 
-1. Build a dump of the required features
+   Similar to the steps discussed above...
+
+
+5. Training prosody prediction model using text
 
 ```
-# single GPU
-python -m tts.acoustic_models.scripts.dump
-            -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml
-            -nproc=5 -ngpu=1
-            [-vs <languade>]
-
-# multi GPU
-python -m tts.acoustic_models.scripts.dump
-            -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml
-            -nproc=20 -ngpu=4
+python -m nlp.prosody_prediction.scripts.train
+            -cd nlp/prosody_prediction/configs/data.yml
+            -c nlp/prosody_prediction/configs/model.yml
             [-vs <languade>]
 ```
 
-```
-python -m tts.acoustic_models.scripts.train
-            -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml
-            -c tts/acoustic_models/configs/tts/cfm_bigvgan.yml
-            [-vs <languade>]
-```
+### Inference example
 
-2. Training model
-```
-python -m tts.acoustic_models.scripts.dump -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml -nproc=20 -ngpu=4 [-vs <languade>]
-```
+See [eval.py](tts/acoustic_models/scripts/eval.py#L107)
 
-### Training prosody prediction model
-
+## BibTeX
 ```
-python -m tts.acoustic_models.scripts.dump -cd tts/acoustic_models/configs/tts/tts_data_24khz.yml -nproc=20 -ngpu=4 [-vs <languade>]
+@inproceedings{korotkova24_interspeech,
+  title     = {Word-level Text Markup for Prosody Control in Speech Synthesis},
+  author    = {Yuliya Korotkova and Ilya Kalinovskiy and Tatiana Vakhrusheva},
+  year      = {2024},
+  booktitle = {Interspeech 2024},
+  pages     = {2280--2284},
+  doi       = {10.21437/Interspeech.2024-715},
+  issn      = {2958-1796},
+}
 ```
-
-### [Inference example](tts/acoustic_models/scripts/eval.py#L107)

@@ -57,7 +57,7 @@ def plotting(tts_in: TTSForwardInput, tts_out: TTSForwardOutput, doc, signals=("
 
 def synthesize(
     tts_interface: TTSEvaluationInterface,
-    voc_interface: VocoderEvaluationInterface,
+    voc_interface: tp.Optional[VocoderEvaluationInterface],
     text: tp.Union[str, Path],
     lang: str,
     speaker_name: tp.Optional[tp.Union[str, tp.Dict[str, str]]] = None,
@@ -106,8 +106,8 @@ def synthesize(
 
 if __name__ == "__main__":
     tts_model_path = "/path/to/checkpoint"
-    voc_model_path = "/path/to/checkpoint"
-    prosody_model_path = "/path/to/checkpoint"
+    voc_model_path = "/path/to/checkpoint"  # for E2E TTS the same as tts_model_path
+    prosody_model_path = "/path/to/checkpoint"  # optional
     device = "cpu"
 
     tts = TTSEvaluationInterface(
