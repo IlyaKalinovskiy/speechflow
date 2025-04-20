@@ -11,7 +11,9 @@ from speechflow.training.saver import ExperimentSaver
 from speechflow.utils.fs import find_files
 
 
-def prune(checkpoint: tp.Dict[str, tp.Any]) -> tp.Dict[str, tp.Any]:
+def prune(
+    checkpoint: tp.Dict[str, tp.Any], target_speakers: tp.Optional[tp.List[str]] = None
+) -> tp.Dict[str, tp.Any]:
     remove_keys = [
         "callbacks",
         "optimizer_states",
@@ -34,9 +36,50 @@ def prune(checkpoint: tp.Dict[str, tp.Any]) -> tp.Dict[str, tp.Any]:
     if "speaker_id_map" in checkpoint:
         print("speakers:", list(checkpoint["speaker_id_map"].keys()))
 
-    # checkpoint["speaker_id_map"] = {
-    #     f"speaker_{i}": v for i, (k, v) in enumerate(checkpoint["speaker_id_map"].items())
-    # }
+    info = checkpoint.get("info")
+    handlers = None
+    if info:
+        info.pop("data_pipeline")
+        info.pop("dataset")
+        handlers = info.get("singleton_handlers", {})
+
+    if target_speakers:
+        for name in target_speakers:
+            if name not in checkpoint["speaker_id_map"]:
+                raise ValueError(f"Speaker {name} not found!")
+
+        checkpoint["n_langs"] = len(checkpoint["lang_id_map"])
+        checkpoint["n_speakers"] = len(checkpoint["speaker_id_map"])
+        checkpoint["speaker_id_map"] = {
+            k: v for k, v in checkpoint["speaker_id_map"].items() if k in target_speakers
+        }
+
+    if target_speakers and handlers:
+        if "SpeakerIDSetter" in handlers:
+            handlers["SpeakerIDSetter"].id2speaker = {
+                k: v
+                for k, v in handlers["SpeakerIDSetter"].id2speaker.items()
+                if v in target_speakers
+            }
+            handlers["SpeakerIDSetter"].speaker2id = {
+                k: v
+                for k, v in handlers["SpeakerIDSetter"].speaker2id.items()
+                if k in target_speakers
+            }
+            handlers["SpeakerIDSetter"].unknown_speakers = None
+        if "StatisticsRange" in handlers:
+            for key in handlers["StatisticsRange"].statistics.keys():
+                handlers["StatisticsRange"].statistics[key] = {
+                    k: v
+                    for k, v in handlers["StatisticsRange"].statistics[key].items()
+                    if k in target_speakers
+                }
+        if "MeanBioEmbeddings" in handlers:
+            handlers["MeanBioEmbeddings"].data = {
+                k: v
+                for k, v in handlers["MeanBioEmbeddings"].data.items()
+                if k in target_speakers
+            }
 
     return checkpoint
 
@@ -44,6 +87,7 @@ def prune(checkpoint: tp.Dict[str, tp.Any]) -> tp.Dict[str, tp.Any]:
 def prune_checkpoint(
     ckpt_dir: Path,
     state_dict_only: bool = False,
+    target_speakers: tp.Optional[tp.List[str]] = None,
     overwrite: bool = False,
 ):
     if ckpt_dir.is_file():
@@ -61,7 +105,7 @@ def prune_checkpoint(
             out_ckpt_path = ckpt_path.with_suffix(".pt")
 
         checkpoint = ExperimentSaver.load_checkpoint(ckpt_path)
-        checkpoint = prune(checkpoint)
+        checkpoint = prune(checkpoint, target_speakers)
 
         if state_dict_only:
             checkpoint = {"state_dict": checkpoint["state_dict"]}
@@ -87,8 +131,17 @@ if __name__ == "__main__":
         default=False,
     )
     arguments_parser.add_argument(
+        "--target_speakers",
+        help="available voices for synthesis",
+        type=str,
+        nargs="+",
+        default=None,
+    )
+    arguments_parser.add_argument(
         "--overwrite", help="overwrite checkpoints", type=bool, default=False
     )
     args = arguments_parser.parse_args()
 
-    prune_checkpoint(args.ckpt_dir, args.state_dict_only, args.overwrite)
+    prune_checkpoint(
+        args.ckpt_dir, args.state_dict_only, args.target_speakers, args.overwrite
+    )

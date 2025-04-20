@@ -42,7 +42,6 @@ hydra-core==1.4.0.dev1
 clearml==1.16.4
 monotonic-align==1.0.0
 nnAudio==0.3.3
-# fairseq==0.12.2
 bitarray==3.3.1
 sacrebleu==2.5.1
 
@@ -57,3 +56,7 @@ mypy-extensions==0.4.3
 nuitka==2.6.9
 pre-commit==2.15.0
 typing-extensions==4.9.0
+
+# fairseq==0.12.2
+# streamlit==1.44.1
+# st-annotated-text==4.0.2

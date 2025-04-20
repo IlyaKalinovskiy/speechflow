@@ -172,6 +172,8 @@ class AudioChunk:
                 "Unacceptable data shape, single-channel data must be flatten."
             )
 
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
         if isinstance(file_path, Path):
             file_path.write_bytes(self.to_bytes(format))
         else:

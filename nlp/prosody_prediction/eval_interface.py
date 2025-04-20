@@ -211,7 +211,8 @@ class ProsodyPredictionInterface:
 
                     doc.sents[sent_id].tokens[token_id].prosody = prosody_tag
                 else:
-                    doc.sents[sent_id].tokens[token_id].prosody = "-1"
+                    if token.prosody is None:
+                        doc.sents[sent_id].tokens[token_id].prosody = "-1"
 
                 idx += 1
 

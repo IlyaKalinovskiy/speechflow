@@ -97,6 +97,20 @@ class OpenAIASR(CloudASR):
                     if all(c in "0123456789" for c in tokenizer.decode([i]).strip())
                 ]
 
+                t = [chr(i) for i in range(0x0040, 0x005B)]
+                number_tokens += [
+                    i
+                    for i in range(tokenizer.eot)
+                    if all(c in t for c in tokenizer.decode([i]).strip())
+                ]
+
+                t = [chr(i).lower() for i in range(0x0040, 0x005B)]
+                number_tokens += [
+                    i
+                    for i in range(tokenizer.eot)
+                    if all(c in t for c in tokenizer.decode([i]).strip())
+                ]
+
                 setattr(OpenAIASR, "model", model)
                 setattr(OpenAIASR, "number_tokens", number_tokens)
         else:

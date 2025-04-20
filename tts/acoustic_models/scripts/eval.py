@@ -133,7 +133,7 @@ if __name__ == "__main__":
 
     opt = TTSOptions()
     # if prosody_model_path is not None:
-    #     opt.down_contur_ids = ["2", "3", "5", "7"]
+    #     opt.down_contur_ids = ["2", "3", "5"]
     #     opt.up_contur_ids = ["4"]
 
     tests = [

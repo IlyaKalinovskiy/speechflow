@@ -352,8 +352,10 @@ class TTSEvaluationInterface:
             self.pauses_interface = None
 
         # init model
-        tts_ckpt["params"]["n_langs"] = len(self.lang_id_map)
-        tts_ckpt["params"]["n_speakers"] = len(self.speaker_id_map)
+        tts_ckpt["params"]["n_langs"] = tts_ckpt.get("n_langs", len(self.lang_id_map))
+        tts_ckpt["params"]["n_speakers"] = tts_ckpt.get(
+            "n_speakers", len(self.speaker_id_map)
+        )
         tts_ckpt["params"]["alphabet_size"] = len(tts_ckpt["alphabet"])
 
         model_cls = getattr(acoustic_models, cfg_model["model"]["type"])

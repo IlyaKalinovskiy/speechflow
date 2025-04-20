@@ -344,6 +344,7 @@ class DataLoader:
                 self._dl = dl
                 self._is_non_stop = self._dl.non_stop
                 self._dl.non_stop = False
+                self._batch_idx = 0
 
             def __iter__(self):
                 return self
@@ -353,6 +354,10 @@ class DataLoader:
 
             def __next__(self):
                 try:
+                    self._batch_idx += 1
+                    if self._batch_idx > len(self):
+                        raise StopIteration
+
                     return next(self._dl)
                 finally:
                     self._dl.non_stop = self._is_non_stop
